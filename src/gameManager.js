@@ -10,6 +10,7 @@ const COMMIT_DURATION_NORMAL = 30;   // seconds
 const COMMIT_DURATION_ESTIMATION = 60;
 const REVEAL_DURATION = 15;
 const RESULTS_DURATION = 12;
+const MAX_CHAT_LENGTH = 300;
 
 // In-memory store of all rooms
 const rooms = new Map();
@@ -254,7 +255,7 @@ function handleJoin(ws, msg) {
     return send(ws, { type: 'error', message: 'username and roomCode required' });
   }
   if (!/^[A-Za-z0-9_\-]{1,20}$/.test(username)) {
-    return send(ws, { type: 'error', message: 'Username must be 1-20 alphanumeric chars' });
+    return send(ws, { type: 'error', message: 'Username must be 1-20 characters (letters, digits, _ or -)' });
   }
   const code = roomCode.toUpperCase();
 
@@ -451,7 +452,7 @@ function handleChat(ws, msg) {
     return send(ws, { type: 'error', message: 'Chat only allowed in lobby or commit phase' });
   }
 
-  const text = String(msg.text || '').trim().slice(0, 300);
+  const text = String(msg.text || '').trim().slice(0, MAX_CHAT_LENGTH);
   if (!text) return;
 
   const messageId = uuidv4();

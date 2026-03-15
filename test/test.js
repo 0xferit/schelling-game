@@ -194,19 +194,19 @@ console.log('\n8. Weight cap — rich player capped at 10%');
 
 {
   const salt = 'ccc';
-  // Rich player has balance 1000, others 100 each
-  // sum stakes = 1000 + 100*4 = 1400; 10% cap = 140 → rich player capped at 140
+  // All players have balance 100 → stake = min(100, 100) = 100
+  // sum stakes = 500; 10% cap = 50 → all weights capped at 50 each
   const players = [
-    { username: 'rich',  score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'p1',    score: 0.51, balance: 100, committed: true, revealed: true, hash: makeCommit(0.51, salt) },
-    { username: 'p2',    score: 0.49, balance: 100, committed: true, revealed: true, hash: makeCommit(0.49, salt) },
-    { username: 'p3',    score: 0.52, balance: 100, committed: true, revealed: true, hash: makeCommit(0.52, salt) },
+    { username: 'rich',    score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
+    { username: 'p1',      score: 0.40, balance: 100, committed: true, revealed: true, hash: makeCommit(0.40, salt) },
+    { username: 'p2',      score: 0.60, balance: 100, committed: true, revealed: true, hash: makeCommit(0.60, salt) },
+    { username: 'p3',      score: 0.52, balance: 100, committed: true, revealed: true, hash: makeCommit(0.52, salt) },
     { username: 'outlier', score: 0.99, balance: 100, committed: true, revealed: true, hash: makeCommit(0.99, salt) },
   ];
 
   const result = computeRoundResult(players, [], [], 5);
   assert(!result.cancelled, 'Round not cancelled');
-  // All with balance 100 → stake = min(100, 100) = 100. No super-rich player in this test but logic tested.
+  // All with balance 100 → stake = 100; sumStakes = 500; cap = 50; all weights = 50
   assert(typeof result.mu === 'number', 'mu computed');
 }
 

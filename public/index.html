@@ -319,6 +319,7 @@ let ws = null;
 let myUsername = '';
 let myRoomCode = '';
 let myBalance = 100;
+let playerBalances = new Map(); // username -> balance
 let currentPhase = 'lobby';
 let currentQuestion = null;
 let myScore = null;       // chosen score (0..1, quantized)
@@ -365,6 +366,9 @@ function notify(text, type = 'info', duration = 3500) {
 // ─────────────────────────────────────────────────────────────────────
 // WebSocket connection
 // ─────────────────────────────────────────────────────────────────────
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY = 30000;
+
 function connect(username, roomCode, roundCount) {
   if (ws) { try { ws.close(); } catch (_) {} }
 
@@ -372,6 +376,7 @@ function connect(username, roomCode, roundCount) {
   ws = new WebSocket(`${proto}://${location.host}`);
 
   ws.addEventListener('open', () => {
+    reconnectAttempts = 0;
     ws.send(JSON.stringify({ type: 'join', username, roomCode, roundCount }));
   });
 
@@ -381,8 +386,10 @@ function connect(username, roomCode, roundCount) {
   });
 
   ws.addEventListener('close', () => {
-    notify('Disconnected. Reconnecting…', 'error');
-    setTimeout(() => connect(myUsername, myRoomCode, parseInt(document.getElementById('input-rounds').value)), 2000);
+    reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
+    notify(`Disconnected. Reconnecting in ${Math.round(delay / 1000)}s…`, 'error');
+    setTimeout(() => connect(myUsername, myRoomCode, parseInt(document.getElementById('input-rounds').value)), delay);
   });
 
   ws.addEventListener('error', () => {});
@@ -418,6 +425,11 @@ function onRoomState(msg) {
   const { room, players, myBalance: bal } = msg;
   if (bal !== undefined) myBalance = bal;
   myRoomCode = room.code;
+
+  // Update per-player balance map
+  for (const p of players) {
+    if (p.balance !== undefined) playerBalances.set(p.username, p.balance);
+  }
 
   document.getElementById('lobby-room').classList.remove('hidden');
   document.getElementById('room-code-display').textContent = room.code;
@@ -506,7 +518,7 @@ function renderSelectGrid(options) {
       if (hasCommitted) return;
       grid.querySelectorAll('.opt-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
-      myScore = Math.round((idx / (options.length - 1)) * 100) / 100;
+      myScore = Math.round((idx / Math.max(1, options.length - 1)) * 100) / 100;
     });
     grid.appendChild(card);
   });
@@ -709,6 +721,7 @@ function renderResultCards(result) {
 
     const isMe = p.username === myUsername;
     if (isMe) myBalance = p.newBalance ?? myBalance;
+    if (p.newBalance !== undefined) playerBalances.set(p.username, p.newBalance);
 
     card.innerHTML = `
       <div class="rname">${escHtml(p.username)}${isMe ? ' (you)' : ''}${p.isLeaker ? ' 🚨' : ''}</div>
@@ -865,7 +878,7 @@ function renderPlayerList(statuses) {
         <div class="dot ${dotClass}"></div>
         ${escHtml(p.username)}${p.username === myUsername ? ' (you)' : ''}
       </div>
-      <div class="balance-badge">${myBalance} ⬡</div>
+      <div class="balance-badge">${playerBalances.get(p.username) ?? (p.username === myUsername ? myBalance : '?')} ⬡</div>
     `;
     list.appendChild(row);
   }

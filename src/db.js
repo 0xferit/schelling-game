@@ -91,7 +91,9 @@ function updatePlayerStats(username, stats) {
   upsertPlayer(username);
   const player = d.prepare('SELECT * FROM players WHERE username = ?').get(username);
 
-  const newStreak = stats.coherentRounds > 0 ? (player.current_streak + stats.coherentRounds) : 0;
+  // Streak: add coherent rounds if any; reset only if player played rounds but had zero coherent ones
+  const hadIncoherence = stats.roundsPlayed > 0 && stats.coherentRounds === 0;
+  const newStreak = hadIncoherence ? 0 : (player.current_streak + stats.coherentRounds);
   const longestStreak = Math.max(player.longest_streak, newStreak);
 
   d.prepare(`

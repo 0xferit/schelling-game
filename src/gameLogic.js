@@ -2,6 +2,9 @@
 
 const crypto = require('crypto');
 
+const STAKE_CAP = 100;
+const LEAK_DETECTION_THRESHOLD = 0.05;
+
 const EDUCATIONAL_NOTES = [
   "You submitted a hash of your answer, not the answer itself. Nobody could see your vote before the reveal. This is how the real protocol enforces independent judgment: cryptographic commitment prevents herding.",
   "Players within 1.25 standard deviations of the weighted mean are 'coherent' and get rewarded. This does not reward conformity; it rewards convergence on a shared assessment. The band allows reasonable disagreement.",
@@ -55,7 +58,7 @@ function computeRoundResult(players, leakReports, chatMessages, roundIndex) {
 
     // Extract all numbers from the message text
     const nums = extractNumbers(msg.text);
-    const leaked = nums.some(n => Math.abs(n - suspectScore) <= 0.05);
+    const leaked = nums.some(n => Math.abs(n - suspectScore) <= LEAK_DETECTION_THRESHOLD);
     if (leaked) {
       confirmedLeakers.add(report.suspectUsername);
       // Track reporter for bounty (last reporter per suspect wins)
@@ -74,7 +77,7 @@ function computeRoundResult(players, leakReports, chatMessages, roundIndex) {
 
   // Compute stakes
   for (const p of players) {
-    p.stake = Math.min(100, p.balance > 0 ? p.balance : 0);
+    p.stake = Math.min(STAKE_CAP, p.balance > 0 ? p.balance : 0);
   }
 
   // Only revealed players participate in weighting
@@ -118,7 +121,7 @@ function computeRoundResult(players, leakReports, chatMessages, roundIndex) {
   for (const p of nonParticipants) {
     p.coherent = false;
     p.weight = 0;
-    p.stake = Math.min(100, p.balance > 0 ? p.balance : 0);
+    p.stake = Math.min(STAKE_CAP, p.balance > 0 ? p.balance : 0);
   }
 
   // Slash amounts
@@ -132,7 +135,7 @@ function computeRoundResult(players, leakReports, chatMessages, roundIndex) {
     let reward = 0;
 
     const isCoherent = validReveals.find(r => r.username === p.username)?.coherent ?? false;
-    const stake = p.stake ?? Math.min(100, p.balance > 0 ? p.balance : 0);
+    const stake = p.stake ?? Math.min(STAKE_CAP, p.balance > 0 ? p.balance : 0);
 
     if (!isCoherent) {
       slash = slashRate * stake;
@@ -199,7 +202,7 @@ function buildCancelledResult(players, reason, roundIndex, confirmedLeakers, lea
       slash: 0,
       reward: 0,
       isLeaker: confirmedLeakers.has(p.username),
-      stake: Math.min(100, p.balance > 0 ? p.balance : 0),
+      stake: Math.min(STAKE_CAP, p.balance > 0 ? p.balance : 0),
     })),
     educationalNote: note,
     totalSlashPool: 0,
