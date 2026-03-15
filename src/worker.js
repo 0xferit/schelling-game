@@ -151,20 +151,20 @@ export class GameRoom {
     }
 
     // Reconnect: find existing disconnected session for this username
-    let reconnected = false;
+    let activeSession = session;
     for (const [key, s] of this.sessions) {
       if (key !== sessionKey && s.username === username && !s.isConnected) {
         // Transfer ws to existing session, remove new session entry
         s.ws = session.ws;
         s.isConnected = true;
         this.sessions.delete(sessionKey);
-        sessionKey = key;
-        reconnected = true;
+        activeSession = s;
         break;
       }
     }
 
-    if (!reconnected) {
+    if (activeSession === session) {
+      // New player (not reconnecting)
       if (this.phase !== 'lobby') {
         return session.ws.send(JSON.stringify({ type: 'error', message: 'Game already in progress' }));
       }
@@ -186,12 +186,11 @@ export class GameRoom {
     }
 
     // Send room_state to the joining player (with myBalance)
-    const joiningSession = this.sessions.get(sessionKey) || session;
-    joiningSession.ws.send(JSON.stringify({
+    activeSession.ws.send(JSON.stringify({
       type: 'room_state',
       room: this.getRoomInfo(),
       players: this.getPublicPlayers(),
-      myBalance: joiningSession.balance,
+      myBalance: activeSession.balance,
     }));
 
     // Broadcast room_state to all other players
