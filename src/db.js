@@ -19,100 +19,190 @@ function getDb() {
 
 function initSchema() {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS players (
-      username        TEXT PRIMARY KEY,
-      global_score    INTEGER DEFAULT 0,
+    CREATE TABLE IF NOT EXISTS accounts (
+      account_id           TEXT PRIMARY KEY,
+      display_name         TEXT UNIQUE,
+      token_balance        INTEGER DEFAULT 0,
+      leaderboard_eligible INTEGER DEFAULT 0,
+      created_at           TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS player_stats (
+      account_id      TEXT PRIMARY KEY REFERENCES accounts(account_id),
       games_played    INTEGER DEFAULT 0,
       rounds_played   INTEGER DEFAULT 0,
       coherent_rounds INTEGER DEFAULT 0,
-      longest_streak  INTEGER DEFAULT 0,
       current_streak  INTEGER DEFAULT 0,
-      created_at      TEXT DEFAULT (datetime('now'))
+      longest_streak  INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_challenges (
+      challenge_id   TEXT PRIMARY KEY,
+      wallet_address TEXT NOT NULL,
+      message        TEXT NOT NULL,
+      nonce          TEXT NOT NULL,
+      expires_at     TEXT NOT NULL,
+      used           INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS matches (
+      match_id     TEXT PRIMARY KEY,
+      started_at   TEXT DEFAULT (datetime('now')),
+      ended_at     TEXT,
+      round_count  INTEGER DEFAULT 10,
+      player_count INTEGER,
+      status       TEXT DEFAULT 'active'
+    );
+
+    CREATE TABLE IF NOT EXISTS match_players (
+      match_id              TEXT REFERENCES matches(match_id),
+      account_id            TEXT REFERENCES accounts(account_id),
+      display_name_snapshot TEXT,
+      starting_balance      INTEGER,
+      ending_balance        INTEGER,
+      net_delta             INTEGER,
+      result                TEXT DEFAULT 'active',
+      PRIMARY KEY (match_id, account_id)
     );
 
     CREATE TABLE IF NOT EXISTS vote_logs (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id     TEXT,
-      round_number   INTEGER,
-      question_id    INTEGER,
-      username       TEXT,
-      revealed_score REAL,
-      mu             REAL,
-      sigma          REAL,
-      is_coherent    INTEGER,
-      slash_amount   REAL,
-      reward_amount  REAL,
-      is_leaker      INTEGER,
-      player_count   INTEGER,
-      timestamp      TEXT DEFAULT (datetime('now'))
+      id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id                    TEXT,
+      round_number                INTEGER,
+      question_id                 INTEGER,
+      account_id                  TEXT,
+      display_name_snapshot       TEXT,
+      revealed_option_index       INTEGER,
+      revealed_option_label       TEXT,
+      won_round                   INTEGER,
+      earns_coordination_credit   INTEGER,
+      ante_amount                 INTEGER DEFAULT 60,
+      round_payout                INTEGER DEFAULT 0,
+      net_delta                   INTEGER DEFAULT 0,
+      player_count                INTEGER,
+      valid_reveal_count          INTEGER,
+      top_count                   INTEGER,
+      winner_count                INTEGER,
+      winning_option_indexes_json TEXT,
+      voided                      INTEGER DEFAULT 0,
+      void_reason                 TEXT,
+      timestamp                   TEXT DEFAULT (datetime('now'))
     );
   `);
 }
 
 // ---------------------------------------------------------------------------
-// Player queries
+// Auth challenge queries
 // ---------------------------------------------------------------------------
 
-function upsertPlayer(username) {
+function createChallenge({ challengeId, walletAddress, message, nonce, expiresAt }) {
+  getDb().prepare(`
+    INSERT INTO auth_challenges (challenge_id, wallet_address, message, nonce, expires_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(challengeId, walletAddress, message, nonce, expiresAt);
+}
+
+function getChallenge(challengeId) {
+  const row = getDb().prepare(
+    'SELECT * FROM auth_challenges WHERE challenge_id = ?'
+  ).get(challengeId);
+  if (!row) return null;
+  if (row.used) return null;
+  if (new Date(row.expires_at) < new Date()) return null;
+  return row;
+}
+
+function markChallengeUsed(challengeId) {
+  getDb().prepare(
+    'UPDATE auth_challenges SET used = 1 WHERE challenge_id = ?'
+  ).run(challengeId);
+}
+
+// ---------------------------------------------------------------------------
+// Account queries
+// ---------------------------------------------------------------------------
+
+function upsertAccount(accountId) {
   const d = getDb();
   d.prepare(`
-    INSERT INTO players (username) VALUES (?)
-    ON CONFLICT(username) DO NOTHING
-  `).run(username);
-}
-
-function getPlayer(username) {
-  return getDb().prepare('SELECT * FROM players WHERE username = ?').get(username);
-}
-
-function getLeaderboard(limit = 50) {
-  return getDb()
-    .prepare('SELECT * FROM players ORDER BY global_score DESC, coherent_rounds DESC LIMIT ?')
-    .all(limit);
-}
-
-function getPlayerRank(username) {
-  const d = getDb();
-  const player = d.prepare('SELECT * FROM players WHERE username = ?').get(username);
-  if (!player) return null;
-  const rank = d.prepare(
-    'SELECT COUNT(*) as rank FROM players WHERE global_score > ?'
-  ).get(player.global_score).rank + 1;
-  return { ...player, rank };
-}
-
-/**
- * Update player stats after a game ends.
- * @param {string} username
- * @param {object} stats - { roundsPlayed, coherentRounds, scoreChange }
- */
-function updatePlayerStats(username, stats) {
-  const d = getDb();
-  upsertPlayer(username);
-  const player = d.prepare('SELECT * FROM players WHERE username = ?').get(username);
-
-  // Streak: add coherent rounds if any; reset only if player played rounds but had zero coherent ones
-  const hadIncoherence = stats.roundsPlayed > 0 && stats.coherentRounds === 0;
-  const newStreak = hadIncoherence ? 0 : (player.current_streak + stats.coherentRounds);
-  const longestStreak = Math.max(player.longest_streak, newStreak);
-
+    INSERT INTO accounts (account_id) VALUES (?)
+    ON CONFLICT(account_id) DO NOTHING
+  `).run(accountId);
   d.prepare(`
-    UPDATE players SET
-      global_score    = global_score + ?,
-      games_played    = games_played + 1,
-      rounds_played   = rounds_played + ?,
-      coherent_rounds = coherent_rounds + ?,
-      current_streak  = ?,
-      longest_streak  = ?
-    WHERE username = ?
-  `).run(
-    Math.round(stats.scoreChange),
-    stats.roundsPlayed,
-    stats.coherentRounds,
-    newStreak,
-    longestStreak,
-    username,
-  );
+    INSERT INTO player_stats (account_id) VALUES (?)
+    ON CONFLICT(account_id) DO NOTHING
+  `).run(accountId);
+}
+
+function getAccount(accountId) {
+  return getDb().prepare(`
+    SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds,
+           s.current_streak, s.longest_streak
+    FROM accounts a
+    LEFT JOIN player_stats s ON a.account_id = s.account_id
+    WHERE a.account_id = ?
+  `).get(accountId);
+}
+
+function setDisplayName(accountId, displayName) {
+  const d = getDb();
+  const existing = d.prepare(
+    'SELECT account_id FROM accounts WHERE display_name = ? AND account_id != ?'
+  ).get(displayName, accountId);
+  if (existing) {
+    throw new Error(`Display name "${displayName}" is already taken`);
+  }
+  d.prepare(
+    'UPDATE accounts SET display_name = ? WHERE account_id = ?'
+  ).run(displayName, accountId);
+}
+
+function getAccountByDisplayName(displayName) {
+  return getDb().prepare(`
+    SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds,
+           s.current_streak, s.longest_streak
+    FROM accounts a
+    LEFT JOIN player_stats s ON a.account_id = s.account_id
+    WHERE a.display_name = ?
+  `).get(displayName);
+}
+
+function updateBalance(accountId, delta) {
+  getDb().prepare(
+    'UPDATE accounts SET token_balance = token_balance + ? WHERE account_id = ?'
+  ).run(delta, accountId);
+}
+
+// ---------------------------------------------------------------------------
+// Match queries
+// ---------------------------------------------------------------------------
+
+function createMatch({ matchId, playerCount }) {
+  getDb().prepare(`
+    INSERT INTO matches (match_id, player_count) VALUES (?, ?)
+  `).run(matchId, playerCount);
+}
+
+function addMatchPlayer({ matchId, accountId, displayNameSnapshot, startingBalance }) {
+  getDb().prepare(`
+    INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance)
+    VALUES (?, ?, ?, ?)
+  `).run(matchId, accountId, displayNameSnapshot, startingBalance);
+}
+
+function updateMatchPlayer({ matchId, accountId, endingBalance, netDelta, result }) {
+  getDb().prepare(`
+    UPDATE match_players
+    SET ending_balance = ?, net_delta = ?, result = ?
+    WHERE match_id = ? AND account_id = ?
+  `).run(endingBalance, netDelta, result, matchId, accountId);
+}
+
+function endMatch(matchId) {
+  getDb().prepare(`
+    UPDATE matches SET ended_at = datetime('now'), status = 'completed'
+    WHERE match_id = ?
+  `).run(matchId);
 }
 
 // ---------------------------------------------------------------------------
@@ -122,22 +212,31 @@ function updatePlayerStats(username, stats) {
 function insertVoteLog(entry) {
   getDb().prepare(`
     INSERT INTO vote_logs
-      (session_id, round_number, question_id, username, revealed_score,
-       mu, sigma, is_coherent, slash_amount, reward_amount, is_leaker, player_count)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (match_id, round_number, question_id, account_id, display_name_snapshot,
+       revealed_option_index, revealed_option_label, won_round, earns_coordination_credit,
+       ante_amount, round_payout, net_delta, player_count, valid_reveal_count,
+       top_count, winner_count, winning_option_indexes_json, voided, void_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    entry.sessionId,
+    entry.matchId,
     entry.roundNumber,
     entry.questionId,
-    entry.username,
-    entry.revealedScore ?? null,
-    entry.mu ?? null,
-    entry.sigma ?? null,
-    entry.isCoherent ? 1 : 0,
-    entry.slashAmount,
-    entry.rewardAmount,
-    entry.isLeaker ? 1 : 0,
+    entry.accountId,
+    entry.displayNameSnapshot,
+    entry.revealedOptionIndex ?? null,
+    entry.revealedOptionLabel ?? null,
+    entry.wonRound ? 1 : 0,
+    entry.earnsCoordinationCredit ? 1 : 0,
+    entry.anteAmount ?? 60,
+    entry.roundPayout ?? 0,
+    entry.netDelta ?? 0,
     entry.playerCount,
+    entry.validRevealCount ?? null,
+    entry.topCount ?? null,
+    entry.winnerCount ?? null,
+    entry.winningOptionIndexesJson ?? null,
+    entry.voided ? 1 : 0,
+    entry.voidReason ?? null,
   );
 }
 
@@ -145,13 +244,165 @@ function getAllVoteLogs() {
   return getDb().prepare('SELECT * FROM vote_logs ORDER BY id ASC').all();
 }
 
+// ---------------------------------------------------------------------------
+// Player stats
+// ---------------------------------------------------------------------------
+
+function updatePlayerStats(accountId, { roundsPlayed, coherentRounds, isGameEnd, wonRound, earnsCoordinationCredit }) {
+  const d = getDb();
+
+  const stats = d.prepare('SELECT * FROM player_stats WHERE account_id = ?').get(accountId);
+  if (!stats) return;
+
+  let newStreak = stats.current_streak;
+
+  if (earnsCoordinationCredit) {
+    // Coordination credit: increment streak
+    newStreak = stats.current_streak + 1;
+  } else if (wonRound) {
+    // Won round but topCount was 1 (no coordination credit): break streak
+    newStreak = 0;
+  } else {
+    // Lost round: break streak
+    newStreak = 0;
+  }
+
+  const longestStreak = Math.max(stats.longest_streak, newStreak);
+
+  const gamesIncrement = isGameEnd ? 1 : 0;
+
+  d.prepare(`
+    UPDATE player_stats SET
+      games_played    = games_played + ?,
+      rounds_played   = rounds_played + ?,
+      coherent_rounds = coherent_rounds + ?,
+      current_streak  = ?,
+      longest_streak  = ?
+    WHERE account_id = ?
+  `).run(
+    gamesIncrement,
+    roundsPlayed ?? 0,
+    coherentRounds ?? 0,
+    newStreak,
+    longestStreak,
+    accountId,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Leaderboard
+// ---------------------------------------------------------------------------
+
+function getLeaderboard(limit = 50) {
+  return getDb().prepare(`
+    SELECT
+      ROW_NUMBER() OVER (
+        ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC
+      ) AS rank,
+      a.display_name AS displayName,
+      a.token_balance AS tokenBalance,
+      a.leaderboard_eligible AS leaderboardEligible,
+      s.games_played AS gamesPlayed,
+      s.rounds_played AS roundsPlayed,
+      s.coherent_rounds AS coherentRounds,
+      CASE WHEN s.rounds_played > 0
+        THEN ROUND(100.0 * s.coherent_rounds / s.rounds_played, 1)
+        ELSE 0
+      END AS coherentPct,
+      s.current_streak AS currentStreak,
+      s.longest_streak AS longestStreak,
+      CASE WHEN s.games_played > 0
+        THEN ROUND(1.0 * a.token_balance / s.games_played, 1)
+        ELSE 0
+      END AS avgNetTokensPerGame
+    FROM accounts a
+    JOIN player_stats s ON a.account_id = s.account_id
+    WHERE a.leaderboard_eligible = 1
+    ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC
+    LIMIT ?
+  `).all(limit);
+}
+
+function getPlayerRank(accountId) {
+  const d = getDb();
+
+  const row = d.prepare(`
+    SELECT
+      a.account_id,
+      a.display_name AS displayName,
+      a.token_balance AS tokenBalance,
+      a.leaderboard_eligible AS leaderboardEligible,
+      s.games_played AS gamesPlayed,
+      s.rounds_played AS roundsPlayed,
+      s.coherent_rounds AS coherentRounds,
+      CASE WHEN s.rounds_played > 0
+        THEN ROUND(100.0 * s.coherent_rounds / s.rounds_played, 1)
+        ELSE 0
+      END AS coherentPct,
+      s.current_streak AS currentStreak,
+      s.longest_streak AS longestStreak,
+      CASE WHEN s.games_played > 0
+        THEN ROUND(1.0 * a.token_balance / s.games_played, 1)
+        ELSE 0
+      END AS avgNetTokensPerGame
+    FROM accounts a
+    JOIN player_stats s ON a.account_id = s.account_id
+    WHERE a.account_id = ?
+  `).get(accountId);
+
+  if (!row) return null;
+
+  const rank = d.prepare(`
+    SELECT COUNT(*) + 1 AS rank
+    FROM accounts a2
+    JOIN player_stats s2 ON a2.account_id = s2.account_id
+    WHERE a2.leaderboard_eligible = 1
+      AND (
+        a2.token_balance > ?
+        OR (a2.token_balance = ? AND s2.coherent_rounds > ?)
+        OR (a2.token_balance = ? AND s2.coherent_rounds = ? AND a2.display_name < ?)
+      )
+  `).get(
+    row.tokenBalance,
+    row.tokenBalance, row.coherentRounds,
+    row.tokenBalance, row.coherentRounds, row.displayName ?? '',
+  ).rank;
+
+  return { ...row, rank };
+}
+
+// ---------------------------------------------------------------------------
+// Leaderboard eligibility
+// ---------------------------------------------------------------------------
+
+function setLeaderboardEligible(accountId, eligible) {
+  getDb().prepare(
+    'UPDATE accounts SET leaderboard_eligible = ? WHERE account_id = ?'
+  ).run(eligible ? 1 : 0, accountId);
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
 export default {
   getDb,
-  upsertPlayer,
-  getPlayer,
-  getLeaderboard,
-  getPlayerRank,
-  updatePlayerStats,
+  createChallenge,
+  getChallenge,
+  markChallengeUsed,
+  upsertAccount,
+  getAccount,
+  setDisplayName,
+  getAccountByDisplayName,
+  updateBalance,
+  createMatch,
+  addMatchPlayer,
+  updateMatchPlayer,
+  endMatch,
   insertVoteLog,
   getAllVoteLogs,
+  updatePlayerStats,
+  getLeaderboard,
+  getPlayerRank,
+  setLeaderboardEligible,
 };
