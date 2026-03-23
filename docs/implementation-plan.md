@@ -302,6 +302,7 @@ Deliverables:
 
 - implementation plan committed
 - clear decision that Node is the reference path
+- minimal CI that runs `npm test` on pushes and PRs
 - issue breakdown from this document
 
 ### Phase 1: Schema and auth
@@ -327,12 +328,11 @@ Deliverables:
 
 Acceptance gate:
 
-- engine tests pass for:
+- engine tests pass for pure settlement and commit-reveal behavior:
   - plurality winners
   - tied pluralities
   - one-valid-revealer outcomes
   - zero-valid-reveal voids
-  - forfeit accounting
   - streak and coordination-credit behavior
 
 ### Phase 3: Queue and WebSocket flow
@@ -415,8 +415,11 @@ At minimum, add integration scenarios for:
 - queue fill to 3
 - fill to 5 and 7
 - even-size pushback at timer expiry
+- queued and forming-player disconnect semantics
 - anti-repeat fallback behavior
 - reconnect before and after phase closure
+- early match termination conditions
+- forfeit bleed across remaining rounds
 - auto-requeue toggle
 
 ## 8. Recommended First Build Slice
@@ -449,5 +452,6 @@ These do not block starting work, but they should be settled before shipping:
 Turn this document into concrete tracked work:
 
 1. create implementation tickets for phases 1-5
-2. start with schema/auth plus engine rewrite
-3. keep the Worker path frozen until the Node reference implementation passes the new acceptance tests
+2. add minimal CI before replacing the old tests
+3. start with schema/auth plus engine rewrite
+4. keep the Worker path frozen until the Node reference implementation passes the new acceptance tests

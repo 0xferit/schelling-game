@@ -22,7 +22,7 @@ Recommended execution rule:
 
 ### Epic A: Foundation and schema
 
-- `SG-001` through `SG-004`
+- `SG-001` through `SG-004`, plus `SG-023`
 
 ### Epic B: Core game engine
 
@@ -67,6 +67,27 @@ Acceptance:
 
 - planning docs clearly say Node is the reference path
 - no new canonical-product work is started in `src/worker.js`
+
+### SG-023: Add minimal CI to run the test suite
+
+Dependencies:
+
+- `SG-001`
+
+Touches:
+
+- new CI config under `.github/workflows/`
+- [package.json](/Users/ferit/Documents/Projects/0xferit/schelling-game/package.json)
+
+Scope:
+
+- add a basic CI workflow that runs `npm test`
+- make the rewrite observable as old tests are replaced by canonical ones
+
+Acceptance:
+
+- pushes and pull requests run `npm test` automatically
+- CI stays green on the current base branch before engine rewrite work starts
 
 ### SG-002: Replace DB schema with canonical account and match tables
 
@@ -248,13 +269,13 @@ Touches:
 Scope:
 
 - remove prototype mean/sigma tests
-- add tests for:
+- add pure engine tests for:
   - plurality settlement
   - tied pluralities
   - single-valid-revealer outcome
   - zero-valid-reveal void
-  - forfeit bleed
   - coordination-credit stats
+- keep reconnect, forfeit-flow, and early-termination scenarios out of this ticket; cover them in `SG-012` and `SG-021`
 
 Acceptance:
 
@@ -320,8 +341,10 @@ Touches:
 Scope:
 
 - avoid immediate rematches when alternatives exist
+- handle disconnects while queued or forming according to the canonical spec
 - support 15-second reconnect grace without pausing timers
 - keep forfeited players attached for accounting
+- implement early match termination when no non-forfeited players remain able to reveal future rounds
 - support session-level auto-requeue
 
 Acceptance:
@@ -445,6 +468,7 @@ Acceptance:
 Dependencies:
 
 - `SG-002`
+- `SG-003`
 - `SG-008`
 
 Touches:
@@ -556,6 +580,7 @@ Acceptance:
 ### Milestone 1: Account foundation
 
 - `SG-001`
+- `SG-023`
 - `SG-002`
 - `SG-003`
 - `SG-004`
@@ -598,13 +623,17 @@ Acceptance:
 If work starts immediately, start in this order:
 
 1. `SG-002`
-2. `SG-003`
+2. `SG-023`
 3. `SG-005`
-4. `SG-006`
-5. `SG-007`
-6. `SG-009`
+4. `SG-003`
+5. `SG-004`
+6. `SG-006`
+7. `SG-007`
+8. `SG-008`
+9. `SG-009`
 
 Reason:
 
 - schema/auth plus engine rewrite are the critical path
+- CI should be in place before the old tests are replaced
 - the frontend and queue work are cheaper once the canonical payloads are stable
