@@ -466,7 +466,7 @@ async function checkSession() {
 // ═══════════════════════════════════════════════════════════════
 function connectWebSocket() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  S.ws = new WebSocket(`${proto}//${location.host}`);
+  S.ws = new WebSocket(`${proto}//${location.host}/ws`);
   S.ws.onopen = () => {};
   S.ws.onclose = () => {
     notify('Connection lost. Reconnecting...', 'warn');
