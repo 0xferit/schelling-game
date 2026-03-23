@@ -54,7 +54,7 @@ const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
 const TOTAL_ROUNDS = 10;
 const COMMIT_DURATION = 60;
 const REVEAL_DURATION = 15;
-const RESULTS_DURATION = 12;
+const RESULTS_DURATION = 20;
 const FILL_TIMER_MS = 20_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_CHAT_LENGTH = 300;
@@ -536,7 +536,8 @@ export class GameRoom {
       case 'leave_queue': return this._handleLeaveQueue(accountId);
       case 'commit':      return this._handleCommit(accountId, msg);
       case 'reveal':      return this._handleReveal(accountId, msg);
-      case 'chat':        return this._handleChat(accountId, msg);
+      case 'chat':            return this._handleChat(accountId, msg);
+      case 'question_rating': return this._handleQuestionRating(accountId, msg);
       default:
         this._sendTo(accountId, { type: 'error', message: `Unknown message type: ${msg.type}` });
     }
@@ -1114,11 +1115,9 @@ export class GameRoom {
 
   _handleChat(accountId, msg) {
     const matchId = this.playerMatchIndex.get(accountId);
-    if (!matchId) return this._sendTo(accountId, { type: 'error', message: 'Chat only allowed during commit phase' });
+    if (!matchId) return;
     const match = this.activeMatches.get(matchId);
-    if (!match || match.phase !== 'commit') {
-      return this._sendTo(accountId, { type: 'error', message: 'Chat only allowed during commit phase' });
-    }
+    if (!match) return;
     const player = match.players.get(accountId);
     if (!player || player.forfeited) return;
 
@@ -1132,6 +1131,43 @@ export class GameRoom {
       text,
       messageId,
     });
+  }
+
+  async _handleQuestionRating(accountId, msg) {
+    const matchId = this.playerMatchIndex.get(accountId);
+    if (!matchId) return;
+    const match = this.activeMatches.get(matchId);
+    if (!match || match.phase !== 'results') return;
+    const player = match.players.get(accountId);
+    if (!player || player.forfeited) return;
+
+    const rating = msg.rating === 'like' ? 'like' : msg.rating === 'dislike' ? 'dislike' : null;
+    if (!rating) return;
+    const questionId = match.questions[match.currentRound - 1]?.id;
+    if (!questionId) return;
+
+    try {
+      await this.env.DB.prepare(`
+        INSERT INTO question_ratings (question_id, account_id, match_id, round_number, rating)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(question_id, account_id, match_id) DO UPDATE SET rating = excluded.rating
+      `).bind(questionId, accountId, matchId, match.currentRound, rating).run();
+    } catch { return; }
+
+    // Broadcast updated tally to match
+    const rows = await this.env.DB.prepare(`
+      SELECT rating, COUNT(*) as cnt FROM question_ratings
+      WHERE question_id = ? AND match_id = ?
+      GROUP BY rating
+    `).bind(questionId, matchId).all();
+
+    const tally = { likes: 0, dislikes: 0 };
+    for (const r of rows.results) {
+      if (r.rating === 'like') tally.likes = r.cnt;
+      else if (r.rating === 'dislike') tally.dislikes = r.cnt;
+    }
+
+    this._broadcastToMatch(match, { type: 'question_rating_tally', questionId, ...tally });
   }
 
   // -------------------------------------------------------------------------

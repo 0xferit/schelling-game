@@ -202,8 +202,8 @@ nav{display:flex;gap:.5rem}
 
       <!-- Question -->
       <div id="question-card">
-        <div id="phase-label">Round <span id="round-num">1</span> / 10</div>
-        <div id="question-text">Waiting for round...</div>
+        <div id="phase-label">Game <span id="round-num">1</span> / 10</div>
+        <div id="question-text">Waiting for game...</div>
         <div id="select-grid"></div>
         <div id="commit-area" class="hidden">
           <button class="btn-primary" id="commit-btn" disabled>Lock In</button>
@@ -215,10 +215,10 @@ nav{display:flex;gap:.5rem}
         </div>
       </div>
 
-      <!-- Round result -->
+      <!-- Game result -->
       <div id="round-result-banner" class="hidden">
-        <h3>Round <span id="result-round-num">?</span> Result</h3>
-        <div id="void-banner" class="hidden" style="color:var(--orange);margin-bottom:.5rem;font-weight:600">Round voided: all antes refunded</div>
+        <h3>Game <span id="result-round-num">?</span> Result</h3>
+        <div id="void-banner" class="hidden" style="color:var(--orange);margin-bottom:.5rem;font-weight:600">Game voided: all antes refunded</div>
         <table id="result-table">
           <thead><tr>
             <th>Player</th><th>Choice</th><th>Won</th><th>Coord. Credit</th><th>Net</th><th>Balance</th>
@@ -226,6 +226,11 @@ nav{display:flex;gap:.5rem}
           <tbody id="result-tbody"></tbody>
         </table>
         <div id="result-note" style="font-size:.8rem;color:var(--muted);margin-top:.5rem"></div>
+        <div id="rating-row" class="hidden" style="display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)">
+          <span>Rate this question:</span>
+          <button id="rating-like" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128077; <span id="rating-likes">0</span></button>
+          <button id="rating-dislike" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128078; <span id="rating-dislikes">0</span></button>
+        </div>
       </div>
     </div>
 
@@ -238,7 +243,6 @@ nav{display:flex;gap:.5rem}
       <div id="chat-panel">
         <h3>Chat</h3>
         <div id="chat-messages"></div>
-        <div id="chat-disabled-note" class="hidden">Chat available during commit phase only</div>
         <div id="chat-input-row">
           <input id="chat-input" type="text" placeholder="Message..." maxlength="300" autocomplete="off"/>
           <button class="btn-ghost" id="chat-send">Send</button>
@@ -324,6 +328,7 @@ const S = {
   commitStatuses: [],
   revealStatuses: [],
   roundResult: null,
+  myRating: null,
   playerStatuses: {},   // displayName -> 'connected'|'disconnected'|'forfeited'
   // timers
   timerEnd: 0,
@@ -498,6 +503,7 @@ function handleMessage(msg) {
     case 'player_reconnected': onPlayerReconnected(msg); break;
     case 'player_forfeited': onPlayerForfeited(msg); break;
     case 'chat': onChat(msg); break;
+    case 'question_rating_tally': onQuestionRatingTally(msg); break;
     case 'error': notify(msg.message, 'error'); break;
     default: break;
   }
@@ -597,7 +603,7 @@ function onGameStarted(msg) {
   showView('play');
   renderPlayers();
   $('#round-result-banner').classList.add('hidden');
-  $('#question-text').textContent = 'Match started. Waiting for first round...';
+  $('#question-text').textContent = 'Match started. Waiting for first game...';
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
@@ -621,7 +627,7 @@ function onRoundStart(msg) {
   if (S.view !== 'play') showView('play');
 
   // UI
-  $('#phase-label').textContent = `Round ${msg.round} / 10 : Commit Phase`;
+  $('#phase-label').textContent = `Game ${msg.round} / 10 : Commit Phase`;
   $('#phase-timer-label').textContent = 'Commit';
   $('#question-text').textContent = msg.question.text;
   $('#round-result-banner').classList.add('hidden');
@@ -698,7 +704,7 @@ function onCommitStatus(msg) {
 function onPhaseChange(msg) {
   if (msg.phase === 'reveal') {
     S.phase = 'reveal';
-    $('#phase-label').textContent = `Round ${S.round} / 10 : Reveal Phase`;
+    $('#phase-label').textContent = `Game ${S.round} / 10 : Reveal Phase`;
     $('#phase-timer-label').textContent = 'Reveal';
     $('#commit-area').classList.add('hidden');
 
@@ -739,12 +745,12 @@ function onRoundResult(msg) {
   S.roundResult = r;
   S.phase = 'results';
 
-  $('#phase-label').textContent = `Round ${S.round} / 10 : Results`;
+  $('#phase-label').textContent = `Game ${S.round} / 10 : Results`;
   $('#phase-timer-label').textContent = 'Results';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
 
-  startTimer(12);
+  startTimer(20);
 
   // Update local balance
   const me = r.players.find(p => p.displayName === S.displayName);
@@ -768,10 +774,24 @@ function renderRoundResult(r) {
   banner.classList.remove('hidden');
   $('#result-round-num').textContent = r.roundNum;
 
+  // Reset rating row
+  S.myRating = null;
+  $('#rating-likes').textContent = '0';
+  $('#rating-dislikes').textContent = '0';
+  $('#rating-like').classList.remove('btn-primary');
+  $('#rating-dislike').classList.remove('btn-primary');
+  $('#rating-like').disabled = false;
+  $('#rating-dislike').disabled = false;
+  if (!r.voided) {
+    $('#rating-row').classList.remove('hidden');
+  } else {
+    $('#rating-row').classList.add('hidden');
+  }
+
   // Void banner
   if (r.voided) {
     $('#void-banner').classList.remove('hidden');
-    $('#void-banner').textContent = 'Round voided: ' + (r.voidReason || 'all antes refunded');
+    $('#void-banner').textContent = 'Game voided: ' + (r.voidReason || 'all antes refunded');
   } else {
     $('#void-banner').classList.add('hidden');
   }
@@ -910,8 +930,6 @@ function tickTimer() {
 function enableChat(enabled) {
   $('#chat-input').disabled = !enabled;
   $('#chat-send').disabled = !enabled;
-  $('#chat-disabled-note').classList.toggle('hidden', enabled);
-  $('#chat-input-row').classList.toggle('hidden', !enabled);
 }
 
 function clearChat() {
@@ -939,6 +957,24 @@ function onChat(msg) {
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
 }
+
+// ── Question rating ──────────────────────────────────────────────
+function sendRating(rating) {
+  if (S.myRating === rating) return; // already voted this
+  S.myRating = rating;
+  wsSend({ type: 'question_rating', rating });
+  // Optimistic highlight
+  $('#rating-like').classList.toggle('btn-primary', rating === 'like');
+  $('#rating-dislike').classList.toggle('btn-primary', rating === 'dislike');
+}
+
+function onQuestionRatingTally(msg) {
+  $('#rating-likes').textContent = msg.likes ?? 0;
+  $('#rating-dislikes').textContent = msg.dislikes ?? 0;
+}
+
+$('#rating-like').addEventListener('click', () => sendRating('like'));
+$('#rating-dislike').addEventListener('click', () => sendRating('dislike'));
 
 // ═══════════════════════════════════════════════════════════════
 //  GAME OVER / SUMMARY
