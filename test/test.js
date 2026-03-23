@@ -1,333 +1,406 @@
 /**
- * Test suite for Schelling Game logic.
+ * Canonical test suite for Schelling Game plurality engine.
  * Run with: node test/test.js
  */
 
-import crypto from 'node:crypto';
-import { verifyCommit, computeRoundResult, applyBalanceChanges, extractNumbers, computeLeavePenalty } from '../src/gameLogic.js';
+import { createCommitHash, verifyCommit, validateSalt, validateHash, validateOptionIndex } from '../src/domain/commitReveal.js';
+import { settleRound, ROUND_ANTE } from '../src/domain/settlement.js';
+import { getPublicPool, selectQuestionsForMatch, validatePool } from '../src/domain/questions.js';
 
 let passed = 0;
 let failed = 0;
 
 function assert(condition, label) {
-  if (condition) {
-    console.log(`  ✓ ${label}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${label}`);
-    failed++;
-  }
+  if (condition) { console.log(`  + ${label}`); passed++; }
+  else { console.error(`  x ${label}`); failed++; }
 }
 
-function approx(a, b, eps = 0.001) {
-  return Math.abs(a - b) < eps;
+const question = { id: 1, text: 'Test', options: ['A', 'B', 'C', 'D'] };
+
+function makePlayer(id, name, optionIndex, validReveal = true, forfeited = false) {
+  return { accountId: id, displayName: name, optionIndex, validReveal, forfeited, attached: true };
 }
 
 // ---------------------------------------------------------------------------
-// Helper: build a SHA-256 commit the same way the server does
-// ---------------------------------------------------------------------------
-function makeCommit(score, salt) {
-  const preimage = `${score.toFixed(2)}:${salt}`;
-  return crypto.createHash('sha256').update(preimage).digest('hex');
-}
-
-// ---------------------------------------------------------------------------
-// 1. Commit-reveal verification
+// 1. Commit-Reveal Verification
 // ---------------------------------------------------------------------------
 console.log('\n1. Commit-Reveal Verification');
 
 {
-  const score = 0.75;
-  const salt = 'deadbeef1234';
-  const hash = makeCommit(score, salt);
+  const optionIndex = 2;
+  const salt = 'a'.repeat(32);
+  const hash = createCommitHash(optionIndex, salt);
 
-  assert(verifyCommit(score, salt, hash), 'Valid commit verifies correctly');
-  assert(!verifyCommit(0.74, salt, hash), 'Wrong score rejected');
-  assert(!verifyCommit(score, 'wrongsalt', hash), 'Wrong salt rejected');
-  assert(!verifyCommit(score, salt, 'a'.repeat(64)), 'Wrong hash rejected');
+  assert(verifyCommit(optionIndex, salt, hash), 'Valid commit verifies correctly');
+  assert(!verifyCommit(1, salt, hash), 'Wrong optionIndex rejected');
+  assert(!verifyCommit(optionIndex, 'b'.repeat(32), hash), 'Wrong salt rejected');
+  assert(!verifyCommit(optionIndex, salt, 'f'.repeat(64)), 'Wrong hash rejected');
 }
 
 {
-  const score = 0.00;
-  const salt = 'abc';
-  const hash = makeCommit(score, salt);
-  assert(verifyCommit(score, salt, hash), 'Score 0.00 verifies');
+  assert(!validateSalt('abcd'), 'Salt too short (< 32 hex chars) rejected');
+  assert(!validateSalt('z'.repeat(32)), 'Non-hex salt rejected');
+  assert(validateSalt('a'.repeat(32)), 'Valid salt (32 hex chars) accepted');
+  assert(validateSalt('abcdef0123456789'.repeat(3)), 'Valid salt (48 hex chars) accepted');
 }
 
 {
-  const score = 1.00;
-  const salt = 'xyz';
-  const hash = makeCommit(score, salt);
-  assert(verifyCommit(score, salt, hash), 'Score 1.00 verifies');
+  assert(validateHash('a'.repeat(64)), 'Valid hash (64 hex chars) accepted');
+  assert(!validateHash('a'.repeat(63)), 'Hash too short rejected');
+  assert(!validateHash('a'.repeat(65)), 'Hash too long rejected');
+  assert(!validateHash('g'.repeat(64)), 'Non-hex hash rejected');
+  assert(!validateHash(123), 'Non-string hash rejected');
+}
+
+{
+  assert(validateOptionIndex(0, 4), 'Option index 0 valid for 4 options');
+  assert(validateOptionIndex(3, 4), 'Option index 3 valid for 4 options');
+  assert(!validateOptionIndex(4, 4), 'Option index 4 out of range for 4 options');
+  assert(!validateOptionIndex(-1, 4), 'Negative option index rejected');
+  assert(!validateOptionIndex(1.5, 4), 'Non-integer option index rejected');
+  assert(!validateOptionIndex(NaN, 4), 'NaN option index rejected');
 }
 
 // ---------------------------------------------------------------------------
-// 2. extractNumbers
+// 2. Question Pool
 // ---------------------------------------------------------------------------
-console.log('\n2. extractNumbers');
-
-assert(JSON.stringify(extractNumbers('I think 0.75 or maybe 0.8')) === JSON.stringify([0.75, 0.8]),
-  'Extracts decimals from text');
-assert(JSON.stringify(extractNumbers('no numbers here')) === JSON.stringify([]),
-  'Returns empty for no numbers');
-assert(JSON.stringify(extractNumbers('balance is -5 or 10')) === JSON.stringify([-5, 10]),
-  'Handles negative numbers');
-
-// ---------------------------------------------------------------------------
-// 3. Scoring formulas — basic coherent round
-// ---------------------------------------------------------------------------
-console.log('\n3. Basic coherent round (3 players, all reveal)');
+console.log('\n2. Question Pool');
 
 {
-  // Use scores spread enough that sigma > 0.02, yet all within 1.25σ of mean
-  const salt = 'aabbcc';
+  const pool = getPublicPool();
+  assert(pool.length > 0, 'Pool is non-empty');
+  assert(pool.every(q => q.type === 'select'), 'All questions are select type');
+  assert(pool.every(q => Array.isArray(q.options) && q.options.length > 0), 'All questions have non-empty options array');
+  assert(validatePool(), 'validatePool returns true');
+}
+
+{
+  const selected = selectQuestionsForMatch(5);
+  assert(selected.length === 5, 'selectQuestionsForMatch returns correct count');
+
+  const ids = selected.map(q => q.id);
+  const uniqueIds = new Set(ids);
+  assert(uniqueIds.size === 5, 'Selected questions are unique (no duplicates)');
+}
+
+{
+  const pool = getPublicPool();
+  let threw = false;
+  try {
+    selectQuestionsForMatch(pool.length + 1);
+  } catch (e) {
+    threw = e instanceof RangeError;
+  }
+  assert(threw, 'Requesting more than pool size throws RangeError');
+}
+
+// ---------------------------------------------------------------------------
+// 3. Plurality Settlement: Basic Cases
+// ---------------------------------------------------------------------------
+console.log('\n3. Plurality Settlement: Basic Cases');
+
+// 3a. 3 players all pick same option
+{
   const players = [
-    { username: 'alice', score: 0.30, balance: 100, committed: true, revealed: true, hash: makeCommit(0.30, salt) },
-    { username: 'bob',   score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'carol', score: 0.70, balance: 100, committed: true, revealed: true, hash: makeCommit(0.70, salt) },
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 0),
+    makePlayer('a3', 'Carol', 0),
   ];
+  const result = settleRound(players, question);
 
-  const result = computeRoundResult(players, [], [], 0);
-
-  assert(!result.cancelled, 'Round not cancelled');
-  assert(typeof result.mu === 'number', 'mu is a number');
-  assert(approx(result.mu, 0.50, 0.01), `mu ≈ 0.50 (got ${result.mu})`);
-  assert(result.sigma < 0.2, `sigma is moderate (got ${result.sigma})`);
-  assert(result.players.every(p => p.coherent), 'All players coherent');
-  assert(result.players.every(p => p.slash === 0), 'No slashing when all coherent');
-  assert(result.players.every(p => p.reward === 0), 'No rewards when no slashing');
+  assert(!result.voided, '3 same picks: round not voided');
+  assert(result.pot === 180, '3 same picks: pot = 180');
+  assert(result.winnerCount === 3, '3 same picks: all 3 win');
+  assert(result.payoutPerWinner === 60, '3 same picks: payout = 60 each');
+  assert(result.players.every(p => p.netDelta === 0), '3 same picks: net delta = 0 each');
+  assert(result.players.every(p => p.earnsCoordinationCredit), '3 same picks: all earn coordination credit');
 }
 
-// ---------------------------------------------------------------------------
-// 4. Incoherent player gets slashed
-// ---------------------------------------------------------------------------
-console.log('\n4. Incoherent player slashing');
-
+// 3b. 3 players: 2 pick A, 1 picks B
 {
-  const salt = 'ff00ff';
-  // alice, bob, carol cluster near 0.50; dave is a far outlier
   const players = [
-    { username: 'alice', score: 0.30, balance: 100, committed: true, revealed: true, hash: makeCommit(0.30, salt) },
-    { username: 'bob',   score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'carol', score: 0.60, balance: 100, committed: true, revealed: true, hash: makeCommit(0.60, salt) },
-    { username: 'dave',  score: 0.99, balance: 100, committed: true, revealed: true, hash: makeCommit(0.99, salt) },
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 0),
+    makePlayer('a3', 'Carol', 1),
   ];
+  const result = settleRound(players, question);
 
-  const result = computeRoundResult(players, [], [], 1);
+  assert(!result.voided, '2-1 split: round not voided');
+  assert(result.topCount === 2, '2-1 split: topCount = 2');
+  assert(result.winnerCount === 2, '2-1 split: 2 winners');
+  assert(result.payoutPerWinner === 90, '2-1 split: payout = 90 each');
 
-  assert(!result.cancelled, 'Round not cancelled');
-  const dave = result.players.find(p => p.username === 'dave');
-  assert(dave && !dave.coherent, 'Dave is incoherent');
-  assert(dave && dave.slash > 0, `Dave slashed (got ${dave?.slash})`);
-  assert(dave && approx(dave.slash, 0.03 * 100, 0.01), `Dave slashed 3% of stake (got ${dave?.slash})`);
-
-  const coherentPlayers = result.players.filter(p => p.coherent);
-  assert(coherentPlayers.every(p => p.reward > 0), 'Coherent players receive rewards');
-  const totalRewards = coherentPlayers.reduce((s, p) => s + p.reward, 0);
-  assert(approx(totalRewards, dave.slash, 0.01), `Total rewards ≈ total slash (${totalRewards} vs ${dave.slash})`);
+  const carol = result.players.find(p => p.accountId === 'a3');
+  assert(carol && !carol.wonRound, '2-1 split: loser did not win');
+  assert(carol && carol.netDelta === -60, '2-1 split: loser net delta = -60');
+  assert(carol && !carol.earnsCoordinationCredit, '2-1 split: loser no coordination credit');
 }
 
-// ---------------------------------------------------------------------------
-// 5. Flat round cancellation (sigma < 0.02)
-// ---------------------------------------------------------------------------
-console.log('\n5. Flat round cancellation');
-
+// 3c. 5 players: 3-1-1 split
 {
-  const salt = '010203';
   const players = [
-    { username: 'alice', score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'bob',   score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'carol', score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 0),
+    makePlayer('a3', 'Carol', 0),
+    makePlayer('a4', 'Dave', 1),
+    makePlayer('a5', 'Eve', 2),
   ];
+  const result = settleRound(players, question);
 
-  const result = computeRoundResult(players, [], [], 2);
-  assert(result.cancelled, 'Round cancelled when sigma < 0.02');
-  assert(result.cancelReason === 'sigma_too_small', `Cancel reason correct (got ${result.cancelReason})`);
+  assert(result.topCount === 3, '3-1-1 split: topCount = 3');
+  assert(result.winnerCount === 3, '3-1-1 split: 3 winners');
+  assert(result.pot === 300, '3-1-1 split: pot = 300');
+  assert(result.payoutPerWinner === 100, '3-1-1 split: payout = 100 each');
+
+  const losers = result.players.filter(p => !p.wonRound);
+  assert(losers.length === 2, '3-1-1 split: 2 losers');
+  assert(losers.every(p => p.netDelta === -60), '3-1-1 split: losers net delta = -60');
 }
 
-// ---------------------------------------------------------------------------
-// 6. Fewer than 2 reveals — round cancelled
-// ---------------------------------------------------------------------------
-console.log('\n6. Fewer than 2 reveals → cancelled');
-
+// 3d. 7 players: 4-2-1 split
 {
-  const salt = 'aaa';
   const players = [
-    { username: 'alice', score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    // bob and carol did not reveal
-    { username: 'bob',   score: null, balance: 100, committed: false, revealed: false, hash: null },
-    { username: 'carol', score: null, balance: 100, committed: false, revealed: false, hash: null },
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 0),
+    makePlayer('a3', 'Carol', 0),
+    makePlayer('a4', 'Dave', 0),
+    makePlayer('a5', 'Eve', 1),
+    makePlayer('a6', 'Frank', 1),
+    makePlayer('a7', 'Grace', 2),
   ];
+  const result = settleRound(players, question);
 
-  const result = computeRoundResult(players, [], [], 3);
-  assert(result.cancelled, 'Round cancelled with only 1 reveal');
-  assert(result.cancelReason === 'fewer_than_2_reveals', `Cancel reason correct (got ${result.cancelReason})`);
+  assert(result.topCount === 4, '4-2-1 split: topCount = 4');
+  assert(result.winnerCount === 4, '4-2-1 split: 4 winners');
+  assert(result.pot === 420, '4-2-1 split: pot = 420');
+  assert(result.payoutPerWinner === 105, '4-2-1 split: payout = 105 each');
 }
 
 // ---------------------------------------------------------------------------
-// 6b. Two-player game completes round successfully
+// 4. Single Valid Revealer
 // ---------------------------------------------------------------------------
-console.log('\n6b. Two-player game completes round');
-
-{
-  const salt = 'aaa2';
-  const players = [
-    { username: 'alice', score: 0.30, balance: 100, committed: true, revealed: true, hash: makeCommit(0.30, salt) },
-    { username: 'bob',   score: 0.70, balance: 100, committed: true, revealed: true, hash: makeCommit(0.70, salt) },
-  ];
-
-  const result = computeRoundResult(players, [], [], 3);
-  assert(!result.cancelled, 'Round not cancelled with 2 reveals');
-  assert(typeof result.mu === 'number', 'mu is a number');
-  assert(approx(result.mu, 0.50, 0.01), `mu ≈ 0.50 (got ${result.mu})`);
-}
-
-// ---------------------------------------------------------------------------
-// 7. Player with 0 balance has stake = 0 (spectator)
-// ---------------------------------------------------------------------------
-console.log('\n7. Zero-balance spectator');
-
-{
-  const salt = 'bbb';
-  const players = [
-    { username: 'alice',    score: 0.30, balance: 100, committed: true, revealed: true, hash: makeCommit(0.30, salt) },
-    { username: 'bob',      score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'carol',    score: 0.70, balance: 100, committed: true, revealed: true, hash: makeCommit(0.70, salt) },
-    { username: 'spectator', score: 0.99, balance: 0, committed: true, revealed: true, hash: makeCommit(0.99, salt) },
-  ];
-
-  const result = computeRoundResult(players, [], [], 4);
-  assert(!result.cancelled, 'Round not cancelled');
-  const spectator = result.players.find(p => p.username === 'spectator');
-  assert(spectator && spectator.stake === 0, 'Spectator has stake 0');
-  assert(spectator && spectator.slash === 0, 'Spectator not slashed (stake 0)');
-}
-
-// ---------------------------------------------------------------------------
-// 8. Weight cap (10% max weight)
-// ---------------------------------------------------------------------------
-console.log('\n8. Weight cap — rich player capped at 10%');
-
-{
-  const salt = 'ccc';
-  // All players have balance 100 → stake = min(100, 100) = 100
-  // sum stakes = 500; 10% cap = 50 → all weights capped at 50 each
-  const players = [
-    { username: 'rich',    score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'p1',      score: 0.40, balance: 100, committed: true, revealed: true, hash: makeCommit(0.40, salt) },
-    { username: 'p2',      score: 0.60, balance: 100, committed: true, revealed: true, hash: makeCommit(0.60, salt) },
-    { username: 'p3',      score: 0.52, balance: 100, committed: true, revealed: true, hash: makeCommit(0.52, salt) },
-    { username: 'outlier', score: 0.99, balance: 100, committed: true, revealed: true, hash: makeCommit(0.99, salt) },
-  ];
-
-  const result = computeRoundResult(players, [], [], 5);
-  assert(!result.cancelled, 'Round not cancelled');
-  // All with balance 100 → stake = 100; sumStakes = 500; cap = 50; all weights = 50
-  assert(typeof result.mu === 'number', 'mu computed');
-}
-
-// ---------------------------------------------------------------------------
-// 9. Leak detection
-// ---------------------------------------------------------------------------
-console.log('\n9. Leak detection');
-
-{
-  const salt = 'ddd';
-  const leakerScore = 0.75;
-  const msgId = 'msg-1';
-  const players = [
-    { username: 'leaker', score: leakerScore, balance: 100, committed: true, revealed: true, hash: makeCommit(leakerScore, salt) },
-    { username: 'reporter', score: 0.50, balance: 100, committed: true, revealed: true, hash: makeCommit(0.50, salt) },
-    { username: 'carol',    score: 0.52, balance: 100, committed: true, revealed: true, hash: makeCommit(0.52, salt) },
-    { username: 'dave',     score: 0.48, balance: 100, committed: true, revealed: true, hash: makeCommit(0.48, salt) },
-  ];
-  const chatMessages = [{ id: msgId, username: 'leaker', text: 'I am voting 0.75 obviously', timestamp: Date.now() }];
-  const leakReports = [{ messageId: msgId, reporterUsername: 'reporter', suspectUsername: 'leaker' }];
-
-  const result = computeRoundResult(players, leakReports, chatMessages, 6);
-  const leaker = result.players.find(p => p.username === 'leaker');
-  assert(leaker && leaker.isLeaker, 'Leaker identified');
-  assert(leaker && !leaker.coherent, 'Leaker treated as incoherent');
-  assert(leaker && approx(leaker.slash, 0.09 * 100, 0.01), `Leaker slashed 9% (got ${leaker?.slash})`);
-
-  const reporter = result.players.find(p => p.username === 'reporter');
-  assert(reporter && reporter.reward > 0, 'Reporter gets bounty');
-}
-
-// ---------------------------------------------------------------------------
-// 10. applyBalanceChanges
-// ---------------------------------------------------------------------------
-console.log('\n10. applyBalanceChanges');
+console.log('\n4. Single Valid Revealer');
 
 {
   const players = [
-    { username: 'alice', balance: 100 },
-    { username: 'bob', balance: 100 },
+    makePlayer('a1', 'Alice', 0, true),
+    makePlayer('a2', 'Bob', null, false),
+    makePlayer('a3', 'Carol', null, false),
   ];
-  const roundResult = {
-    players: [
-      { username: 'alice', slash: 3, reward: 0 },
-      { username: 'bob', slash: 0, reward: 3 },
-    ],
-  };
-  const changes = applyBalanceChanges(players, roundResult);
-  const alice = changes.find(c => c.username === 'alice');
-  const bob = changes.find(c => c.username === 'bob');
-  assert(alice && alice.newBalance === 97, `Alice balance: 97 (got ${alice?.newBalance})`);
-  assert(bob && bob.newBalance === 103, `Bob balance: 103 (got ${bob?.newBalance})`);
-  assert(alice && alice.delta === -3, `Alice delta: -3 (got ${alice?.delta})`);
+  const result = settleRound(players, question);
+
+  assert(!result.voided, 'Single revealer: round not voided');
+  assert(result.validRevealCount === 1, 'Single revealer: validRevealCount = 1');
+  assert(result.winnerCount === 1, 'Single revealer: 1 winner');
+  assert(result.pot === 180, 'Single revealer: pot = 180');
+  assert(result.payoutPerWinner === 180, 'Single revealer: winner takes whole pot');
+
+  const alice = result.players.find(p => p.accountId === 'a1');
+  assert(alice && alice.netDelta === 120, 'Single revealer: winner net = 180 - 60 = 120');
+  assert(alice && !alice.earnsCoordinationCredit, 'Single revealer: topCount=1 so no coordination credit');
 }
 
 // ---------------------------------------------------------------------------
-// 11. Non-committing player treated as incoherent
+// 5. Zero Valid Reveals = Void
 // ---------------------------------------------------------------------------
-console.log('\n11. Non-committing player is incoherent');
+console.log('\n5. Zero Valid Reveals = Void');
 
 {
-  const salt = 'eee';
   const players = [
-    { username: 'alice', score: 0.30, balance: 100, committed: true,  revealed: true,  hash: makeCommit(0.30, salt) },
-    { username: 'bob',   score: 0.50, balance: 100, committed: true,  revealed: true,  hash: makeCommit(0.50, salt) },
-    { username: 'carol', score: 0.70, balance: 100, committed: true,  revealed: true,  hash: makeCommit(0.70, salt) },
-    { username: 'dave',  score: null, balance: 100, committed: false, revealed: false, hash: null },
+    makePlayer('a1', 'Alice', null, false),
+    makePlayer('a2', 'Bob', null, false),
+    makePlayer('a3', 'Carol', null, false),
   ];
+  const result = settleRound(players, question);
 
-  // Need 2 valid reveals → ok (alice, bob, carol provide 3)
-  const result = computeRoundResult(players, [], [], 7);
-  assert(!result.cancelled, 'Round proceeds with 3 valid reveals');
-  const dave = result.players.find(p => p.username === 'dave');
-  assert(dave && !dave.coherent, 'Non-committing Dave is incoherent');
-  assert(dave && dave.slash > 0, `Dave slashed (got ${dave?.slash})`);
+  assert(result.voided === true, 'Zero reveals: voided = true');
+  assert(result.voidReason === 'zero_valid_reveals', 'Zero reveals: correct void reason');
+  assert(result.players.every(p => p.antePaid === 0), 'Zero reveals: no ante charged');
+  assert(result.players.every(p => p.netDelta === 0), 'Zero reveals: all net delta = 0');
+  assert(result.players.every(p => !p.earnsCoordinationCredit), 'Zero reveals: no coordination credit');
 }
 
 // ---------------------------------------------------------------------------
-// 12. computeLeavePenalty
+// 6. Tied Pluralities
 // ---------------------------------------------------------------------------
-console.log('\n12. computeLeavePenalty');
+console.log('\n6. Tied Pluralities');
 
 {
-  // Normal balance (100) → stake = 100, penalty = 3 × 3% × 100 = 9
-  assert(approx(computeLeavePenalty(100), 9), `Penalty for balance 100 = 9 (got ${computeLeavePenalty(100)})`);
+  // 5 players: 2-2-1 split (options 0 and 1 tied at 2 each)
+  const players = [
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 0),
+    makePlayer('a3', 'Carol', 1),
+    makePlayer('a4', 'Dave', 1),
+    makePlayer('a5', 'Eve', 2),
+  ];
+  const result = settleRound(players, question);
 
-  // Low balance (50) → stake = 50, penalty = 3 × 3% × 50 = 4.5
-  assert(approx(computeLeavePenalty(50), 4.5), `Penalty for balance 50 = 4.5 (got ${computeLeavePenalty(50)})`);
+  assert(result.topCount === 2, '2-2-1 tie: topCount = 2');
+  assert(result.winningOptionIndexes.length === 2, '2-2-1 tie: 2 winning option indexes');
+  assert(result.winnerCount === 4, '2-2-1 tie: 4 winners (2 from each tied option)');
+  assert(result.pot === 300, '2-2-1 tie: pot = 300');
+  assert(result.payoutPerWinner === 75, '2-2-1 tie: payout = floor(300/4) = 75');
 
-  // Zero balance → stake = 0, penalty = 0
-  assert(computeLeavePenalty(0) === 0, `Penalty for balance 0 = 0 (got ${computeLeavePenalty(0)})`);
+  const winners = result.players.filter(p => p.wonRound);
+  assert(winners.length === 4, '2-2-1 tie: 4 players won');
+  assert(winners.every(p => p.earnsCoordinationCredit), '2-2-1 tie: winners earn coordination credit (topCount >= 2)');
 
-  // High balance (500) → stake capped at 100, penalty = 3 × 3% × 100 = 9
-  assert(approx(computeLeavePenalty(500), 9), `Penalty for balance 500 = 9 (got ${computeLeavePenalty(500)})`);
+  const eve = result.players.find(p => p.accountId === 'a5');
+  assert(eve && !eve.wonRound, '2-2-1 tie: minority picker lost');
+  assert(eve && !eve.earnsCoordinationCredit, '2-2-1 tie: loser no coordination credit');
+}
 
-  // Negative balance → stake = 0, penalty = 0
-  assert(computeLeavePenalty(-10) === 0, `Penalty for balance -10 = 0 (got ${computeLeavePenalty(-10)})`);
+// ---------------------------------------------------------------------------
+// 7. All Distinct (topCount=1)
+// ---------------------------------------------------------------------------
+console.log('\n7. All Distinct (topCount=1)');
+
+{
+  const players = [
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 1),
+    makePlayer('a3', 'Carol', 2),
+  ];
+  const result = settleRound(players, question);
+
+  assert(result.topCount === 1, 'All distinct: topCount = 1');
+  assert(result.winnerCount === 3, 'All distinct: all 3 win (tied at 1 each)');
+  assert(result.winningOptionIndexes.length === 3, 'All distinct: 3 winning option indexes');
+  assert(result.players.every(p => p.wonRound), 'All distinct: everyone wins');
+  assert(result.players.every(p => !p.earnsCoordinationCredit), 'All distinct: topCount=1 so no coordination credit');
+}
+
+// ---------------------------------------------------------------------------
+// 8. Pot Math Verification
+// ---------------------------------------------------------------------------
+console.log('\n8. Pot Math Verification');
+
+{
+  // 3 players
+  const p3 = [makePlayer('a1', 'A', 0), makePlayer('a2', 'B', 0), makePlayer('a3', 'C', 0)];
+  const r3 = settleRound(p3, question);
+  assert(r3.pot === 3 * ROUND_ANTE, `3 players: pot = ${3 * ROUND_ANTE}`);
+  assert(r3.pot === 180, '3 players: pot = 180');
+}
+
+{
+  // 5 players
+  const p5 = [
+    makePlayer('a1', 'A', 0), makePlayer('a2', 'B', 0), makePlayer('a3', 'C', 0),
+    makePlayer('a4', 'D', 0), makePlayer('a5', 'E', 0),
+  ];
+  const r5 = settleRound(p5, question);
+  assert(r5.pot === 300, '5 players: pot = 300');
+}
+
+{
+  // 7 players
+  const p7 = [
+    makePlayer('a1', 'A', 0), makePlayer('a2', 'B', 0), makePlayer('a3', 'C', 0),
+    makePlayer('a4', 'D', 0), makePlayer('a5', 'E', 0), makePlayer('a6', 'F', 0),
+    makePlayer('a7', 'G', 0),
+  ];
+  const r7 = settleRound(p7, question);
+  assert(r7.pot === 420, '7 players: pot = 420');
+}
+
+{
+  // Integer division floor check: 7 players, 3 winners => floor(420/3) = 140
+  const players = [
+    makePlayer('a1', 'A', 0), makePlayer('a2', 'B', 0), makePlayer('a3', 'C', 0),
+    makePlayer('a4', 'D', 1), makePlayer('a5', 'E', 1),
+    makePlayer('a6', 'F', 2), makePlayer('a7', 'G', 3),
+  ];
+  const result = settleRound(players, question);
+  assert(result.payoutPerWinner === Math.floor(420 / 3), 'Integer division floor: floor(420/3) = 140');
+}
+
+// ---------------------------------------------------------------------------
+// 9. Forfeited Player Handling
+// ---------------------------------------------------------------------------
+console.log('\n9. Forfeited Player Handling');
+
+{
+  // Forfeited player: attached but validReveal = false
+  const players = [
+    makePlayer('a1', 'Alice', 0, true, false),
+    makePlayer('a2', 'Bob', 0, true, false),
+    { accountId: 'a3', displayName: 'Carol', optionIndex: null, validReveal: false, forfeited: true, attached: true },
+  ];
+  const result = settleRound(players, question);
+
+  assert(!result.voided, 'Forfeited player: round not voided');
+  assert(result.pot === 180, 'Forfeited player: pot includes forfeited player ante');
+  assert(result.validRevealCount === 2, 'Forfeited player: only 2 valid reveals');
+
+  const carol = result.players.find(p => p.accountId === 'a3');
+  assert(carol && !carol.wonRound, 'Forfeited player did not win');
+  assert(carol && carol.netDelta === -60, 'Forfeited player loses ante');
+}
+
+// ---------------------------------------------------------------------------
+// 10. Coordination Credit Rules
+// ---------------------------------------------------------------------------
+console.log('\n10. Coordination Credit Rules');
+
+// topCount >= 2: winners earn coordination credit
+{
+  const players = [
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 0),
+    makePlayer('a3', 'Carol', 1),
+  ];
+  const result = settleRound(players, question);
+  const winners = result.players.filter(p => p.wonRound);
+  const losers = result.players.filter(p => !p.wonRound);
+
+  assert(result.topCount >= 2, 'topCount >= 2 case confirmed');
+  assert(winners.every(p => p.earnsCoordinationCredit), 'topCount >= 2: winners earn coordination credit');
+  assert(losers.every(p => !p.earnsCoordinationCredit), 'Losers never earn coordination credit');
+}
+
+// topCount = 1 with single revealer: no coordination credit
+{
+  const players = [
+    makePlayer('a1', 'Alice', 0, true),
+    makePlayer('a2', 'Bob', null, false),
+    makePlayer('a3', 'Carol', null, false),
+  ];
+  const result = settleRound(players, question);
+
+  assert(result.topCount === 1, 'Single revealer: topCount = 1');
+  const alice = result.players.find(p => p.accountId === 'a1');
+  assert(alice && !alice.earnsCoordinationCredit, 'Single revealer: no coordination credit');
+}
+
+// topCount = 1 with all distinct: no coordination credit
+{
+  const players = [
+    makePlayer('a1', 'Alice', 0),
+    makePlayer('a2', 'Bob', 1),
+    makePlayer('a3', 'Carol', 2),
+  ];
+  const result = settleRound(players, question);
+
+  assert(result.topCount === 1, 'All distinct: topCount = 1');
+  assert(result.players.every(p => !p.earnsCoordinationCredit), 'All distinct: no coordination credit for anyone');
+}
+
+// Voided round: no coordination credit
+{
+  const players = [
+    makePlayer('a1', 'Alice', null, false),
+    makePlayer('a2', 'Bob', null, false),
+  ];
+  const result = settleRound(players, question);
+
+  assert(result.voided, 'Voided round confirmed');
+  assert(result.players.every(p => !p.earnsCoordinationCredit), 'Voided round: no coordination credit for anyone');
 }
 
 // ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
-console.log(`\n${'─'.repeat(40)}`);
-console.log(`Results: ${passed} passed, ${failed} failed`);
-
-if (failed > 0) {
-  process.exit(1);
-}
+console.log(`\nResults: ${passed} passed, ${failed} failed`);
+if (failed > 0) process.exit(1);

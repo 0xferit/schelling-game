@@ -21,6 +21,7 @@
   "homepage": "https://github.com/proveuswrong/schelling-game#readme",
   "dependencies": {
     "better-sqlite3": "^12.8.0",
+    "ethers": "^6.16.0",
     "express": "^5.2.1",
     "uuid": "^13.0.0",
     "ws": "^8.19.0"
