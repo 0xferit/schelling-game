@@ -52,7 +52,7 @@ function parseCookies(cookieHeader) {
 
 const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
 const TOTAL_ROUNDS = 10;
-const COMMIT_DURATION = 30;
+const COMMIT_DURATION = 60;
 const REVEAL_DURATION = 15;
 const RESULTS_DURATION = 12;
 const FILL_TIMER_MS = 20_000;
