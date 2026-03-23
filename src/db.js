@@ -23,7 +23,7 @@ function initSchema() {
       account_id           TEXT PRIMARY KEY,
       display_name         TEXT UNIQUE,
       token_balance        INTEGER DEFAULT 0,
-      leaderboard_eligible INTEGER DEFAULT 0,
+      leaderboard_eligible INTEGER DEFAULT 1,
       created_at           TEXT DEFAULT (datetime('now'))
     );
 

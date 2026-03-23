@@ -173,7 +173,7 @@ export default {
 
       // Upsert account
       await env.DB.prepare(
-        'INSERT INTO accounts (account_id, token_balance, leaderboard_eligible, created_at) VALUES (?, 0, 0, ?) ' +
+        'INSERT INTO accounts (account_id, token_balance, leaderboard_eligible, created_at) VALUES (?, 0, 1, ?) ' +
         'ON CONFLICT(account_id) DO NOTHING'
       ).bind(normalized, new Date().toISOString()).run();
 
