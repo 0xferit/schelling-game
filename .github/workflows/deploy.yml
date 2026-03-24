@@ -1,0 +1,29 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Stamp build info
+        run: |
+          sed -i \
+            -e "s/__BUILD_HASH__/$(git rev-parse --short HEAD)/" \
+            -e "s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/" \
+            public/index.html
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
