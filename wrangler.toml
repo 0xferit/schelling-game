@@ -1,4 +1,5 @@
 name = "schelling-game"
+account_id = "abfb18f38d5263b5da582e40ba6ae552"
 main = "src/worker.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
@@ -10,7 +11,7 @@ class_name = "GameRoom"
 [[d1_databases]]
 binding = "DB"
 database_name = "schelling-game-db"
-database_id = "04dc2aca-e1a2-4221-aa8a-53fc907ef96e"
+database_id = "ccf25d5a-0c4e-4520-9e08-e3f2a02b78d1"
 
 [assets]
 directory = "./public"
