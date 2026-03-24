@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "node-server",
+      "runtimeExecutable": "tsx",
+      "runtimeArgs": ["server.ts"],
+      "port": 3000
+    },
+    {
+      "name": "wrangler-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["wrangler", "dev"],
+      "port": 8787
+    }
+  ]
+}

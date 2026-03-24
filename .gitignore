@@ -3,3 +3,6 @@ node_modules/
 *.db-shm
 *.db-wal
 nohup.out
+.wrangler/
+.playwright-mcp/
+.claude/settings.local.json
