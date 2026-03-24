@@ -1,10 +1,7 @@
 import crypto from 'node:crypto';
+import type { Question } from '../types/domain';
 
-/**
- * Canonical question pool for Schelling Game.
- * Select-only questions that fit the focal-point policy.
- */
-const QUESTION_POOL = [
+const QUESTION_POOL: Question[] = [
   { id: 1,  text: "Pick a number.", type: "select", category: "number", options: ["1","2","3","4","5","6","7","8","9","10"] },
   { id: 2,  text: "Pick a Fibonacci number.", type: "select", category: "number", options: ["1","2","3","5","8","13","21","34","55","89"] },
   { id: 3,  text: "Pick a perfect square.", type: "select", category: "number", options: ["1","4","9","16","25","36","49","64","81","100"] },
@@ -52,21 +49,11 @@ const QUESTION_POOL = [
   { id: 45, text: "Pick the color of the future.", type: "select", category: "aesthetics", options: ["White","Silver","Light blue","Cyan","Teal","Electric blue","Purple","Violet","Neon green","Chrome","Black"] },
 ];
 
-/**
- * Returns a deep copy of the full canonical question pool.
- */
-export function getPublicPool() {
+export function getPublicPool(): Question[] {
   return JSON.parse(JSON.stringify(QUESTION_POOL));
 }
 
-/**
- * Select `count` questions randomly without replacement.
- * Uses crypto.getRandomValues for unbiased shuffling.
- *
- * @param {number} count - number of questions to select (default 10)
- * @returns {Array<object>} selected questions (deep copies)
- */
-export function selectQuestionsForMatch(count = 10) {
+export function selectQuestionsForMatch(count = 10): Question[] {
   const pool = getPublicPool();
   if (count > pool.length) {
     throw new RangeError(
@@ -85,12 +72,7 @@ export function selectQuestionsForMatch(count = 10) {
   return pool.slice(0, count);
 }
 
-/**
- * Validates that every question in the pool is a select type with an options array.
- *
- * @returns {boolean}
- */
-export function validatePool() {
+export function validatePool(): boolean {
   return QUESTION_POOL.every(
     q => q.type === 'select' && Array.isArray(q.options) && q.options.length > 0
   );

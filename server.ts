@@ -1,11 +1,11 @@
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import express from 'express';
-import { WebSocketServer } from 'ws';
-import db from './src/db.js';
-import { createChallenge, verifyChallenge, getSession, isValidAddress } from './src/auth.js';
-import { handleMessage, handleDisconnect, sessionState } from './src/gameManager.js';
+import express, { type Request, type Response, type NextFunction } from 'express';
+import { WebSocketServer, WebSocket } from 'ws';
+import db from './src/db';
+import { createChallenge, verifyChallenge, getSession, isValidAddress, devCreateSession } from './src/auth';
+import { handleMessage, handleDisconnect, getAccountState } from './src/gameManager';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,8 +18,8 @@ app.use(express.json());
 // Cookie helpers
 // ---------------------------------------------------------------------------
 
-function parseCookies(cookieHeader) {
-  const cookies = {};
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {};
   if (!cookieHeader) return cookies;
   for (const pair of cookieHeader.split(';')) {
     const [name, ...rest] = pair.trim().split('=');
@@ -28,7 +28,7 @@ function parseCookies(cookieHeader) {
   return cookies;
 }
 
-function resolveAccountId(req) {
+function resolveAccountId(req: Request): string | null {
   const cookieHeader = req.headers.cookie;
   const cookies = parseCookies(cookieHeader);
   const token = cookies.session;
@@ -42,16 +42,15 @@ function resolveAccountId(req) {
 // Middleware
 // ---------------------------------------------------------------------------
 
-// Attach accountId to every request when a valid session cookie is present.
-app.use((req, _res, next) => {
+app.use((req: Request, _res: Response, next: NextFunction) => {
   req.accountId = resolveAccountId(req);
   next();
 });
 
-// Guard for routes that require authentication.
-function authenticateSession(req, res, next) {
+function authenticateSession(req: Request, res: Response, next: NextFunction): void {
   if (!req.accountId) {
-    return res.status(401).json({ error: 'Authentication required' });
+    res.status(401).json({ error: 'Authentication required' });
+    return;
   }
   next();
 }
@@ -60,24 +59,26 @@ function authenticateSession(req, res, next) {
 // REST API: Auth
 // ---------------------------------------------------------------------------
 
-app.post('/api/auth/challenge', (req, res) => {
+app.post('/api/auth/challenge', (req: Request, res: Response) => {
   try {
     const { walletAddress } = req.body;
     if (!walletAddress || !isValidAddress(walletAddress)) {
-      return res.status(400).json({ error: 'Invalid or missing walletAddress' });
+      res.status(400).json({ error: 'Invalid or missing walletAddress' });
+      return;
     }
     const result = createChallenge(walletAddress);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
-app.post('/api/auth/verify', (req, res) => {
+app.post('/api/auth/verify', (req: Request, res: Response) => {
   try {
     const { challengeId, walletAddress, signature } = req.body;
     if (!challengeId || !walletAddress || !signature) {
-      return res.status(400).json({ error: 'challengeId, walletAddress, and signature are required' });
+      res.status(400).json({ error: 'challengeId, walletAddress, and signature are required' });
+      return;
     }
 
     const { sessionToken, account } = verifyChallenge({ challengeId, walletAddress, signature });
@@ -89,65 +90,84 @@ app.post('/api/auth/verify', (req, res) => {
 
     res.json(account);
   } catch (err) {
-    res.status(401).json({ error: err.message });
+    res.status(401).json({ error: (err as Error).message });
   }
 });
+
+// Dev-only: create session without wallet signing (for local testing)
+if (process.env.NODE_ENV !== 'production') {
+  app.post('/api/auth/dev', (req: Request, res: Response) => {
+    try {
+      const { walletAddress } = req.body;
+      if (!walletAddress) {
+        res.status(400).json({ error: 'walletAddress required' });
+        return;
+      }
+      const { sessionToken, account } = devCreateSession(walletAddress);
+      res.setHeader('Set-Cookie', `session=${sessionToken}; HttpOnly; SameSite=Strict; Path=/`);
+      res.json(account);
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // REST API: Profile
 // ---------------------------------------------------------------------------
 
-app.get('/api/me', authenticateSession, (req, res) => {
+app.get('/api/me', authenticateSession, (req: Request, res: Response) => {
   try {
-    const account = db.getAccount(req.accountId);
-    if (!account) return res.status(404).json({ error: 'Account not found' });
+    const account = db.getAccount(req.accountId!);
+    if (!account) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
 
-    const queueStatus = typeof sessionState?.getQueueStatus === 'function'
-      ? sessionState.getQueueStatus(req.accountId)
-      : null;
+    const accountState = getAccountState(req.accountId!);
 
     res.json({
       accountId: account.account_id,
       displayName: account.display_name,
       tokenBalance: account.token_balance,
       leaderboardEligible: !!account.leaderboard_eligible,
-      autoRequeue: false,
-      queueStatus,
+      autoRequeue: accountState.autoRequeue,
+      queueStatus: accountState.queueStatus,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
-app.patch('/api/me/profile', authenticateSession, (req, res) => {
+app.patch('/api/me/profile', authenticateSession, (req: Request, res: Response) => {
   try {
     const { displayName } = req.body;
     if (!displayName || !/^[A-Za-z0-9_-]{1,20}$/.test(displayName)) {
-      return res.status(400).json({ error: 'displayName must match ^[A-Za-z0-9_-]{1,20}$' });
+      res.status(400).json({ error: 'displayName must match ^[A-Za-z0-9_-]{1,20}$' });
+      return;
     }
 
-    // Prevent name changes while queued or in a match.
-    const queueStatus = typeof sessionState?.getQueueStatus === 'function'
-      ? sessionState.getQueueStatus(req.accountId)
-      : null;
-    if (queueStatus && (queueStatus.state === 'queued' || queueStatus.state === 'in_match')) {
-      return res.status(409).json({ error: 'Cannot change display name while queued or in a match' });
+    const accountState = getAccountState(req.accountId!);
+    if (accountState.queueStatus === 'queued' || accountState.queueStatus === 'in_match') {
+      res.status(409).json({ error: 'Cannot change display name while queued or in a match' });
+      return;
     }
 
-    db.setDisplayName(req.accountId, displayName);
-    const updated = db.getAccount(req.accountId);
+    db.setDisplayName(req.accountId!, displayName);
+    const updated = db.getAccount(req.accountId!);
 
     res.json({
-      accountId: updated.account_id,
-      displayName: updated.display_name,
-      tokenBalance: updated.token_balance,
-      leaderboardEligible: !!updated.leaderboard_eligible,
+      accountId: updated!.account_id,
+      displayName: updated!.display_name,
+      tokenBalance: updated!.token_balance,
+      leaderboardEligible: !!updated!.leaderboard_eligible,
     });
   } catch (err) {
-    if (err.message.includes('already taken')) {
-      return res.status(409).json({ error: err.message });
+    if ((err as Error).message.includes('already taken')) {
+      res.status(409).json({ error: (err as Error).message });
+      return;
     }
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
@@ -155,23 +175,26 @@ app.patch('/api/me/profile', authenticateSession, (req, res) => {
 // REST API: Leaderboard
 // ---------------------------------------------------------------------------
 
-app.get('/api/leaderboard', (req, res) => {
+app.get('/api/leaderboard', (req: Request, res: Response) => {
   try {
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 50, 1), 200);
     const rows = db.getLeaderboard(limit);
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
-app.get('/api/leaderboard/me', authenticateSession, (req, res) => {
+app.get('/api/leaderboard/me', authenticateSession, (req: Request, res: Response) => {
   try {
-    const player = db.getPlayerRank(req.accountId);
-    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const player = db.getPlayerRank(req.accountId!);
+    if (!player) {
+      res.status(404).json({ error: 'Player not found' });
+      return;
+    }
     res.json(player);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
@@ -179,35 +202,18 @@ app.get('/api/leaderboard/me', authenticateSession, (req, res) => {
 // REST API: CSV export
 // ---------------------------------------------------------------------------
 
-app.get('/api/export/votes.csv', (_req, res) => {
+app.get('/api/export/votes.csv', (_req: Request, res: Response) => {
   try {
     const rows = db.getAllVoteLogs();
     const headers = [
-      'id',
-      'match_id',
-      'round_number',
-      'question_id',
-      'account_id',
-      'display_name',
-      'revealed_option_index',
-      'revealed_option_label',
-      'won_round',
-      'earns_coordination_credit',
-      'ante_amount',
-      'round_payout',
-      'net_delta',
-      'player_count',
-      'valid_reveal_count',
-      'top_count',
-      'winner_count',
-      'winning_option_indexes',
-      'voided',
-      'void_reason',
-      'timestamp',
+      'id', 'match_id', 'round_number', 'question_id', 'account_id',
+      'display_name', 'revealed_option_index', 'revealed_option_label',
+      'won_round', 'earns_coordination_credit', 'ante_amount', 'round_payout',
+      'net_delta', 'player_count', 'valid_reveal_count', 'top_count',
+      'winner_count', 'winning_option_indexes', 'voided', 'void_reason', 'timestamp',
     ];
 
-    // Map DB column names to canonical CSV column names.
-    const colMap = {
+    const colMap: Record<string, string> = {
       id: 'id',
       match_id: 'match_id',
       round_number: 'round_number',
@@ -231,16 +237,15 @@ app.get('/api/export/votes.csv', (_req, res) => {
       timestamp: 'timestamp',
     };
 
-    // Build an inverted map: canonical name -> DB column name.
-    const reverseMap = {};
+    const reverseMap: Record<string, string> = {};
     for (const [dbCol, csvCol] of Object.entries(colMap)) {
       reverseMap[csvCol] = dbCol;
     }
 
     const csv = [
       headers.join(','),
-      ...rows.map(r =>
-        headers.map(h => JSON.stringify(r[reverseMap[h]] ?? '')).join(','),
+      ...rows.map((r) =>
+        headers.map(h => JSON.stringify((r as unknown as Record<string, unknown>)[reverseMap[h]] ?? '')).join(','),
       ),
     ].join('\n');
 
@@ -248,7 +253,7 @@ app.get('/api/export/votes.csv', (_req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="votes.csv"');
     res.send(csv);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
@@ -256,16 +261,22 @@ app.get('/api/export/votes.csv', (_req, res) => {
 // REST API: Admin
 // ---------------------------------------------------------------------------
 
-app.post('/api/admin/leaderboard-eligible', (req, res) => {
+app.post('/api/admin/leaderboard-eligible', (req: Request, res: Response) => {
   try {
     const { accountId, eligible } = req.body;
-    if (!accountId) return res.status(400).json({ error: 'accountId required' });
-    if (typeof eligible !== 'boolean') return res.status(400).json({ error: 'eligible must be a boolean' });
+    if (!accountId) {
+      res.status(400).json({ error: 'accountId required' });
+      return;
+    }
+    if (typeof eligible !== 'boolean') {
+      res.status(400).json({ error: 'eligible must be a boolean' });
+      return;
+    }
 
     db.setLeaderboardEligible(accountId, eligible);
     res.json({ accountId, eligible });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
@@ -282,8 +293,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', (ws, req) => {
-  // Authenticate via session cookie from the upgrade request.
+wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
   const cookies = parseCookies(req.headers.cookie);
   const session = getSession(cookies.session);
 
@@ -295,7 +305,7 @@ wss.on('connection', (ws, req) => {
 
   ws._accountId = session.accountId;
 
-  ws.on('message', (data) => {
+  ws.on('message', (data: Buffer) => {
     handleMessage(ws, data.toString());
   });
 
@@ -303,7 +313,7 @@ wss.on('connection', (ws, req) => {
     handleDisconnect(ws);
   });
 
-  ws.on('error', (err) => {
+  ws.on('error', (err: Error) => {
     console.error('WebSocket error:', err.message);
   });
 });

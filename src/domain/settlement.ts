@@ -1,13 +1,8 @@
+import type { PlayerSettlementInput, PlayerResult, RoundResult, Question } from '../types/domain';
+
 const ROUND_ANTE = 60;
 
-/**
- * Settle a round using exact-match plurality.
- *
- * @param {Array<{accountId, displayName, optionIndex: number|null, validReveal: boolean, forfeited: boolean, attached: boolean}>} players
- * @param {object} question - { id, text, options }
- * @returns {object} round result
- */
-export function settleRound(players, question) {
+export function settleRound(players: PlayerSettlementInput[], question: Question): RoundResult {
   const attached = players.filter(p => p.attached);
   const roundPlayerCount = attached.length;
   const pot = roundPlayerCount * ROUND_ANTE;
@@ -18,27 +13,27 @@ export function settleRound(players, question) {
 
   // Zero valid reveals: void
   if (validRevealCount === 0) {
-    return buildVoidResult(players, question, roundPlayerCount, 'zero_valid_reveals');
+    return buildVoidResult(players, roundPlayerCount, 'zero_valid_reveals');
   }
 
   // Count votes per option
-  const optionCounts = new Map();
+  const optionCounts = new Map<number, number>();
   for (const p of validReveals) {
-    optionCounts.set(p.optionIndex, (optionCounts.get(p.optionIndex) || 0) + 1);
+    optionCounts.set(p.optionIndex!, (optionCounts.get(p.optionIndex!) || 0) + 1);
   }
 
   // Find topCount and winning options
   const topCount = Math.max(...optionCounts.values());
-  const winningOptionIndexes = [];
+  const winningOptionIndexes: number[] = [];
   for (const [idx, count] of optionCounts) {
     if (count === topCount) winningOptionIndexes.push(idx);
   }
   winningOptionIndexes.sort((a, b) => a - b);
 
   // Determine winners
-  const winnerSet = new Set();
+  const winnerSet = new Set<string>();
   for (const p of validReveals) {
-    if (winningOptionIndexes.includes(p.optionIndex)) {
+    if (winningOptionIndexes.includes(p.optionIndex!)) {
       winnerSet.add(p.accountId);
     }
   }
@@ -46,7 +41,7 @@ export function settleRound(players, question) {
   const payoutPerWinner = Math.floor(pot / winnerCount);
 
   // Build player results
-  const playerResults = attached.map(p => {
+  const playerResults: PlayerResult[] = attached.map(p => {
     const wonRound = winnerSet.has(p.accountId);
     const earnsCoordinationCredit = wonRound && topCount >= 2;
     const antePaid = ROUND_ANTE;
@@ -80,8 +75,8 @@ export function settleRound(players, question) {
   };
 }
 
-function buildVoidResult(players, question, roundPlayerCount, reason) {
-  const playerResults = players.filter(p => p.attached).map(p => ({
+function buildVoidResult(players: PlayerSettlementInput[], roundPlayerCount: number, reason: string): RoundResult {
+  const playerResults: PlayerResult[] = players.filter(p => p.attached).map(p => ({
     accountId: p.accountId,
     displayName: p.displayName,
     revealedOptionIndex: null,

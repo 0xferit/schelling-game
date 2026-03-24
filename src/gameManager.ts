@@ -1,9 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
-import queue from './matchmaking.js';
-import { verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal.js';
-import { settleRound, ROUND_ANTE } from './domain/settlement.js';
-import { selectQuestionsForMatch } from './domain/questions.js';
-import db from './db.js';
+import type WebSocket from 'ws';
+import queue from './matchmaking';
+import { verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal';
+import { settleRound, ROUND_ANTE } from './domain/settlement';
+import { selectQuestionsForMatch } from './domain/questions';
+import db from './db';
+import type { Question } from './types/domain';
+import type { ClientMessage } from './types/messages';
 
 const COMMIT_DURATION = 30;    // seconds
 const REVEAL_DURATION = 15;    // seconds
@@ -13,53 +16,85 @@ const TOTAL_ROUNDS = 10;
 const MAX_CHAT_LENGTH = 300;
 
 // ---------------------------------------------------------------------------
+// Type definitions for in-memory state
+// ---------------------------------------------------------------------------
+
+interface SessionEntry {
+  ws: WebSocket;
+  autoRequeue: boolean;
+  previousOpponents: Set<string>;
+}
+
+interface PlayerState {
+  accountId: string;
+  displayName: string;
+  ws: WebSocket | null;
+  startingBalance: number;
+  committed: boolean;
+  revealed: boolean;
+  hash: string | null;
+  optionIndex: number | null;
+  salt: string | null;
+  forfeited: boolean;
+  disconnectedAt: number | null;
+  graceTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface MatchState {
+  matchId: string;
+  players: Map<string, PlayerState>;
+  questions: Question[];
+  currentRound: number;
+  totalRounds: number;
+  phase: 'commit' | 'reveal' | 'results';
+  commitTimer: ReturnType<typeof setTimeout> | null;
+  revealTimer: ReturnType<typeof setTimeout> | null;
+  resultsTimer: ReturnType<typeof setTimeout> | null;
+}
+
+// ---------------------------------------------------------------------------
 // In-memory state
 // ---------------------------------------------------------------------------
 
-// Per-session state keyed by accountId.
-// Tracks the WebSocket, autoRequeue toggle, and opponent history.
-const sessionState = new Map(); // accountId -> { ws, autoRequeue, previousOpponents }
-
-// Active matches keyed by matchId.
-const activeMatches = new Map(); // matchId -> MatchState
-
-// Reverse lookup: accountId -> matchId for fast match retrieval.
-const playerMatchIndex = new Map(); // accountId -> matchId
+const sessionState = new Map<string, SessionEntry>();
+const activeMatches = new Map<string, MatchState>();
+const playerMatchIndex = new Map<string, string>();
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function send(ws, obj) {
+function send(ws: WebSocket | null, obj: object): void {
   if (ws?.readyState === 1) ws.send(JSON.stringify(obj));
 }
 
-function broadcastMatch(match, obj, excludeId = null) {
+function broadcastMatch(match: MatchState, obj: object, excludeId: string | null = null): void {
   for (const [id, p] of match.players) {
     if (id !== excludeId && p.ws) send(p.ws, obj);
   }
 }
 
-function broadcastQueueState() {
+function broadcastQueueState(): void {
   for (const ws of queue.getAllQueuedWs()) {
-    const accountId = ws._accountId;
+    const accountId = (ws as WebSocket)._accountId;
+    if (!accountId) continue;
     const session = sessionState.get(accountId);
-    const state = queue.getQueueState(accountId);
+    const state = queue.getQueueState(accountId) as Record<string, unknown>;
     state.autoRequeue = session?.autoRequeue ?? false;
-    send(ws, state);
+    send(ws as WebSocket, state);
   }
 }
 
-function getMatchForAccount(accountId) {
+function getMatchForAccount(accountId: string): MatchState | null {
   const matchId = playerMatchIndex.get(accountId);
   if (!matchId) return null;
   return activeMatches.get(matchId) || null;
 }
 
-function clearTimers(match) {
-  clearTimeout(match.commitTimer);
-  clearTimeout(match.revealTimer);
-  clearTimeout(match.resultsTimer);
+function clearTimers(match: MatchState): void {
+  clearTimeout(match.commitTimer!);
+  clearTimeout(match.revealTimer!);
+  clearTimeout(match.resultsTimer!);
   match.commitTimer = null;
   match.revealTimer = null;
   match.resultsTimer = null;
@@ -69,8 +104,8 @@ function clearTimers(match) {
 // Message dispatch
 // ---------------------------------------------------------------------------
 
-function handleMessage(ws, rawData) {
-  let msg;
+function handleMessage(ws: WebSocket, rawData: string): void {
+  let msg: ClientMessage;
   try {
     msg = JSON.parse(rawData);
   } catch {
@@ -84,7 +119,7 @@ function handleMessage(ws, rawData) {
     case 'reveal':      return handleReveal(ws, msg);
     case 'chat':        return handleChat(ws, msg);
     default:
-      send(ws, { type: 'error', message: `Unknown message type: ${msg.type}` });
+      send(ws, { type: 'error', message: `Unknown message type: ${(msg as { type: string }).type}` });
   }
 }
 
@@ -92,7 +127,7 @@ function handleMessage(ws, rawData) {
 // Queue handlers
 // ---------------------------------------------------------------------------
 
-function handleJoinQueue(ws) {
+function handleJoinQueue(ws: WebSocket): void {
   const accountId = ws._accountId;
   if (!accountId) {
     return send(ws, { type: 'error', message: 'Not authenticated' });
@@ -103,7 +138,6 @@ function handleJoinQueue(ws) {
     return send(ws, { type: 'error', message: 'Display name required before queueing' });
   }
 
-  // Ensure session state exists
   let session = sessionState.get(accountId);
   if (!session) {
     session = { ws, autoRequeue: true, previousOpponents: new Set() };
@@ -121,13 +155,13 @@ function handleJoinQueue(ws) {
   });
 
   if (!result.success) {
-    return send(ws, { type: 'error', message: result.error });
+    return send(ws, { type: 'error', message: result.error! });
   }
 
   broadcastQueueState();
 }
 
-function handleLeaveQueue(ws) {
+function handleLeaveQueue(ws: WebSocket): void {
   const accountId = ws._accountId;
   if (!accountId) return;
 
@@ -145,7 +179,7 @@ function handleLeaveQueue(ws) {
 // Commit handler
 // ---------------------------------------------------------------------------
 
-function handleCommit(ws, msg) {
+function handleCommit(ws: WebSocket, msg: { type: 'commit'; hash: string }): void {
   const accountId = ws._accountId;
   if (!accountId) return send(ws, { type: 'error', message: 'Not authenticated' });
 
@@ -166,7 +200,6 @@ function handleCommit(ws, msg) {
   player.committed = true;
   player.hash = hash;
 
-  // Broadcast commit status using displayName per spec
   broadcastMatch(match, {
     type: 'commit_status',
     committed: Array.from(match.players.values()).map(p => ({
@@ -175,12 +208,11 @@ function handleCommit(ws, msg) {
     })),
   });
 
-  // Auto-advance: check if all non-forfeited, connected players have committed
   const eligible = Array.from(match.players.values()).filter(
     p => !p.forfeited && p.disconnectedAt === null
   );
   if (eligible.length > 0 && eligible.every(p => p.committed)) {
-    clearTimeout(match.commitTimer);
+    clearTimeout(match.commitTimer!);
     match.commitTimer = null;
     startRevealPhase(match);
   }
@@ -190,7 +222,7 @@ function handleCommit(ws, msg) {
 // Reveal handler
 // ---------------------------------------------------------------------------
 
-function handleReveal(ws, msg) {
+function handleReveal(ws: WebSocket, msg: { type: 'reveal'; optionIndex: number; salt: string }): void {
   const accountId = ws._accountId;
   if (!accountId) return send(ws, { type: 'error', message: 'Not authenticated' });
 
@@ -206,19 +238,16 @@ function handleReveal(ws, msg) {
 
   const { optionIndex, salt } = msg;
 
-  // Validate optionIndex
   const question = match.questions[match.currentRound];
   if (!validateOptionIndex(optionIndex, question.options.length)) {
     return send(ws, { type: 'error', message: 'Invalid optionIndex: must be an integer within question options range' });
   }
 
-  // Validate salt
   if (!validateSalt(salt)) {
     return send(ws, { type: 'error', message: 'Invalid salt: must be hex string of at least 32 characters' });
   }
 
-  // Verify commitment hash
-  if (!verifyCommit(optionIndex, salt, player.hash)) {
+  if (!verifyCommit(optionIndex, salt, player.hash!)) {
     return send(ws, { type: 'error', message: 'Hash mismatch: reveal does not match commitment' });
   }
 
@@ -226,7 +255,6 @@ function handleReveal(ws, msg) {
   player.optionIndex = optionIndex;
   player.salt = salt;
 
-  // Broadcast reveal status
   broadcastMatch(match, {
     type: 'reveal_status',
     revealed: Array.from(match.players.values()).map(p => ({
@@ -235,12 +263,11 @@ function handleReveal(ws, msg) {
     })),
   });
 
-  // Auto-advance: check if all committed, non-forfeited players have revealed
   const mustReveal = Array.from(match.players.values()).filter(
     p => p.committed && !p.forfeited
   );
   if (mustReveal.length > 0 && mustReveal.every(p => p.revealed)) {
-    clearTimeout(match.revealTimer);
+    clearTimeout(match.revealTimer!);
     match.revealTimer = null;
     finalizeRound(match);
   }
@@ -250,7 +277,7 @@ function handleReveal(ws, msg) {
 // Chat handler
 // ---------------------------------------------------------------------------
 
-function handleChat(ws, msg) {
+function handleChat(ws: WebSocket, msg: { type: 'chat'; text: string }): void {
   const accountId = ws._accountId;
   if (!accountId) return send(ws, { type: 'error', message: 'Not authenticated' });
 
@@ -280,17 +307,15 @@ function handleChat(ws, msg) {
 // Disconnect and reconnect
 // ---------------------------------------------------------------------------
 
-function handleDisconnect(ws) {
+function handleDisconnect(ws: WebSocket): void {
   const accountId = ws._accountId;
   if (!accountId) return;
 
-  // If in queue, remove immediately
   if (queue.isQueued(accountId)) {
     queue.dequeue(accountId);
     broadcastQueueState();
   }
 
-  // If in active match, start grace timer
   const match = getMatchForAccount(accountId);
   if (match) {
     const player = match.players.get(accountId);
@@ -298,16 +323,13 @@ function handleDisconnect(ws) {
       player.disconnectedAt = Date.now();
       player.ws = null;
 
-      // Notify other players
       broadcastMatch(match, {
         type: 'player_disconnected',
         displayName: player.displayName,
         graceSeconds: RECONNECT_GRACE,
       });
 
-      // Start grace timer
       player.graceTimer = setTimeout(() => {
-        // Still disconnected after grace period: forfeit
         if (player.disconnectedAt !== null) {
           player.forfeited = true;
 
@@ -317,7 +339,6 @@ function handleDisconnect(ws) {
             autoLosesRemainingRounds: true,
           });
 
-          // Check if this forfeit triggers phase advancement
           checkAutoAdvance(match);
         }
       }, RECONNECT_GRACE * 1000);
@@ -325,17 +346,14 @@ function handleDisconnect(ws) {
   }
 }
 
-function handleReconnect(ws, accountId) {
-  // Update session state ws reference
+function handleReconnect(ws: WebSocket, accountId: string): void {
   const session = sessionState.get(accountId);
   if (session) {
     session.ws = ws;
   }
 
-  // Update queue ws reference if still queued
   queue.updatePlayerWs(accountId, ws);
 
-  // If in active match, reattach
   const match = getMatchForAccount(accountId);
   if (match) {
     const player = match.players.get(accountId);
@@ -343,29 +361,24 @@ function handleReconnect(ws, accountId) {
       player.ws = ws;
       player.disconnectedAt = null;
 
-      // Clear grace timer
       if (player.graceTimer) {
         clearTimeout(player.graceTimer);
         player.graceTimer = null;
       }
 
-      // Notify other players
       broadcastMatch(match, {
         type: 'player_reconnected',
         displayName: player.displayName,
       }, accountId);
 
-      // Send current match state to the reconnecting player
       sendMatchStateCatchup(ws, match, accountId);
     }
   }
 }
 
-function sendMatchStateCatchup(ws, match, accountId) {
+function sendMatchStateCatchup(ws: WebSocket, match: MatchState, accountId: string): void {
   const question = match.questions[match.currentRound];
-  const player = match.players.get(accountId);
 
-  // Send game_started so client knows match context
   send(ws, {
     type: 'game_started',
     matchId: match.matchId,
@@ -376,17 +389,15 @@ function sendMatchStateCatchup(ws, match, accountId) {
     })),
   });
 
-  // Send current round info
   send(ws, {
     type: 'round_start',
     round: match.currentRound + 1,
     question,
     commitDuration: COMMIT_DURATION,
     roundAnte: ROUND_ANTE,
-    phase: match.phase,
+    phase: 'commit',
   });
 
-  // Send phase info if in reveal or results
   if (match.phase === 'reveal') {
     send(ws, {
       type: 'phase_change',
@@ -395,7 +406,6 @@ function sendMatchStateCatchup(ws, match, accountId) {
     });
   }
 
-  // Send commit status
   send(ws, {
     type: 'commit_status',
     committed: Array.from(match.players.values()).map(p => ({
@@ -404,7 +414,6 @@ function sendMatchStateCatchup(ws, match, accountId) {
     })),
   });
 
-  // Send reveal status if in reveal phase
   if (match.phase === 'reveal' || match.phase === 'results') {
     send(ws, {
       type: 'reveal_status',
@@ -416,17 +425,13 @@ function sendMatchStateCatchup(ws, match, accountId) {
   }
 }
 
-/**
- * After a forfeit or disconnect, check whether the current phase
- * can auto-advance because all remaining eligible players have acted.
- */
-function checkAutoAdvance(match) {
+function checkAutoAdvance(match: MatchState): void {
   if (match.phase === 'commit') {
     const eligible = Array.from(match.players.values()).filter(
       p => !p.forfeited && p.disconnectedAt === null
     );
     if (eligible.length > 0 && eligible.every(p => p.committed)) {
-      clearTimeout(match.commitTimer);
+      clearTimeout(match.commitTimer!);
       match.commitTimer = null;
       startRevealPhase(match);
     }
@@ -435,7 +440,7 @@ function checkAutoAdvance(match) {
       p => p.committed && !p.forfeited
     );
     if (mustReveal.length > 0 && mustReveal.every(p => p.revealed)) {
-      clearTimeout(match.revealTimer);
+      clearTimeout(match.revealTimer!);
       match.revealTimer = null;
       finalizeRound(match);
     }
@@ -446,17 +451,19 @@ function checkAutoAdvance(match) {
 // Match lifecycle
 // ---------------------------------------------------------------------------
 
-/**
- * Called by the matchmaking queue when a match is ready.
- * players: array of { accountId, displayName, ws, previousOpponents }
- */
-function onMatchReady(players, matchId) {
-  // Load balances and create DB records
+interface QueuePlayer {
+  accountId: string;
+  displayName: string;
+  ws: WebSocket;
+  previousOpponents: Set<string>;
+}
+
+function onMatchReady(players: QueuePlayer[], matchId: string): void {
   db.createMatch({ matchId, playerCount: players.length });
 
   const questions = selectQuestionsForMatch(TOTAL_ROUNDS);
 
-  const playerMap = new Map();
+  const playerMap = new Map<string, PlayerState>();
   for (const p of players) {
     const account = db.getAccount(p.accountId);
     const startingBalance = account?.token_balance ?? 0;
@@ -483,10 +490,8 @@ function onMatchReady(players, matchId) {
       graceTimer: null,
     });
 
-    // Register the reverse lookup
     playerMatchIndex.set(p.accountId, matchId);
 
-    // Update previous opponents for anti-repeat matchmaking
     const session = sessionState.get(p.accountId);
     if (session) {
       session.previousOpponents = new Set(
@@ -495,7 +500,7 @@ function onMatchReady(players, matchId) {
     }
   }
 
-  const match = {
+  const match: MatchState = {
     matchId,
     players: playerMap,
     questions,
@@ -510,7 +515,6 @@ function onMatchReady(players, matchId) {
   activeMatches.set(matchId, match);
   queue.registerActiveMatch(matchId, match);
 
-  // Broadcast game_started
   broadcastMatch(match, {
     type: 'game_started',
     matchId,
@@ -524,12 +528,11 @@ function onMatchReady(players, matchId) {
   startCommitPhase(match);
 }
 
-function startCommitPhase(match) {
+function startCommitPhase(match: MatchState): void {
   match.phase = 'commit';
 
   const question = match.questions[match.currentRound];
 
-  // Reset per-round player state
   for (const p of match.players.values()) {
     p.committed = false;
     p.revealed = false;
@@ -553,7 +556,7 @@ function startCommitPhase(match) {
   }, COMMIT_DURATION * 1000);
 }
 
-function startRevealPhase(match) {
+function startRevealPhase(match: MatchState): void {
   match.phase = 'reveal';
 
   broadcastMatch(match, {
@@ -568,38 +571,35 @@ function startRevealPhase(match) {
   }, REVEAL_DURATION * 1000);
 }
 
-function finalizeRound(match) {
+function finalizeRound(match: MatchState): void {
   clearTimers(match);
   match.phase = 'results';
 
   const question = match.questions[match.currentRound];
 
-  // Build the player input array for settleRound.
-  // "attached" means the player is still part of the match for accounting.
-  // All players remain attached; forfeited players simply have no valid reveal.
   const settleInput = Array.from(match.players.values()).map(p => ({
     accountId: p.accountId,
     displayName: p.displayName,
     optionIndex: p.optionIndex,
     validReveal: p.committed && p.revealed && !p.forfeited,
     forfeited: p.forfeited,
-    attached: true, // all players remain attached for pot calculation
+    attached: true,
   }));
 
   const result = settleRound(settleInput, question);
-  result.roundNum = match.currentRound + 1;
+  const resultWithNum = { ...result, roundNum: match.currentRound + 1 };
 
-  // Apply balance deltas to DB and annotate results with newBalance
-  for (const pr of result.players) {
+  // Apply balance deltas and annotate with newBalance
+  const enrichedPlayers = resultWithNum.players.map(pr => {
     if (pr.netDelta !== 0) {
       db.updateBalance(pr.accountId, pr.netDelta);
     }
     const updatedAccount = db.getAccount(pr.accountId);
-    pr.newBalance = updatedAccount?.token_balance ?? 0;
-  }
+    return { ...pr, newBalance: updatedAccount?.token_balance ?? 0 };
+  });
 
   // Log vote records
-  for (const pr of result.players) {
+  for (const pr of enrichedPlayers) {
     db.insertVoteLog({
       matchId: match.matchId,
       roundNumber: match.currentRound + 1,
@@ -624,7 +624,7 @@ function finalizeRound(match) {
   }
 
   // Update per-round player stats
-  for (const pr of result.players) {
+  for (const pr of enrichedPlayers) {
     if (!result.voided) {
       db.updatePlayerStats(pr.accountId, {
         roundsPlayed: 1,
@@ -636,9 +636,11 @@ function finalizeRound(match) {
     }
   }
 
-  broadcastMatch(match, { type: 'round_result', result });
+  broadcastMatch(match, {
+    type: 'round_result',
+    result: { ...resultWithNum, players: enrichedPlayers },
+  });
 
-  // Advance after results display
   match.resultsTimer = setTimeout(() => {
     match.resultsTimer = null;
     match.currentRound++;
@@ -650,25 +652,23 @@ function finalizeRound(match) {
   }, RESULTS_DURATION * 1000);
 }
 
-function hasNonForfeitedPlayers(match) {
+function hasNonForfeitedPlayers(match: MatchState): boolean {
   for (const p of match.players.values()) {
     if (!p.forfeited) return true;
   }
   return false;
 }
 
-function endMatch(match) {
+function endMatch(match: MatchState): void {
   clearTimers(match);
 
-  // Compute summary
   const summary = {
     players: Array.from(match.players.values()).map(p => {
       const account = db.getAccount(p.accountId);
       const endingBalance = account?.token_balance ?? 0;
       const netDelta = endingBalance - p.startingBalance;
-      const result = p.forfeited ? 'forfeited' : 'completed';
+      const result = p.forfeited ? 'forfeited' as const : 'completed' as const;
 
-      // Update match_players in DB
       db.updateMatchPlayer({
         matchId: match.matchId,
         accountId: p.accountId,
@@ -677,7 +677,6 @@ function endMatch(match) {
         result,
       });
 
-      // Update games_played stat for game end
       db.updatePlayerStats(p.accountId, {
         roundsPlayed: 0,
         coherentRounds: 0,
@@ -700,12 +699,10 @@ function endMatch(match) {
 
   broadcastMatch(match, { type: 'game_over', summary });
 
-  // Cleanup: remove match from indexes
   queue.unregisterActiveMatch(match.matchId);
   for (const [accountId, p] of match.players) {
     playerMatchIndex.delete(accountId);
 
-    // Clear any lingering grace timers
     if (p.graceTimer) {
       clearTimeout(p.graceTimer);
       p.graceTimer = null;
@@ -738,7 +735,7 @@ function endMatch(match) {
 // Account state for /api/me
 // ---------------------------------------------------------------------------
 
-function getAccountState(accountId) {
+function getAccountState(accountId: string): { autoRequeue: boolean; queueStatus: string } {
   const session = sessionState.get(accountId);
   const isQueued = queue.isQueued(accountId);
   const inMatch = playerMatchIndex.has(accountId);
@@ -760,7 +757,7 @@ function getAccountState(accountId) {
 // Wire up the matchmaking callback
 // ---------------------------------------------------------------------------
 
-queue.onMatchReady = (players, matchId) => onMatchReady(players, matchId);
+queue.onMatchReady = (players, matchId) => onMatchReady(players as unknown as QueuePlayer[], matchId);
 
 // ---------------------------------------------------------------------------
 // Exports

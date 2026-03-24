@@ -1,23 +1,19 @@
-/**
- * Canonical test suite for Schelling Game plurality engine.
- * Run with: node test/test.js
- */
-
-import { createCommitHash, verifyCommit, validateSalt, validateHash, validateOptionIndex } from '../src/domain/commitReveal.js';
-import { settleRound, ROUND_ANTE } from '../src/domain/settlement.js';
-import { getPublicPool, selectQuestionsForMatch, validatePool } from '../src/domain/questions.js';
+import { createCommitHash, verifyCommit, validateSalt, validateHash, validateOptionIndex } from '../src/domain/commitReveal';
+import { settleRound, ROUND_ANTE } from '../src/domain/settlement';
+import { getPublicPool, selectQuestionsForMatch, validatePool } from '../src/domain/questions';
+import type { PlayerSettlementInput, Question } from '../src/types/domain';
 
 let passed = 0;
 let failed = 0;
 
-function assert(condition, label) {
+function assert(condition: boolean, label: string): void {
   if (condition) { console.log(`  + ${label}`); passed++; }
   else { console.error(`  x ${label}`); failed++; }
 }
 
-const question = { id: 1, text: 'Test', options: ['A', 'B', 'C', 'D'] };
+const question: Question = { id: 1, text: 'Test', type: 'select', category: 'number', options: ['A', 'B', 'C', 'D'] };
 
-function makePlayer(id, name, optionIndex, validReveal = true, forfeited = false) {
+function makePlayer(id: string, name: string, optionIndex: number | null, validReveal = true, forfeited = false): PlayerSettlementInput {
   return { accountId: id, displayName: name, optionIndex, validReveal, forfeited, attached: true };
 }
 
@@ -131,9 +127,9 @@ console.log('\n3. Plurality Settlement: Basic Cases');
   assert(result.payoutPerWinner === 90, '2-1 split: payout = 90 each');
 
   const carol = result.players.find(p => p.accountId === 'a3');
-  assert(carol && !carol.wonRound, '2-1 split: loser did not win');
-  assert(carol && carol.netDelta === -60, '2-1 split: loser net delta = -60');
-  assert(carol && !carol.earnsCoordinationCredit, '2-1 split: loser no coordination credit');
+  assert(carol !== undefined && !carol.wonRound, '2-1 split: loser did not win');
+  assert(carol !== undefined && carol.netDelta === -60, '2-1 split: loser net delta = -60');
+  assert(carol !== undefined && !carol.earnsCoordinationCredit, '2-1 split: loser no coordination credit');
 }
 
 // 3c. 5 players: 3-1-1 split
@@ -196,8 +192,8 @@ console.log('\n4. Single Valid Revealer');
   assert(result.payoutPerWinner === 180, 'Single revealer: winner takes whole pot');
 
   const alice = result.players.find(p => p.accountId === 'a1');
-  assert(alice && alice.netDelta === 120, 'Single revealer: winner net = 180 - 60 = 120');
-  assert(alice && !alice.earnsCoordinationCredit, 'Single revealer: topCount=1 so no coordination credit');
+  assert(alice !== undefined && alice.netDelta === 120, 'Single revealer: winner net = 180 - 60 = 120');
+  assert(alice !== undefined && !alice.earnsCoordinationCredit, 'Single revealer: topCount=1 so no coordination credit');
 }
 
 // ---------------------------------------------------------------------------
@@ -247,8 +243,8 @@ console.log('\n6. Tied Pluralities');
   assert(winners.every(p => p.earnsCoordinationCredit), '2-2-1 tie: winners earn coordination credit (topCount >= 2)');
 
   const eve = result.players.find(p => p.accountId === 'a5');
-  assert(eve && !eve.wonRound, '2-2-1 tie: minority picker lost');
-  assert(eve && !eve.earnsCoordinationCredit, '2-2-1 tie: loser no coordination credit');
+  assert(eve !== undefined && !eve.wonRound, '2-2-1 tie: minority picker lost');
+  assert(eve !== undefined && !eve.earnsCoordinationCredit, '2-2-1 tie: loser no coordination credit');
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +319,7 @@ console.log('\n9. Forfeited Player Handling');
 
 {
   // Forfeited player: attached but validReveal = false
-  const players = [
+  const players: PlayerSettlementInput[] = [
     makePlayer('a1', 'Alice', 0, true, false),
     makePlayer('a2', 'Bob', 0, true, false),
     { accountId: 'a3', displayName: 'Carol', optionIndex: null, validReveal: false, forfeited: true, attached: true },
@@ -335,8 +331,8 @@ console.log('\n9. Forfeited Player Handling');
   assert(result.validRevealCount === 2, 'Forfeited player: only 2 valid reveals');
 
   const carol = result.players.find(p => p.accountId === 'a3');
-  assert(carol && !carol.wonRound, 'Forfeited player did not win');
-  assert(carol && carol.netDelta === -60, 'Forfeited player loses ante');
+  assert(carol !== undefined && !carol.wonRound, 'Forfeited player did not win');
+  assert(carol !== undefined && carol.netDelta === -60, 'Forfeited player loses ante');
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +367,7 @@ console.log('\n10. Coordination Credit Rules');
 
   assert(result.topCount === 1, 'Single revealer: topCount = 1');
   const alice = result.players.find(p => p.accountId === 'a1');
-  assert(alice && !alice.earnsCoordinationCredit, 'Single revealer: no coordination credit');
+  assert(alice !== undefined && !alice.earnsCoordinationCredit, 'Single revealer: no coordination credit');
 }
 
 // topCount = 1 with all distinct: no coordination credit

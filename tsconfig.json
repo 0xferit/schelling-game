@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["server.ts", "src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["src/worker.ts"]
+}

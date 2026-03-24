@@ -1,7 +1,55 @@
 import { ethers } from 'ethers';
-import { verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal.js';
-import { settleRound, ROUND_ANTE } from './domain/settlement.js';
-import { selectQuestionsForMatch } from './domain/questions.js';
+import { verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal';
+import { settleRound, ROUND_ANTE } from './domain/settlement';
+import { selectQuestionsForMatch } from './domain/questions';
+import type { Env } from './types/worker-env';
+import type { Question, PlayerSettlementInput, PlayerResultWithBalance, RoundResult } from './types/domain';
+import type { ServerMessage } from './types/messages';
+
+// ---------------------------------------------------------------------------
+// Local interfaces for worker-internal state
+// ---------------------------------------------------------------------------
+
+interface ConnectionState {
+  ws: WebSocket;
+  displayName: string;
+  autoRequeue: boolean;
+  previousOpponents: Set<string>;
+}
+
+interface WorkerPlayerState {
+  accountId: string;
+  displayName: string;
+  ws: WebSocket;
+  startingBalance: number;
+  currentBalance: number;
+  committed: boolean;
+  revealed: boolean;
+  hash: string | null;
+  optionIndex: number | null;
+  salt: string | null;
+  forfeited: boolean;
+  disconnectedAt: number | null;
+  graceTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface WorkerMatchState {
+  matchId: string;
+  players: Map<string, WorkerPlayerState>;
+  questions: Question[];
+  currentRound: number;
+  totalRounds: number;
+  phase: string;
+  commitTimer: ReturnType<typeof setTimeout> | null;
+  revealTimer: ReturnType<typeof setTimeout> | null;
+  resultsTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface FormingMatchState {
+  players: string[];
+  timer: ReturnType<typeof setTimeout> | null;
+  fillDeadlineMs: number | null;
+}
 
 // ---------------------------------------------------------------------------
 // Session token helpers (HMAC-signed, stateless)
@@ -9,7 +57,7 @@ import { selectQuestionsForMatch } from './domain/questions.js';
 
 const SESSION_SECRET = 'schelling-game-session-v1'; // in production, use env.SESSION_SECRET
 
-async function createSessionToken(accountId) {
+async function createSessionToken(accountId: string): Promise<string> {
   const payload = `${accountId}:${Date.now()}`;
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(SESSION_SECRET),
@@ -20,24 +68,24 @@ async function createSessionToken(accountId) {
   return `${payload}:${sig}`;
 }
 
-async function verifySessionToken(token) {
+async function verifySessionToken(token: string | undefined): Promise<string | null> {
   if (!token) return null;
   const parts = token.split(':');
   if (parts.length < 3) return null;
-  const sig = parts.pop();
+  const sig = parts.pop()!;
   const payload = parts.join(':');
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(SESSION_SECRET),
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'],
   );
-  const sigBuf = new Uint8Array(sig.match(/.{2}/g).map(h => parseInt(h, 16)));
+  const sigBuf = new Uint8Array(sig.match(/.{2}/g)!.map(h => parseInt(h, 16)));
   const valid = await crypto.subtle.verify('HMAC', key, sigBuf, new TextEncoder().encode(payload));
   if (!valid) return null;
   return parts[0]; // accountId is always the first segment
 }
 
-function parseCookies(cookieHeader) {
-  const cookies = {};
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  const cookies: Record<string, string> = {};
   if (!cookieHeader) return cookies;
   for (const pair of cookieHeader.split(';')) {
     const [name, ...rest] = pair.trim().split('=');
@@ -65,19 +113,19 @@ const MIN_MATCH_SIZE = 3;
 // Helper: authenticated account ID from request
 // ---------------------------------------------------------------------------
 
-async function getAuthenticatedAccountId(request) {
+async function getAuthenticatedAccountId(request: Request): Promise<string | null> {
   const cookies = parseCookies(request.headers.get('Cookie'));
   return verifySessionToken(cookies.session);
 }
 
-function jsonResponse(data, status = 200, headers = {}) {
+function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return Response.json(data, {
     status,
     headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
-function errorResponse(message, status = 400) {
+function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
 }
 
@@ -86,7 +134,7 @@ function errorResponse(message, status = 400) {
 // ---------------------------------------------------------------------------
 
 export default {
-  async fetch(request, env) {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const method = request.method;
 
@@ -101,7 +149,7 @@ export default {
         's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
         'WHERE a.account_id = ?'
-      ).bind(accountId).first();
+      ).bind(accountId).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; created_at: string; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
 
       if (!account || !account.display_name) {
         return new Response('Profile incomplete', { status: 403 });
@@ -118,7 +166,7 @@ export default {
 
     // ---- POST /api/auth/challenge ----
     if (url.pathname === '/api/auth/challenge' && method === 'POST') {
-      let body;
+      let body: { walletAddress?: string };
       try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
       const walletAddress = body.walletAddress;
       if (!walletAddress || typeof walletAddress !== 'string') {
@@ -139,7 +187,7 @@ export default {
 
     // ---- POST /api/auth/verify ----
     if (url.pathname === '/api/auth/verify' && method === 'POST') {
-      let body;
+      let body: { challengeId?: string; walletAddress?: string; signature?: string };
       try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
       const { challengeId, walletAddress, signature } = body;
       if (!challengeId || !walletAddress || !signature) {
@@ -149,7 +197,7 @@ export default {
 
       const challenge = await env.DB.prepare(
         'SELECT * FROM auth_challenges WHERE challenge_id = ? AND wallet_address = ?'
-      ).bind(challengeId, normalized).first();
+      ).bind(challengeId, normalized).first() as { challenge_id: string; wallet_address: string; nonce: string; message: string; expires_at: string } | null;
 
       if (!challenge) return errorResponse('Invalid or expired challenge', 401);
       if (new Date(challenge.expires_at) < new Date()) {
@@ -158,7 +206,7 @@ export default {
       }
 
       // Verify signature
-      let recoveredAddress;
+      let recoveredAddress: string;
       try {
         recoveredAddress = ethers.verifyMessage(challenge.message, signature).toLowerCase();
       } catch {
@@ -186,17 +234,17 @@ export default {
       const account = await env.DB.prepare(
         'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?'
-      ).bind(normalized).first();
+      ).bind(normalized).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
 
       const token = await createSessionToken(normalized);
-      const requiresDisplayName = !account.display_name;
+      const requiresDisplayName = !account!.display_name;
 
       return jsonResponse({
         accountId: normalized,
-        displayName: account.display_name || null,
+        displayName: account!.display_name || null,
         requiresDisplayName,
-        tokenBalance: account.token_balance ?? 0,
-        leaderboardEligible: !!account.leaderboard_eligible,
+        tokenBalance: account!.token_balance ?? 0,
+        leaderboardEligible: !!account!.leaderboard_eligible,
       }, 200, {
         'Set-Cookie': `session=${token}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=86400`,
       });
@@ -210,7 +258,7 @@ export default {
       const account = await env.DB.prepare(
         'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?'
-      ).bind(accountId).first();
+      ).bind(accountId).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
       if (!account) return errorResponse('Account not found', 404);
 
       // Query queue status from the DO
@@ -222,7 +270,7 @@ export default {
         statusUrl.pathname = '/status';
         statusUrl.searchParams.set('accountId', accountId);
         const statusResp = await stub.fetch(new Request(statusUrl.toString()));
-        const statusData = await statusResp.json();
+        const statusData = await statusResp.json() as { status?: string };
         queueStatus = statusData.status || 'idle';
       } catch {
         // DO might not be reachable; default to idle
@@ -243,7 +291,7 @@ export default {
       const accountId = await getAuthenticatedAccountId(request);
       if (!accountId) return errorResponse('Unauthorized', 401);
 
-      let body;
+      let body: { displayName?: string };
       try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
       const displayName = body.displayName;
       if (!displayName || !DISPLAY_NAME_REGEX.test(displayName)) {
@@ -258,7 +306,7 @@ export default {
         statusUrl.pathname = '/status';
         statusUrl.searchParams.set('accountId', accountId);
         const statusResp = await stub.fetch(new Request(statusUrl.toString()));
-        const statusData = await statusResp.json();
+        const statusData = await statusResp.json() as { status?: string };
         if (statusData.status !== 'idle') {
           return errorResponse('Cannot change display name while queued, forming, or in a match', 409);
         }
@@ -269,7 +317,7 @@ export default {
       // Check uniqueness
       const existing = await env.DB.prepare(
         'SELECT account_id FROM accounts WHERE display_name = ? COLLATE NOCASE AND account_id != ?'
-      ).bind(displayName, accountId).first();
+      ).bind(displayName, accountId).first() as { account_id: string } | null;
       if (existing) return errorResponse('Display name already claimed', 409);
 
       await env.DB.prepare(
@@ -290,22 +338,22 @@ export default {
         'LIMIT 100'
       ).all();
 
-      const leaderboard = (results || []).map((r, i) => {
-        const gp = r.games_played || 0;
-        const rp = r.rounds_played || 0;
-        const cr = r.coherent_rounds || 0;
+      const leaderboard = (results || []).map((r: Record<string, unknown>, i: number) => {
+        const gp = (r.games_played as number) || 0;
+        const rp = (r.rounds_played as number) || 0;
+        const cr = (r.coherent_rounds as number) || 0;
         return {
           rank: i + 1,
           displayName: r.display_name,
-          tokenBalance: r.token_balance ?? 0,
+          tokenBalance: (r.token_balance as number) ?? 0,
           leaderboardEligible: true,
           gamesPlayed: gp,
-          avgNetTokensPerGame: gp > 0 ? Math.round(((r.token_balance ?? 0) / gp) * 100) / 100 : 0,
+          avgNetTokensPerGame: gp > 0 ? Math.round((((r.token_balance as number) ?? 0) / gp) * 100) / 100 : 0,
           roundsPlayed: rp,
           coherentRounds: cr,
           coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
-          currentStreak: r.current_streak || 0,
-          longestStreak: r.longest_streak || 0,
+          currentStreak: (r.current_streak as number) || 0,
+          longestStreak: (r.longest_streak as number) || 0,
         };
       });
 
@@ -320,12 +368,12 @@ export default {
       const account = await env.DB.prepare(
         'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?'
-      ).bind(accountId).first();
+      ).bind(accountId).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
       if (!account) return errorResponse('Account not found', 404);
 
       const rankRow = await env.DB.prepare(
         'SELECT COUNT(*) as rank FROM accounts WHERE leaderboard_eligible = 1 AND token_balance > ? AND display_name IS NOT NULL'
-      ).bind(account.token_balance ?? 0).first();
+      ).bind(account.token_balance ?? 0).first() as { rank: number } | null;
 
       const gp = account.games_played || 0;
       const rp = account.rounds_played || 0;
@@ -356,7 +404,7 @@ export default {
         'top_count', 'winner_count', 'winning_option_indexes_json', 'voided', 'void_reason', 'timestamp',
       ];
       const header = columns.join(',');
-      const rows = (results || []).map(r =>
+      const rows = (results || []).map((r: Record<string, unknown>) =>
         columns.map(c => {
           const v = r[c];
           if (v === null || v === undefined) return '';
@@ -375,7 +423,7 @@ export default {
     // ---- POST /api/admin/leaderboard-eligible ----
     if (url.pathname === '/api/admin/leaderboard-eligible' && method === 'POST') {
       // Minimal admin endpoint; production should add proper admin auth.
-      let body;
+      let body: { accountId?: string; eligible?: boolean };
       try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
       const { accountId, eligible } = body;
       if (!accountId || typeof eligible !== 'boolean') {
@@ -398,28 +446,36 @@ export default {
 // ===========================================================================
 
 export class GameRoom {
-  constructor(state, env) {
+  state: DurableObjectState;
+  env: Env;
+
+  // accountId -> ConnectionState
+  connections: Map<string, ConnectionState>;
+
+  // FIFO waiting queue: array of accountId
+  waitingQueue: string[];
+
+  // Forming match state (one at a time)
+  formingMatch: FormingMatchState | null;
+
+  // Active matches: matchId -> WorkerMatchState
+  activeMatches: Map<string, WorkerMatchState>;
+
+  // Quick lookup: accountId -> matchId
+  playerMatchIndex: Map<string, string>;
+
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
 
-    // accountId -> { ws, displayName, autoRequeue, previousOpponents: Set }
     this.connections = new Map();
-
-    // FIFO waiting queue: array of accountId
     this.waitingQueue = [];
-
-    // Forming match state (one at a time)
-    // { players: [accountId], timer: timeoutId, fillDeadlineMs: number } | null
     this.formingMatch = null;
-
-    // Active matches: matchId -> MatchState
     this.activeMatches = new Map();
-
-    // Quick lookup: accountId -> matchId
     this.playerMatchIndex = new Map();
   }
 
-  async fetch(request) {
+  async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     // Non-WebSocket: return queue/match status for a player
@@ -451,7 +507,7 @@ export class GameRoom {
   // WebSocket lifecycle
   // -------------------------------------------------------------------------
 
-  _handleWebSocket(ws, accountId, displayName, tokenBalance) {
+  _handleWebSocket(ws: WebSocket, accountId: string, displayName: string, tokenBalance: number): void {
     ws.accept();
 
     // Check for reconnect to an active match
@@ -507,13 +563,13 @@ export class GameRoom {
     this._sendQueueState(accountId);
   }
 
-  _setupWsListeners(ws, accountId) {
-    ws.addEventListener('message', async (evt) => {
+  _setupWsListeners(ws: WebSocket, accountId: string): void {
+    ws.addEventListener('message', async (evt: MessageEvent) => {
       try {
-        const msg = JSON.parse(evt.data);
+        const msg = JSON.parse(evt.data as string) as { type: string; [key: string]: unknown };
         await this._handleMessage(accountId, msg);
       } catch (e) {
-        this._sendTo(accountId, { type: 'error', message: e.message || 'Internal error' });
+        this._sendTo(accountId, { type: 'error', message: (e as Error).message || 'Internal error' });
       }
     });
 
@@ -530,7 +586,7 @@ export class GameRoom {
   // Message router
   // -------------------------------------------------------------------------
 
-  async _handleMessage(accountId, msg) {
+  async _handleMessage(accountId: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
     switch (msg.type) {
       case 'join_queue':  return this._handleJoinQueue(accountId);
       case 'leave_queue': return this._handleLeaveQueue(accountId);
@@ -547,7 +603,7 @@ export class GameRoom {
   // Queue management
   // -------------------------------------------------------------------------
 
-  _handleJoinQueue(accountId) {
+  _handleJoinQueue(accountId: string): void {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
@@ -570,7 +626,7 @@ export class GameRoom {
     this._broadcastQueueState();
   }
 
-  _handleLeaveQueue(accountId) {
+  _handleLeaveQueue(accountId: string): void {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
@@ -579,7 +635,7 @@ export class GameRoom {
     this._broadcastQueueState();
   }
 
-  _removeFromQueue(accountId) {
+  _removeFromQueue(accountId: string): void {
     // Remove from waiting queue
     const idx = this.waitingQueue.indexOf(accountId);
     if (idx !== -1) this.waitingQueue.splice(idx, 1);
@@ -597,7 +653,7 @@ export class GameRoom {
     }
   }
 
-  _cancelFormingMatch() {
+  _cancelFormingMatch(): void {
     if (!this.formingMatch) return;
     if (this.formingMatch.timer) clearTimeout(this.formingMatch.timer);
 
@@ -607,11 +663,11 @@ export class GameRoom {
     this.formingMatch = null;
   }
 
-  _tryFormMatch() {
+  _tryFormMatch(): void {
     // If there is already a forming match, try to add from queue
     if (this.formingMatch) {
       while (this.waitingQueue.length > 0 && this.formingMatch.players.length < MAX_MATCH_SIZE) {
-        const nextId = this.waitingQueue.shift();
+        const nextId = this.waitingQueue.shift()!;
         this.formingMatch.players.push(nextId);
       }
       // If max reached, start immediately
@@ -641,19 +697,19 @@ export class GameRoom {
     this.formingMatch = { players: reserved, timer, fillDeadlineMs };
   }
 
-  _onFillTimerExpired() {
+  _onFillTimerExpired(): void {
     if (!this.formingMatch) return;
     this._startFormingMatch();
   }
 
-  _startFormingMatch() {
+  _startFormingMatch(): void {
     if (!this.formingMatch) return;
     if (this.formingMatch.timer) {
       clearTimeout(this.formingMatch.timer);
       this.formingMatch.timer = null;
     }
 
-    let players = this.formingMatch.players;
+    const players = this.formingMatch.players;
 
     // Ensure odd count: take largest odd <= current size
     if (players.length % 2 === 0) {
@@ -681,10 +737,10 @@ export class GameRoom {
   // Match lifecycle
   // -------------------------------------------------------------------------
 
-  async _startMatch(playerIds, matchId) {
+  async _startMatch(playerIds: string[], matchId: string): Promise<void> {
     const questions = selectQuestionsForMatch(TOTAL_ROUNDS);
 
-    const playersMap = new Map();
+    const playersMap = new Map<string, WorkerPlayerState>();
     for (const accountId of playerIds) {
       const conn = this.connections.get(accountId);
       if (!conn) continue;
@@ -694,7 +750,7 @@ export class GameRoom {
       try {
         const row = await this.env.DB.prepare(
           'SELECT token_balance FROM accounts WHERE account_id = ?'
-        ).bind(accountId).first();
+        ).bind(accountId).first() as { token_balance: number } | null;
         if (row) balance = row.token_balance ?? 0;
       } catch {}
 
@@ -717,7 +773,7 @@ export class GameRoom {
       this.playerMatchIndex.set(accountId, matchId);
     }
 
-    const match = {
+    const match: WorkerMatchState = {
       matchId,
       players: playersMap,
       questions,
@@ -760,7 +816,7 @@ export class GameRoom {
     this._startCommitPhase(match);
   }
 
-  _startCommitPhase(match) {
+  _startCommitPhase(match: WorkerMatchState): void {
     match.phase = 'commit';
     match.currentRound++;
     const question = match.questions[match.currentRound - 1];
@@ -793,7 +849,7 @@ export class GameRoom {
     }, COMMIT_DURATION * 1000);
   }
 
-  _startRevealPhase(match) {
+  _startRevealPhase(match: WorkerMatchState): void {
     if (match.commitTimer) { clearTimeout(match.commitTimer); match.commitTimer = null; }
     match.phase = 'reveal';
 
@@ -808,14 +864,14 @@ export class GameRoom {
     }, REVEAL_DURATION * 1000);
   }
 
-  async _finalizeRound(match) {
+  async _finalizeRound(match: WorkerMatchState): Promise<void> {
     if (match.revealTimer) { clearTimeout(match.revealTimer); match.revealTimer = null; }
     match.phase = 'results';
 
     const question = match.questions[match.currentRound - 1];
 
     // Build player array for settlement
-    const settlementPlayers = [...match.players.values()].map(p => ({
+    const settlementPlayers: PlayerSettlementInput[] = [...match.players.values()].map(p => ({
       accountId: p.accountId,
       displayName: p.displayName,
       optionIndex: p.revealed ? p.optionIndex : null,
@@ -824,7 +880,7 @@ export class GameRoom {
       attached: true,
     }));
 
-    const result = settleRound(settlementPlayers, question);
+    const result: RoundResult = settleRound(settlementPlayers, question);
 
     // Apply balance changes and update match state
     for (const pr of result.players) {
@@ -832,7 +888,7 @@ export class GameRoom {
       if (!playerState) continue;
 
       playerState.currentBalance += pr.netDelta;
-      pr.newBalance = playerState.currentBalance;
+      (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
 
       // Resolve option label for vote log
       pr.revealedOptionLabel = pr.revealedOptionIndex !== null
@@ -923,7 +979,7 @@ export class GameRoom {
           antePaid: pr.antePaid,
           roundPayout: pr.roundPayout,
           netDelta: pr.netDelta,
-          newBalance: pr.newBalance,
+          newBalance: (pr as PlayerResultWithBalance).newBalance,
         })),
       },
     });
@@ -946,7 +1002,7 @@ export class GameRoom {
     }, RESULTS_DURATION * 1000);
   }
 
-  async _endMatch(match) {
+  async _endMatch(match: WorkerMatchState): Promise<void> {
     if (match.resultsTimer) { clearTimeout(match.resultsTimer); match.resultsTimer = null; }
     if (match.commitTimer) { clearTimeout(match.commitTimer); match.commitTimer = null; }
     if (match.revealTimer) { clearTimeout(match.revealTimer); match.revealTimer = null; }
@@ -958,7 +1014,7 @@ export class GameRoom {
         startingBalance: p.startingBalance,
         endingBalance: p.currentBalance,
         netDelta: p.currentBalance - p.startingBalance,
-        result: p.forfeited ? 'forfeited' : 'completed',
+        result: p.forfeited ? 'forfeited' as const : 'completed' as const,
       })),
     };
 
@@ -1013,7 +1069,7 @@ export class GameRoom {
         try {
           const row = await this.env.DB.prepare(
             'SELECT token_balance FROM accounts WHERE account_id = ?'
-          ).bind(p.accountId).first();
+          ).bind(p.accountId).first() as { token_balance: number } | null;
           if (row) {
             // balance is already updated in D1, just requeue
           }
@@ -1030,7 +1086,7 @@ export class GameRoom {
   // Commit / Reveal / Chat handlers
   // -------------------------------------------------------------------------
 
-  async _handleCommit(accountId, msg) {
+  _handleCommit(accountId: string, msg: { type: string; [key: string]: unknown }): void {
     const matchId = this.playerMatchIndex.get(accountId);
     if (!matchId) return this._sendTo(accountId, { type: 'error', message: 'Not in a match' });
     const match = this.activeMatches.get(matchId);
@@ -1047,7 +1103,7 @@ export class GameRoom {
       return this._sendTo(accountId, { type: 'error', message: 'Already committed' });
     }
 
-    const { hash } = msg;
+    const { hash } = msg as { hash: unknown; type: string };
     if (!validateHash(hash)) {
       return this._sendTo(accountId, { type: 'error', message: 'Invalid hash format (expected 64-char hex)' });
     }
@@ -1064,7 +1120,7 @@ export class GameRoom {
     }
   }
 
-  async _handleReveal(accountId, msg) {
+  _handleReveal(accountId: string, msg: { type: string; [key: string]: unknown }): void {
     const matchId = this.playerMatchIndex.get(accountId);
     if (!matchId) return this._sendTo(accountId, { type: 'error', message: 'Not in a match' });
     const match = this.activeMatches.get(matchId);
@@ -1084,7 +1140,7 @@ export class GameRoom {
       return this._sendTo(accountId, { type: 'error', message: 'Already revealed' });
     }
 
-    const { optionIndex, salt } = msg;
+    const { optionIndex, salt } = msg as { optionIndex: unknown; salt: unknown; type: string };
     const question = match.questions[match.currentRound - 1];
 
     if (!validateOptionIndex(optionIndex, question.options.length)) {
@@ -1094,8 +1150,8 @@ export class GameRoom {
       return this._sendTo(accountId, { type: 'error', message: 'Salt must be a hex string of at least 32 characters' });
     }
 
-    // Verify hash
-    const valid = await verifyCommit(optionIndex, salt, player.hash);
+    // Verify hash (verifyCommit is synchronous)
+    const valid = verifyCommit(optionIndex, salt, player.hash!);
     if (!valid) {
       return this._sendTo(accountId, { type: 'error', message: 'Hash mismatch: reveal does not match commitment' });
     }
@@ -1113,7 +1169,7 @@ export class GameRoom {
     }
   }
 
-  _handleChat(accountId, msg) {
+  _handleChat(accountId: string, msg: { type: string; [key: string]: unknown }): void {
     const matchId = this.playerMatchIndex.get(accountId);
     if (!matchId) return;
     const match = this.activeMatches.get(matchId);
@@ -1133,7 +1189,7 @@ export class GameRoom {
     });
   }
 
-  async _handleQuestionRating(accountId, msg) {
+  async _handleQuestionRating(accountId: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
     const matchId = this.playerMatchIndex.get(accountId);
     if (!matchId) return;
     const match = this.activeMatches.get(matchId);
@@ -1162,7 +1218,7 @@ export class GameRoom {
     `).bind(questionId, matchId).all();
 
     const tally = { likes: 0, dislikes: 0 };
-    for (const r of rows.results) {
+    for (const r of (rows.results as Array<{ rating: string; cnt: number }>)) {
       if (r.rating === 'like') tally.likes = r.cnt;
       else if (r.rating === 'dislike') tally.dislikes = r.cnt;
     }
@@ -1174,7 +1230,7 @@ export class GameRoom {
   // Disconnect / Reconnect / Forfeit
   // -------------------------------------------------------------------------
 
-  _handleDisconnect(accountId) {
+  _handleDisconnect(accountId: string): void {
     const matchId = this.playerMatchIndex.get(accountId);
 
     if (!matchId) {
@@ -1213,7 +1269,7 @@ export class GameRoom {
     }, GRACE_DURATION_MS);
   }
 
-  _forfeitPlayer(match, accountId) {
+  _forfeitPlayer(match: WorkerMatchState, accountId: string): void {
     const player = match.players.get(accountId);
     if (!player || player.forfeited) return;
 
@@ -1244,13 +1300,13 @@ export class GameRoom {
   // Broadcast helpers
   // -------------------------------------------------------------------------
 
-  _sendTo(accountId, msg) {
+  _sendTo(accountId: string, msg: Record<string, unknown>): void {
     const conn = this.connections.get(accountId);
     if (!conn) return;
     try { conn.ws.send(JSON.stringify(msg)); } catch {}
   }
 
-  _broadcastToMatch(match, msg) {
+  _broadcastToMatch(match: WorkerMatchState, msg: Record<string, unknown>): void {
     const data = JSON.stringify(msg);
     for (const p of match.players.values()) {
       if (!p.forfeited || msg.type === 'game_over') {
@@ -1259,7 +1315,7 @@ export class GameRoom {
     }
   }
 
-  _broadcastCommitStatus(match) {
+  _broadcastCommitStatus(match: WorkerMatchState): void {
     const committed = [...match.players.values()].map(p => ({
       displayName: p.displayName,
       hasCommitted: p.committed,
@@ -1267,7 +1323,7 @@ export class GameRoom {
     this._broadcastToMatch(match, { type: 'commit_status', committed });
   }
 
-  _broadcastRevealStatus(match) {
+  _broadcastRevealStatus(match: WorkerMatchState): void {
     const revealed = [...match.players.values()].map(p => ({
       displayName: p.displayName,
       hasRevealed: p.revealed,
@@ -1275,17 +1331,17 @@ export class GameRoom {
     this._broadcastToMatch(match, { type: 'reveal_status', revealed });
   }
 
-  _sendQueueState(accountId) {
+  _sendQueueState(accountId: string): void {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
     const isQueued = this.waitingQueue.includes(accountId) ||
       (this.formingMatch && this.formingMatch.players.includes(accountId));
 
-    this._sendTo(accountId, this._buildQueueStateMsg(accountId, isQueued, conn.autoRequeue));
+    this._sendTo(accountId, this._buildQueueStateMsg(accountId, !!isQueued, conn.autoRequeue));
   }
 
-  _broadcastQueueState() {
+  _broadcastQueueState(): void {
     // Send to all connected players NOT in an active match
     for (const [accountId, conn] of this.connections) {
       if (this.playerMatchIndex.has(accountId)) continue;
@@ -1293,12 +1349,12 @@ export class GameRoom {
       const isQueued = this.waitingQueue.includes(accountId) ||
         (this.formingMatch && this.formingMatch.players.includes(accountId));
 
-      const msg = this._buildQueueStateMsg(accountId, isQueued, conn.autoRequeue);
+      const msg = this._buildQueueStateMsg(accountId, !!isQueued, conn.autoRequeue);
       try { conn.ws.send(JSON.stringify(msg)); } catch {}
     }
   }
 
-  _buildQueueStateMsg(accountId, isQueued, autoRequeue) {
+  _buildQueueStateMsg(_accountId: string, isQueued: boolean, autoRequeue: boolean): Record<string, unknown> {
     // All queued + forming display names
     const allQueuedIds = [...this.waitingQueue];
     if (this.formingMatch) {
@@ -1309,7 +1365,12 @@ export class GameRoom {
       return c ? c.displayName : 'unknown';
     });
 
-    let formingMatch = null;
+    let formingMatch: {
+      playerCount: number;
+      players: string[];
+      allowedSizes: number[];
+      fillDeadlineMs: number | null;
+    } | null = null;
     if (this.formingMatch) {
       const fmPlayers = this.formingMatch.players.map(id => {
         const c = this.connections.get(id);
@@ -1318,7 +1379,7 @@ export class GameRoom {
       formingMatch = {
         playerCount: this.formingMatch.players.length,
         players: fmPlayers,
-        allowedSizes: [3, 5, 7].filter(s => s <= this.formingMatch.players.length + this.waitingQueue.length),
+        allowedSizes: [3, 5, 7].filter(s => s <= this.formingMatch!.players.length + this.waitingQueue.length),
         fillDeadlineMs: this.formingMatch.fillDeadlineMs,
       };
     }
@@ -1337,7 +1398,8 @@ export class GameRoom {
   // Query helpers
   // -------------------------------------------------------------------------
 
-  _getPlayerStatus(accountId) {
+  _getPlayerStatus(accountId: string | null): { status: string; matchId?: string } {
+    if (!accountId) return { status: 'idle' };
     if (this.playerMatchIndex.has(accountId)) {
       return { status: 'in_match', matchId: this.playerMatchIndex.get(accountId) };
     }
@@ -1350,21 +1412,21 @@ export class GameRoom {
     return { status: 'idle' };
   }
 
-  _allNonForfeitedCommitted(match) {
+  _allNonForfeitedCommitted(match: WorkerMatchState): boolean {
     for (const p of match.players.values()) {
       if (!p.forfeited && !p.committed) return false;
     }
     return true;
   }
 
-  _allCommittedNonForfeitedRevealed(match) {
+  _allCommittedNonForfeitedRevealed(match: WorkerMatchState): boolean {
     for (const p of match.players.values()) {
       if (!p.forfeited && p.committed && !p.revealed) return false;
     }
     return true;
   }
 
-  _sendMatchStateToPlayer(match, accountId) {
+  _sendMatchStateToPlayer(match: WorkerMatchState, accountId: string): void {
     const question = match.questions[match.currentRound - 1];
     const player = match.players.get(accountId);
     if (!player) return;
