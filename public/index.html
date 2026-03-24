@@ -158,7 +158,7 @@ nav{display:flex;gap:.5rem}
     <div class="card">
       <h2>Connect Wallet</h2>
       <p id="auth-status">Connect your Ethereum wallet to sign in.</p>
-      <button class="btn-primary" id="connect-wallet-btn">Connect MetaMask</button>
+      <button class="btn-primary" id="connect-wallet-btn">Connect Ethereum Wallet</button>
       <div id="name-section" class="hidden">
         <label>Claim your display name (1-20 chars, A-Z 0-9 _ -)</label>
         <div class="row">
@@ -393,7 +393,7 @@ async function api(method, path, body) {
 $('#connect-wallet-btn').addEventListener('click', async () => {
   const status = $('#auth-status');
   if (!window.ethereum) {
-    status.textContent = 'MetaMask not detected. Please install it.';
+    status.textContent = 'No Ethereum wallet detected. Please install one.';
     return;
   }
   try {
