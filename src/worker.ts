@@ -164,6 +164,13 @@ export default {
       return stub.fetch(new Request(doUrl.toString(), request));
     }
 
+    // ---- POST /api/logout ----
+    if (url.pathname === '/api/logout' && method === 'POST') {
+      return jsonResponse({ ok: true }, 200, {
+        'Set-Cookie': 'session=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0',
+      });
+    }
+
     // ---- POST /api/auth/challenge ----
     if (url.pathname === '/api/auth/challenge' && method === 'POST') {
       let body: { walletAddress?: string };

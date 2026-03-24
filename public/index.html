@@ -34,6 +34,7 @@ header h1{font-size:1.4rem;letter-spacing:.05em;color:var(--accent)}
 #header-profile{display:flex;align-items:center;gap:.75rem;font-size:.85rem;color:var(--muted)}
 #header-profile .name{color:var(--text);font-weight:600}
 #header-profile .bal{color:var(--accent)}
+#logout-btn{padding:.25rem .5rem;font-size:.75rem;line-height:1}
 nav{display:flex;gap:.5rem}
 /* ── Views ──────────────────────────────────────────────────────── */
 .view{display:none}.view.active{display:block}
@@ -146,6 +147,7 @@ nav{display:flex;gap:.5rem}
     <div id="header-profile" class="hidden">
       <span class="name" id="header-name"></span>
       <span class="bal" id="header-balance"></span>
+      <button class="btn-ghost" id="logout-btn" title="Log out">✕</button>
     </div>
     <nav>
       <button class="btn-ghost" id="nav-leaderboard">Leaderboard</button>
@@ -373,6 +375,8 @@ function showView(name) {
 
   // nav visibility
   $('#nav-queue').classList.toggle('hidden', name === 'auth');
+  // hide logout during active matches
+  $('#logout-btn').classList.toggle('hidden', name === 'play');
 }
 
 // ── REST helpers ────────────────────────────────────────────────
@@ -452,6 +456,21 @@ function onAuthComplete() {
   connectWebSocket();
   showView('queue');
 }
+
+$('#logout-btn').addEventListener('click', async () => {
+  try { await api('POST', '/api/logout'); } catch (_) {}
+  if (S.ws) { S.ws.close(); S.ws = null; }
+  S.walletAddress = null;
+  S.accountId = null;
+  S.displayName = null;
+  S.tokenBalance = 0;
+  S.inQueue = false;
+  S.queuedPlayers = [];
+  S.matchId = null;
+  $('#header-profile').classList.add('hidden');
+  $('#auth-status').textContent = 'Connect your Ethereum wallet to sign in.';
+  showView('auth');
+});
 
 // ── Check existing session on load ──────────────────────────────
 async function checkSession() {
