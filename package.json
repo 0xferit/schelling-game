@@ -8,7 +8,10 @@
     "dev": "tsx watch server.ts",
     "test": "tsx test/test.ts",
     "typecheck": "tsc --noEmit",
-    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json"
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
+    "stamp-build": "sed -i.bak -e \"s/__BUILD_HASH__/$(git rev-parse --short HEAD)/\" -e \"s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/\" public/index.html",
+    "unstamp-build": "mv public/index.html.bak public/index.html",
+    "deploy": "npm run stamp-build && npx wrangler deploy && npm run unstamp-build"
   },
   "repository": {
     "type": "git",

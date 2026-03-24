@@ -136,6 +136,7 @@ nav{display:flex;gap:.5rem}
 .notif-item.warn{border-color:var(--orange);color:var(--orange)}
 @keyframes slideIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
 .mt1{margin-top:.5rem}.mt2{margin-top:1rem}
+#build-info{text-align:center;padding:2rem 1rem 1rem;font-size:.7rem;color:#444;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}
 </style>
 </head>
 <body>
@@ -291,6 +292,8 @@ nav{display:flex;gap:.5rem}
     </div>
   </div>
 </div>
+
+<footer id="build-info">__BUILD_HASH__ &middot; __BUILD_DATE__</footer>
 
 <div id="notif"></div>
 
