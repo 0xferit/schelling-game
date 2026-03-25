@@ -234,7 +234,7 @@ function handleReveal(ws: WebSocket, msg: { type: 'reveal'; optionIndex: number;
 
   const { optionIndex, salt } = msg;
 
-  const question = match.questions[match.currentRound];
+  const question = match.questions[match.currentRound]!;
   if (!validateOptionIndex(optionIndex, question.options.length)) {
     return send(ws, { type: 'error', message: 'Invalid optionIndex: must be an integer within question options range' });
   }
@@ -376,7 +376,7 @@ function handleReconnect(ws: WebSocket, accountId: string): void {
 }
 
 function sendMatchStateCatchup(ws: WebSocket, match: MatchState, accountId: string): void {
-  const question = match.questions[match.currentRound];
+  const question = match.questions[match.currentRound]!;
 
   send(ws, {
     type: 'game_started',
@@ -530,7 +530,7 @@ function onMatchReady(players: QueuePlayer[], matchId: string): void {
 function startCommitPhase(match: MatchState): void {
   match.phase = 'commit';
 
-  const question = match.questions[match.currentRound];
+  const question = match.questions[match.currentRound]!;
 
   for (const p of match.players.values()) {
     p.committed = false;
@@ -574,7 +574,7 @@ function finalizeRound(match: MatchState): void {
   clearTimers(match);
   match.phase = 'results';
 
-  const question = match.questions[match.currentRound];
+  const question = match.questions[match.currentRound]!;
 
   const settleInput = Array.from(match.players.values()).map(p => ({
     accountId: p.accountId,

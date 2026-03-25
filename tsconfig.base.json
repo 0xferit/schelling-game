@@ -10,6 +10,9 @@
     "resolveJsonModule": true,
     "declaration": false,
     "noEmit": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true
   }
 }

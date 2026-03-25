@@ -24,7 +24,7 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   if (!cookieHeader) return cookies;
   for (const pair of cookieHeader.split(';')) {
     const [name, ...rest] = pair.trim().split('=');
-    cookies[name] = rest.join('=');
+    if (name) cookies[name] = rest.join('=');
   }
   return cookies;
 }
@@ -278,7 +278,7 @@ app.get('/api/export/votes.csv', requireAdmin, (_req: Request, res: Response) =>
     const csv = [
       headers.join(','),
       ...rows.map((r) =>
-        headers.map(h => JSON.stringify((r as unknown as Record<string, unknown>)[reverseMap[h]] ?? '')).join(','),
+        headers.map(h => JSON.stringify((r as unknown as Record<string, unknown>)[reverseMap[h]!] ?? '')).join(','),
       ),
     ].join('\n');
 

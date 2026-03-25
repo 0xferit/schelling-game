@@ -81,7 +81,7 @@ async function verifySessionToken(token: string | undefined): Promise<string | n
   const sigBuf = new Uint8Array(sig.match(/.{2}/g)!.map(h => parseInt(h, 16)));
   const valid = await crypto.subtle.verify('HMAC', key, sigBuf, new TextEncoder().encode(payload));
   if (!valid) return null;
-  return parts[0]; // accountId is always the first segment
+  return parts[0] ?? null; // accountId is always the first segment
 }
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
@@ -563,7 +563,8 @@ export class GameRoom {
         return new Response('Missing auth params', { status: 400 });
       }
 
-      const [client, server] = Object.values(new WebSocketPair());
+      const pair = new WebSocketPair();
+      const [client, server] = [pair[0], pair[1]];
       this._handleWebSocket(server, accountId, displayName, tokenBalance);
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -890,7 +891,7 @@ export class GameRoom {
   _startCommitPhase(match: WorkerMatchState): void {
     match.phase = 'commit';
     match.currentRound++;
-    const question = match.questions[match.currentRound - 1];
+    const question = match.questions[match.currentRound - 1]!;
 
     // Reset per-round player state
     for (const p of match.players.values()) {
@@ -939,7 +940,7 @@ export class GameRoom {
     if (match.revealTimer) { clearTimeout(match.revealTimer); match.revealTimer = null; }
     match.phase = 'results';
 
-    const question = match.questions[match.currentRound - 1];
+    const question = match.questions[match.currentRound - 1]!;
 
     // Build player array for settlement
     const settlementPlayers: PlayerSettlementInput[] = [...match.players.values()].map(p => ({
@@ -1225,7 +1226,7 @@ export class GameRoom {
     }
 
     const { optionIndex, salt } = msg as { optionIndex: unknown; salt: unknown; type: string };
-    const question = match.questions[match.currentRound - 1];
+    const question = match.questions[match.currentRound - 1]!;
 
     if (!validateOptionIndex(optionIndex, question.options.length)) {
       return this._sendTo(accountId, { type: 'error', message: 'Invalid option index' });
@@ -1488,7 +1489,7 @@ export class GameRoom {
   _getPlayerStatus(accountId: string | null): { status: string; matchId?: string } {
     if (!accountId) return { status: 'idle' };
     if (this.playerMatchIndex.has(accountId)) {
-      return { status: 'in_match', matchId: this.playerMatchIndex.get(accountId) };
+      return { status: 'in_match', matchId: this.playerMatchIndex.get(accountId)! };
     }
     if (this.formingMatch && this.formingMatch.players.includes(accountId)) {
       return { status: 'forming' };
@@ -1514,7 +1515,7 @@ export class GameRoom {
   }
 
   _sendMatchStateToPlayer(match: WorkerMatchState, accountId: string): void {
-    const question = match.questions[match.currentRound - 1];
+    const question = match.questions[match.currentRound - 1]!;
     const player = match.players.get(accountId);
     if (!player) return;
 
