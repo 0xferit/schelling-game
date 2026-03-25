@@ -238,6 +238,25 @@ section{padding:6rem 2rem}
   text-align:center;
 }
 .example-opt:hover{border-color:var(--accent);color:var(--accent)}
+.example-opt .vote-bar{
+  display:none;
+  height:3px;
+  border-radius:1.5px;
+  background:var(--accent);
+  margin-top:.4rem;
+  width:0;
+  transition:width .6s ease;
+}
+.example-opt .vote-pct{
+  display:none;
+  font-size:.55rem;
+  font-weight:600;
+  letter-spacing:.05em;
+  color:var(--muted);
+  margin-top:.2rem;
+}
+.example-layout.revealed .example-opt .vote-bar,
+.example-layout.revealed .example-opt .vote-pct{display:block}
 .example-opt.popular{position:relative}
 .example-layout.revealed .example-opt.popular{
   border-color:var(--accent);
@@ -254,7 +273,7 @@ section{padding:6rem 2rem}
   opacity:.6;
   margin-top:.15rem;
 }
-.example-layout.revealed .example-opt.popular::after{display:block}
+.example-layout.revealed:not(.has-tally) .example-opt.popular::after{display:block}
 .example-layout.revealed .example-insight{display:block}
 .example-insight{
   margin-top:1.5rem;
@@ -640,14 +659,46 @@ footer a:hover{color:var(--accent)}
   var demo = document.querySelector('.example-layout');
   var opts = document.querySelectorAll('.example-opt');
   var insight = document.querySelector('.example-insight');
-  var STATIC_INSIGHT = insight.textContent;
+
+  // Inject vote-bar and vote-pct elements into each option
+  opts.forEach(function(opt) {
+    var bar = document.createElement('div');
+    bar.className = 'vote-bar';
+    var pct = document.createElement('div');
+    pct.className = 'vote-pct';
+    opt.appendChild(bar);
+    opt.appendChild(pct);
+  });
 
   function renderTally(data) {
     if (!data || !data.total) return;
-    var maxVote = data.votes.reduce(function(a, b) { return b.count > a.count ? b : a; }, { count: 0 });
-    var pct = Math.round((maxVote.count / data.total) * 100);
-    var label = opts[maxVote.optionIndex] ? opts[maxVote.optionIndex].textContent.trim() : '?';
-    insight.textContent = pct + '% of ' + data.total + ' visitors picked ' + label + '. '
+    // Build a lookup: optionIndex -> count
+    var counts = {};
+    var maxCount = 0;
+    data.votes.forEach(function(v) {
+      counts[v.optionIndex] = v.count;
+      if (v.count > maxCount) maxCount = v.count;
+    });
+
+    // Animate bars and show percentages
+    opts.forEach(function(opt, idx) {
+      var count = counts[idx] || 0;
+      var pct = data.total > 0 ? Math.round((count / data.total) * 100) : 0;
+      var bar = opt.querySelector('.vote-bar');
+      var label = opt.querySelector('.vote-pct');
+      label.textContent = pct > 0 ? pct + '%' : '';
+      // Use maxCount for bar scaling so the top answer fills 100%
+      var barWidth = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+      setTimeout(function() { bar.style.width = barWidth + '%'; }, 50);
+    });
+
+    demo.classList.add('has-tally');
+
+    // Update insight with the winner
+    var topVote = data.votes.reduce(function(a, b) { return b.count > a.count ? b : a; }, { count: 0 });
+    var topPct = Math.round((topVote.count / data.total) * 100);
+    var topLabel = opts[topVote.optionIndex] ? opts[topVote.optionIndex].childNodes[0].textContent.trim() : '?';
+    insight.textContent = topPct + '% of ' + data.total + ' visitors picked ' + topLabel + '. '
       + 'It is the only non-prime, the only round number, and the only three-digit number in the set. '
       + 'That salience makes it the natural coordination target: the focal point.';
   }
