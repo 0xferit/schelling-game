@@ -291,25 +291,28 @@ section{padding:6rem 2rem}
 .example-layout.revealed .example-opt.my-pick::before{
   content:'your pick';
   display:block;
-  position:absolute;
-  top:-1.4rem;
-  left:50%;
-  transform:translateX(-50%);
-  font-size:.5rem;
+  font-size:.55rem;
   font-weight:600;
-  letter-spacing:.12em;
+  letter-spacing:.1em;
   text-transform:uppercase;
   color:var(--text);
   white-space:nowrap;
   opacity:.7;
+  margin-bottom:.15rem;
 }
 /* When the user picked the popular option, gold wins */
 .example-layout.revealed .example-opt.my-pick.popular{
   border-color:var(--accent);
   color:var(--accent);
 }
+/* Hide the absolutely-positioned ::before; it overlaps the cell above */
 .example-layout.revealed .example-opt.my-pick.popular::before{
-  color:var(--accent);
+  display:none;
+}
+/* Repurpose ::after to say "your pick" instead of "focal point" */
+.example-layout.revealed .example-opt.my-pick.popular::after{
+  content:'your pick \b7  focal point';
+  display:block;
 }
 .example-layout.revealed .example-insight{display:block}
 .example-insight{
