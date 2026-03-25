@@ -70,7 +70,7 @@ nav .play-link:hover{background:var(--accent);color:var(--bg)}
   display:flex;flex-direction:column;
   align-items:center;justify-content:center;
   text-align:center;
-  padding:6rem 2rem 4rem;
+  padding:6rem 2rem 2rem;
   position:relative;
   overflow:hidden;
 }
@@ -112,7 +112,7 @@ nav .play-link:hover{background:var(--accent);color:var(--bg)}
   font-size:clamp(1rem, 2.5vw, 1.25rem);
   color:var(--muted);
   max-width:540px;
-  margin-bottom:3rem;
+  margin-bottom:2.5rem;
   position:relative;
 }
 .hero-cta{
@@ -143,14 +143,28 @@ nav .play-link:hover{background:var(--accent);color:var(--bg)}
 }
 .hero-scroll{
   position:absolute;
-  bottom:2rem;
+  bottom:1.5rem;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:.35rem;
   color:var(--muted);
-  font-size:.75rem;
-  letter-spacing:.15em;
-  text-transform:uppercase;
-  animation:float 2.5s ease-in-out infinite;
+  opacity:.5;
+  transition:opacity .3s;
 }
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+.hero-scroll:hover{opacity:.8}
+.hero-scroll-chevron{
+  width:20px;
+  height:20px;
+  border-right:1.5px solid var(--muted);
+  border-bottom:1.5px solid var(--muted);
+  transform:rotate(45deg);
+  animation:scrollBounce 2s ease-in-out infinite;
+}
+@keyframes scrollBounce{
+  0%,100%{transform:rotate(45deg) translateY(0);opacity:.4}
+  50%{transform:rotate(45deg) translateY(5px);opacity:.9}
+}
 
 /* ── SECTIONS ────────────────────────────── */
 section{padding:6rem 2rem}
@@ -177,7 +191,34 @@ section{padding:6rem 2rem}
   max-width:620px;
 }
 
-/* ── CONCEPT ─────────────────────────────── */
+/* ── THEORY ──────────────────────────────── */
+.theory{border-top:1px solid var(--border)}
+.theory-quote{
+  font-family:var(--serif);
+  font-size:clamp(1.4rem, 3.5vw, 2rem);
+  font-weight:400;
+  font-style:italic;
+  line-height:1.5;
+  color:var(--text);
+  max-width:700px;
+  margin:3rem 0 1rem;
+  position:relative;
+  padding-left:2rem;
+}
+.theory-quote::before{
+  content:'';
+  position:absolute;
+  left:0;top:0;bottom:0;
+  width:2px;
+  background:var(--accent);
+}
+.theory-attrib{
+  font-size:.85rem;
+  color:var(--muted);
+  padding-left:2rem;
+}
+
+/* ── CONCEPT (The Rules) ─────────────────── */
 .concept{border-top:1px solid var(--border)}
 .concept-grid{
   display:grid;
@@ -208,6 +249,29 @@ section{padding:6rem 2rem}
   margin-bottom:.5rem;
 }
 .concept-card p{color:var(--muted);font-size:.92rem}
+
+/* ── MECHANICS ───────────────────────────── */
+.mechanics{border-top:1px solid var(--border)}
+.mech-steps{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:2rem;
+  margin-top:3rem;
+}
+.mech-step{position:relative;padding-left:0}
+.mech-step .icon{
+  font-size:1.8rem;
+  margin-bottom:.75rem;
+  display:block;
+  filter:grayscale(.3);
+}
+.mech-step h3{
+  font-family:var(--serif);
+  font-size:1.15rem;
+  font-weight:600;
+  margin-bottom:.4rem;
+}
+.mech-step p{color:var(--muted);font-size:.88rem}
 
 /* ── EXAMPLE ─────────────────────────────── */
 .example{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
@@ -333,66 +397,6 @@ section{padding:6rem 2rem}
   border-left:2px solid var(--accent);
 }
 
-/* ── THEORY ──────────────────────────────── */
-.theory{border-top:1px solid var(--border)}
-.theory-quote{
-  font-family:var(--serif);
-  font-size:clamp(1.4rem, 3.5vw, 2rem);
-  font-weight:400;
-  font-style:italic;
-  line-height:1.5;
-  color:var(--text);
-  max-width:700px;
-  margin:3rem 0 1rem;
-  position:relative;
-  padding-left:2rem;
-}
-.theory-quote::before{
-  content:'';
-  position:absolute;
-  left:0;top:0;bottom:0;
-  width:2px;
-  background:var(--accent);
-}
-.theory-attrib{
-  font-size:.85rem;
-  color:var(--muted);
-  padding-left:2rem;
-}
-
-/* ── MECHANICS ───────────────────────────── */
-.mechanics{border-top:1px solid var(--border)}
-.mech-steps{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:2rem;
-  margin-top:3rem;
-}
-.mech-step{position:relative;padding-left:0}
-.mech-step .icon{
-  font-size:1.8rem;
-  margin-bottom:.75rem;
-  display:block;
-  filter:grayscale(.3);
-}
-.mech-step h3{
-  font-family:var(--serif);
-  font-size:1.15rem;
-  font-weight:600;
-  margin-bottom:.4rem;
-}
-.mech-step p{color:var(--muted);font-size:.88rem}
-.mech-note{
-  margin-top:2.5rem;
-  padding:1.25rem 1.5rem;
-  background:rgba(201,168,76,.04);
-  border:1px solid rgba(201,168,76,.12);
-  border-radius:3px;
-  font-size:.88rem;
-  color:var(--muted);
-}
-.mech-note strong{color:var(--text);font-weight:500}
-
 /* ── FINAL CTA ───────────────────────────── */
 .final-cta{
   text-align:center;
@@ -411,20 +415,53 @@ section{padding:6rem 2rem}
 
 /* ── FOOTER ──────────────────────────────── */
 footer{
-  padding:2rem;
-  text-align:center;
-  font-size:.7rem;
-  color:#444;
-  letter-spacing:.04em;
+  padding:2.5rem 2rem;
   border-top:1px solid var(--border);
+  font-size:.75rem;
+  color:#555;
+  letter-spacing:.03em;
+}
+.footer-inner{
+  max-width:960px;
+  margin:0 auto;
   display:flex;
-  justify-content:center;
+  justify-content:space-between;
+  align-items:center;
+  gap:2rem;
+  flex-wrap:wrap;
+}
+.footer-brand{
+  font-family:var(--serif);
+  font-size:1rem;
+  font-weight:700;
+  color:var(--muted);
+  letter-spacing:.03em;
+}
+.footer-brand span{color:var(--accent)}
+.footer-desc{
+  color:#555;
+  font-size:.7rem;
+  margin-top:.25rem;
+}
+.footer-links{
+  display:flex;
   gap:1.5rem;
   align-items:center;
 }
-footer span{font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}
-footer a{color:var(--muted);text-decoration:none}
-footer a:hover{color:var(--accent)}
+.footer-links a{
+  color:var(--muted);
+  text-decoration:none;
+  transition:color .2s;
+}
+.footer-links a:hover{color:var(--accent)}
+.footer-meta{
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  font-size:.65rem;
+  color:#444;
+}
 #deploy-status{display:flex;align-items:center;gap:.35rem}
 #deploy-status .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 #deploy-status .dot.success{background:#4caf50}
@@ -441,7 +478,8 @@ footer a:hover{color:var(--accent)}
   .example-options{grid-template-columns:repeat(3,1fr)}
   nav{padding:1rem 1.25rem}
   section{padding:4rem 1.25rem}
-  .hero{padding:5rem 1.25rem 3rem}
+  .hero{padding:5rem 1.25rem 2rem}
+  .footer-inner{flex-direction:column;text-align:center;gap:1rem}
 }
 
 /* ── HERO ENTRANCE ────────────────────────── */
@@ -478,13 +516,33 @@ footer a:hover{color:var(--accent)}
   </p>
   <a href="/app.html" class="hero-cta hero-anim ha-3">Play Now</a>
   <div class="hero-wallet-note hero-anim ha-3">Ethereum wallet required &middot; any EIP-1193 wallet works</div>
-  <div class="hero-scroll">Scroll</div>
+  <div class="hero-scroll">
+    <div class="hero-scroll-chevron"></div>
+  </div>
 </section>
 
-<!-- ══ CONCEPT ═══════════════════════════ -->
+<!-- ══ THEORY (moved before demo) ═══════ -->
+<section class="theory">
+  <div class="container">
+    <div class="section-label reveal">The Concept</div>
+    <h2 class="section-title reveal">Focal Points</h2>
+    <p class="section-body reveal">
+      In 1960, economist Thomas Schelling discovered that people can coordinate
+      without communicating by gravitating toward answers that feel naturally
+      prominent: focal points.
+    </p>
+    <blockquote class="theory-quote reveal">
+      People can often concert their intentions or expectations with
+      others if each knows that the other is trying to do the same.
+    </blockquote>
+    <p class="theory-attrib reveal">Thomas C. Schelling, The Strategy of Conflict (1960)</p>
+  </div>
+</section>
+
+<!-- ══ RULES ═════════════════════════════ -->
 <section class="concept">
   <div class="container">
-    <div class="section-label reveal">The Premise</div>
+    <div class="section-label reveal">The Rules</div>
     <h2 class="section-title reveal">What if winning meant<br/>agreeing with strangers?</h2>
     <p class="section-body reveal">
       Schelling Game puts you in a room with other players. Everyone sees the same
@@ -516,7 +574,32 @@ footer a:hover{color:var(--accent)}
   </div>
 </section>
 
-<!-- ══ EXAMPLE ═══════════════════════════ -->
+<!-- ══ MECHANICS ═════════════════════════ -->
+<section class="mechanics">
+  <div class="container">
+    <div class="section-label reveal">How It Works</div>
+    <h2 class="section-title reveal">Three phases, every game</h2>
+    <div class="mech-steps">
+      <div class="mech-step reveal reveal-delay-1">
+        <span class="icon">I</span>
+        <h3>Commit</h3>
+        <p>Read the question, pick your answer, lock it in with a cryptographic hash. 30 seconds. No take-backs.</p>
+      </div>
+      <div class="mech-step reveal reveal-delay-2">
+        <span class="icon">II</span>
+        <h3>Reveal</h3>
+        <p>Everyone opens their sealed answer. The server verifies each hash matches. 15 seconds.</p>
+      </div>
+      <div class="mech-step reveal reveal-delay-3">
+        <span class="icon">III</span>
+        <h3>Settle</h3>
+        <p>The plurality wins. Token ante is collected from all players, then redistributed to those who converged.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ TRY IT (moved after theory + mechanics) -->
 <section class="example">
   <div class="container">
     <div class="example-layout reveal">
@@ -555,53 +638,6 @@ footer a:hover{color:var(--accent)}
   </div>
 </section>
 
-<!-- ══ THEORY ════════════════════════════ -->
-<section class="theory">
-  <div class="container">
-    <div class="section-label reveal">The Theory</div>
-    <h2 class="section-title reveal">Focal Points</h2>
-    <p class="section-body reveal">
-      In 1960, economist Thomas Schelling discovered that people can coordinate
-      without communicating by gravitating toward answers that feel naturally
-      prominent: focal points.
-    </p>
-    <blockquote class="theory-quote reveal">
-      People can often concert their intentions or expectations with
-      others if each knows that the other is trying to do the same.
-    </blockquote>
-    <p class="theory-attrib reveal">Thomas C. Schelling, The Strategy of Conflict (1960)</p>
-  </div>
-</section>
-
-<!-- ══ MECHANICS ═════════════════════════ -->
-<section class="mechanics">
-  <div class="container">
-    <div class="section-label reveal">How It Works</div>
-    <h2 class="section-title reveal">Three phases, every game</h2>
-    <div class="mech-steps">
-      <div class="mech-step reveal reveal-delay-1">
-        <span class="icon">I</span>
-        <h3>Commit</h3>
-        <p>Read the question, pick your answer, lock it in with a cryptographic hash. 30 seconds. No take-backs.</p>
-      </div>
-      <div class="mech-step reveal reveal-delay-2">
-        <span class="icon">II</span>
-        <h3>Reveal</h3>
-        <p>Everyone opens their sealed answer. The server verifies each hash matches. 15 seconds.</p>
-      </div>
-      <div class="mech-step reveal reveal-delay-3">
-        <span class="icon">III</span>
-        <h3>Settle</h3>
-        <p>The plurality wins. Token ante is collected from all players, then redistributed to those who converged.</p>
-      </div>
-    </div>
-    <div class="mech-note reveal">
-      <strong>Wallet sign-in required.</strong> Any Ethereum wallet that implements EIP-1193 works.
-      Tokens are internal to the game and carry no financial value.
-    </div>
-  </div>
-</section>
-
 <!-- ══ FINAL CTA ═════════════════════════ -->
 <section class="final-cta">
   <h2 class="section-title reveal">Ready to find the focal point?</h2>
@@ -610,9 +646,20 @@ footer a:hover{color:var(--accent)}
 </section>
 
 <footer>
-  <span>__BUILD_HASH__ &middot; __BUILD_DATE__</span>
-  <span id="deploy-status"></span>
-  <a href="https://github.com/0xferit/schelling-game" target="_blank" rel="noopener">GitHub</a>
+  <div class="footer-inner">
+    <div>
+      <div class="footer-brand">Schelling <span>Game</span></div>
+      <div class="footer-desc">A coordination game based on focal point theory</div>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/0xferit/schelling-game" target="_blank" rel="noopener">GitHub</a>
+      <span style="color:#333">MIT License</span>
+    </div>
+    <div class="footer-meta">
+      <span>__BUILD_HASH__ &middot; __BUILD_DATE__</span>
+      <span id="deploy-status"></span>
+    </div>
+  </div>
 </footer>
 
 <script>
