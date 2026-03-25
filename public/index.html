@@ -240,8 +240,8 @@ section{padding:6rem 2rem}
 .example-opt:hover{border-color:var(--accent);color:var(--accent)}
 .example-opt .vote-bar{
   display:none;
-  height:3px;
-  border-radius:1.5px;
+  height:5px;
+  border-radius:2.5px;
   background:var(--accent);
   margin-top:.4rem;
   width:0;
@@ -249,7 +249,7 @@ section{padding:6rem 2rem}
 }
 .example-opt .vote-pct{
   display:none;
-  font-size:.55rem;
+  font-size:.65rem;
   font-weight:600;
   letter-spacing:.05em;
   color:var(--muted);
@@ -257,11 +257,17 @@ section{padding:6rem 2rem}
 }
 .example-layout.revealed .example-opt .vote-bar,
 .example-layout.revealed .example-opt .vote-pct{display:block}
+/* Dim all options in revealed state, then un-dim popular and my-pick */
+.example-layout.revealed .example-opt{opacity:.45;cursor:default}
+.example-layout.revealed .example-opt.popular,
+.example-layout.revealed .example-opt.my-pick{opacity:1}
 .example-opt.popular{position:relative}
 .example-layout.revealed .example-opt.popular{
-  border-color:var(--accent);
-  background:rgba(201,168,76,.08);
+  border:2px solid var(--accent);
+  background:rgba(201,168,76,.15);
   color:var(--accent);
+  font-weight:600;
+  box-shadow:0 0 16px rgba(201,168,76,.22),0 0 4px rgba(201,168,76,.12);
 }
 .example-opt.popular::after{
   content:'focal point';
@@ -274,6 +280,37 @@ section{padding:6rem 2rem}
   margin-top:.15rem;
 }
 .example-layout.revealed:not(.has-tally) .example-opt.popular::after{display:block}
+/* User's own pick */
+.example-opt.my-pick{position:relative}
+.example-layout.revealed .example-opt.my-pick{
+  border:2px solid var(--text);
+  background:rgba(232,228,222,.08);
+  color:var(--text);
+  font-weight:500;
+}
+.example-layout.revealed .example-opt.my-pick::before{
+  content:'your pick';
+  display:block;
+  position:absolute;
+  top:-1.4rem;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:.5rem;
+  font-weight:600;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--text);
+  white-space:nowrap;
+  opacity:.7;
+}
+/* When the user picked the popular option, gold wins */
+.example-layout.revealed .example-opt.my-pick.popular{
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.example-layout.revealed .example-opt.my-pick.popular::before{
+  color:var(--accent);
+}
 .example-layout.revealed .example-insight{display:block}
 .example-insight{
   margin-top:1.5rem;
@@ -719,22 +756,24 @@ footer a:hover{color:var(--accent)}
       .catch(function() {});
   }
 
-  // If already voted, show results immediately
-  if (localStorage.getItem('example-voted')) {
+  // If already voted, show results immediately and mark their pick
+  var votedIdx = localStorage.getItem('example-voted');
+  if (votedIdx !== null) {
+    var idx = parseInt(votedIdx, 10);
+    if (!isNaN(idx) && opts[idx]) opts[idx].classList.add('my-pick');
     revealWithTally();
   } else {
     opts.forEach(function(opt, idx) {
       opt.addEventListener('click', function() {
         if (demo.classList.contains('revealed')) return;
-        opt.style.outline = '2px solid var(--text)';
-        opt.style.outlineOffset = '2px';
+        opt.classList.add('my-pick');
 
         fetch('/api/example-vote', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ optionIndex: idx })
         }).catch(function() {});
-        localStorage.setItem('example-voted', 'true');
+        localStorage.setItem('example-voted', String(idx));
 
         revealWithTally();
       });
