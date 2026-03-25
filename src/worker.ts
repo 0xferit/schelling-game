@@ -854,17 +854,20 @@ export class GameRoom {
     };
     this.activeMatches.set(matchId, match);
 
-    // Create match record in D1
+    // Batch create match + match_players in D1
     try {
-      await this.env.DB.prepare(
-        'INSERT INTO matches (match_id, started_at, round_count, status) VALUES (?, ?, ?, ?)'
-      ).bind(matchId, new Date().toISOString(), TOTAL_ROUNDS, 'active').run();
-
+      const createStmts: D1PreparedStatement[] = [
+        this.env.DB.prepare('INSERT INTO matches (match_id, started_at, round_count, status) VALUES (?, ?, ?, ?)')
+          .bind(matchId, new Date().toISOString(), TOTAL_ROUNDS, 'active'),
+      ];
       for (const [acctId, p] of playersMap) {
-        await this.env.DB.prepare(
-          'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)'
-        ).bind(matchId, acctId, p.displayName, p.startingBalance, 'active').run();
+        createStmts.push(
+          this.env.DB.prepare(
+            'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)'
+          ).bind(matchId, acctId, p.displayName, p.startingBalance, 'active')
+        );
       }
+      await this.env.DB.batch(createStmts);
     } catch (e) { console.error('D1: insert match/match_players for', matchId, e); }
 
     // Broadcast game_started
@@ -950,7 +953,10 @@ export class GameRoom {
 
     const result: RoundResult = settleRound(settlementPlayers, question);
 
-    // Apply balance changes and update match state
+    // Apply balance changes, update match state, and collect D1 statements
+    const stmts: D1PreparedStatement[] = [];
+    const now = new Date().toISOString();
+
     for (const pr of result.players) {
       const playerState = match.players.get(pr.accountId);
       if (!playerState) continue;
@@ -963,40 +969,39 @@ export class GameRoom {
         ? (question.options[pr.revealedOptionIndex] || null)
         : null;
 
-      // Update D1 balance
-      try {
-        await this.env.DB.prepare(
-          'UPDATE accounts SET token_balance = ? WHERE account_id = ?'
-        ).bind(playerState.currentBalance, pr.accountId).run();
-      } catch (e) { console.error('D1: update balance for', pr.accountId, e); }
+      // Balance update
+      stmts.push(
+        this.env.DB.prepare('UPDATE accounts SET token_balance = ? WHERE account_id = ?')
+          .bind(playerState.currentBalance, pr.accountId)
+      );
 
-      // Update stats
+      // Stats update
       if (!result.voided) {
-        try {
-          // Increment rounds_played
-          await this.env.DB.prepare(
-            'UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?'
-          ).bind(pr.accountId).run();
+        stmts.push(
+          this.env.DB.prepare('UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?')
+            .bind(pr.accountId)
+        );
 
-          if (pr.earnsCoordinationCredit) {
-            await this.env.DB.prepare(
+        if (pr.earnsCoordinationCredit) {
+          stmts.push(
+            this.env.DB.prepare(
               'UPDATE player_stats SET coherent_rounds = coherent_rounds + 1, ' +
               'current_streak = current_streak + 1, ' +
               'longest_streak = MAX(longest_streak, current_streak + 1) ' +
               'WHERE account_id = ?'
-            ).bind(pr.accountId).run();
-          } else {
-            // Lost or no coordination credit: reset streak
-            await this.env.DB.prepare(
-              'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?'
-            ).bind(pr.accountId).run();
-          }
-        } catch (e) { console.error('D1: update player_stats for', pr.accountId, e); }
+            ).bind(pr.accountId)
+          );
+        } else {
+          stmts.push(
+            this.env.DB.prepare('UPDATE player_stats SET current_streak = 0 WHERE account_id = ?')
+              .bind(pr.accountId)
+          );
+        }
       }
 
-      // Insert vote log
-      try {
-        await this.env.DB.prepare(
+      // Vote log
+      stmts.push(
+        this.env.DB.prepare(
           'INSERT INTO vote_logs (match_id, round_number, question_id, account_id, display_name_snapshot, ' +
           'revealed_option_index, revealed_option_label, won_round, earns_coordination_credit, ' +
           'ante_amount, round_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
@@ -1022,9 +1027,16 @@ export class GameRoom {
           JSON.stringify(result.winningOptionIndexes),
           result.voided ? 1 : 0,
           result.voidReason,
-          new Date().toISOString(),
-        ).run();
-      } catch (e) { console.error('D1: insert vote_log for', pr.accountId, e); }
+          now,
+        )
+      );
+    }
+
+    // Execute all round writes in a single D1 batch
+    if (stmts.length > 0) {
+      try {
+        await this.env.DB.batch(stmts);
+      } catch (e) { console.error('D1: batch finalizeRound for', match.matchId, e); }
     }
 
     // Broadcast round_result
@@ -1088,29 +1100,33 @@ export class GameRoom {
 
     this._broadcastToMatch(match, { type: 'game_over', summary });
 
-    // Update D1 match record
+    // Batch all endMatch D1 writes
     try {
-      await this.env.DB.prepare(
-        'UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?'
-      ).bind(new Date().toISOString(), 'completed', match.matchId).run();
+      const endStmts: D1PreparedStatement[] = [
+        this.env.DB.prepare('UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?')
+          .bind(new Date().toISOString(), 'completed', match.matchId),
+      ];
 
-      // Update match_players
       for (const p of match.players.values()) {
-        await this.env.DB.prepare(
-          'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?'
-        ).bind(
-          p.currentBalance,
-          p.currentBalance - p.startingBalance,
-          p.forfeited ? 'forfeited' : 'completed',
-          match.matchId,
-          p.accountId,
-        ).run();
+        endStmts.push(
+          this.env.DB.prepare(
+            'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?'
+          ).bind(
+            p.currentBalance,
+            p.currentBalance - p.startingBalance,
+            p.forfeited ? 'forfeited' : 'completed',
+            match.matchId,
+            p.accountId,
+          )
+        );
 
-        // Increment games_played
-        await this.env.DB.prepare(
-          'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?'
-        ).bind(p.accountId).run();
+        endStmts.push(
+          this.env.DB.prepare('UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?')
+            .bind(p.accountId)
+        );
       }
+
+      await this.env.DB.batch(endStmts);
     } catch (e) { console.error('D1: endMatch writes for', match.matchId, e); }
 
     // Track opponents for anti-repeat
