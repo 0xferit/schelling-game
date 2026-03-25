@@ -346,10 +346,16 @@ section{padding:6rem 2rem}
 footer{
   padding:2rem;
   text-align:center;
-  font-size:.75rem;
-  color:#333;
+  font-size:.7rem;
+  color:#444;
+  letter-spacing:.04em;
   border-top:1px solid var(--border);
+  display:flex;
+  justify-content:center;
+  gap:1.5rem;
+  align-items:center;
 }
+footer span{font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}
 footer a{color:var(--muted);text-decoration:none}
 footer a:hover{color:var(--accent)}
 
@@ -530,6 +536,7 @@ footer a:hover{color:var(--accent)}
 </section>
 
 <footer>
+  <span>__BUILD_HASH__ &middot; __BUILD_DATE__</span>
   <a href="https://github.com/0xferit/schelling-game" target="_blank" rel="noopener">GitHub</a>
 </footer>
 
