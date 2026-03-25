@@ -20,7 +20,7 @@ interface ConnectionState {
 interface WorkerPlayerState {
   accountId: string;
   displayName: string;
-  ws: WebSocket;
+  ws: WebSocket | null;
   startingBalance: number;
   currentBalance: number;
   committed: boolean;
@@ -633,6 +633,7 @@ export class GameRoom {
           playerState.disconnectedAt = null;
           playerState.ws = ws;
           existingConn.ws = ws;
+          this._checkpointPlayerAction(existingMatchId, accountId, { disconnectedAt: null });
           this._setupWsListeners(ws, accountId);
 
           // Broadcast reconnection
@@ -664,6 +665,7 @@ export class GameRoom {
           }
           playerState.disconnectedAt = null;
           playerState.ws = ws;
+          this._checkpointPlayerAction(existingMatchId, accountId, { disconnectedAt: null });
           this._setupWsListeners(ws, accountId);
 
           this._ensureMatchTimerRunning(match);
@@ -1049,6 +1051,9 @@ export class GameRoom {
     // Write to D1 only if this round hasn't been settled before (prevents duplicates after restore)
     if (!alreadySettled) {
       match.lastSettledRound = match.currentRound;
+      // Checkpoint before D1 batch so lastSettledRound survives eviction between
+      // the D1 writes and the post-settlement checkpoint below
+      this._checkpointMatch(match);
 
       const stmts: D1PreparedStatement[] = [];
       const now = new Date().toISOString();
@@ -1419,6 +1424,7 @@ export class GameRoom {
     }
 
     player.disconnectedAt = Date.now();
+    this._checkpointPlayerAction(matchId, accountId, { disconnectedAt: player.disconnectedAt });
 
     // Broadcast disconnection
     this._broadcastToMatch(match, {
@@ -1475,7 +1481,7 @@ export class GameRoom {
     const data = JSON.stringify(msg);
     for (const p of match.players.values()) {
       if (!p.forfeited || msg.type === 'game_over') {
-        try { p.ws.send(data); } catch {}
+        if (p.ws) try { p.ws.send(data); } catch {}
       }
     }
   }
@@ -1596,33 +1602,40 @@ export class GameRoom {
   // -------------------------------------------------------------------------
 
   _checkpointMatch(match: WorkerMatchState): void {
-    this.state.storage.sql.exec(
-      `DELETE FROM player_checkpoints WHERE match_id = ?`,
-      match.matchId,
-    );
-    this.state.storage.sql.exec(
-      `INSERT OR REPLACE INTO match_checkpoints
-        (match_id, phase, current_round, total_rounds, questions_json, phase_entered_at, last_settled_round, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      match.matchId,
-      match.phase,
-      match.currentRound,
-      match.totalRounds,
-      JSON.stringify(match.questions),
-      match.phaseEnteredAt,
-      match.lastSettledRound,
-      Date.now(),
-    );
-    for (const p of match.players.values()) {
+    this.state.storage.sql.exec('BEGIN');
+    try {
       this.state.storage.sql.exec(
-        `INSERT INTO player_checkpoints
-          (match_id, account_id, display_name, starting_balance, current_balance,
-           committed, revealed, hash, option_index, salt, forfeited, disconnected_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        match.matchId, p.accountId, p.displayName, p.startingBalance, p.currentBalance,
-        p.committed ? 1 : 0, p.revealed ? 1 : 0, p.hash, p.optionIndex, p.salt,
-        p.forfeited ? 1 : 0, p.disconnectedAt,
+        `DELETE FROM player_checkpoints WHERE match_id = ?`,
+        match.matchId,
       );
+      this.state.storage.sql.exec(
+        `INSERT OR REPLACE INTO match_checkpoints
+          (match_id, phase, current_round, total_rounds, questions_json, phase_entered_at, last_settled_round, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        match.matchId,
+        match.phase,
+        match.currentRound,
+        match.totalRounds,
+        JSON.stringify(match.questions),
+        match.phaseEnteredAt,
+        match.lastSettledRound,
+        Date.now(),
+      );
+      for (const p of match.players.values()) {
+        this.state.storage.sql.exec(
+          `INSERT INTO player_checkpoints
+            (match_id, account_id, display_name, starting_balance, current_balance,
+             committed, revealed, hash, option_index, salt, forfeited, disconnected_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          match.matchId, p.accountId, p.displayName, p.startingBalance, p.currentBalance,
+          p.committed ? 1 : 0, p.revealed ? 1 : 0, p.hash, p.optionIndex, p.salt,
+          p.forfeited ? 1 : 0, p.disconnectedAt,
+        );
+      }
+      this.state.storage.sql.exec('COMMIT');
+    } catch (err) {
+      this.state.storage.sql.exec('ROLLBACK');
+      throw err;
     }
   }
 
@@ -1675,15 +1688,13 @@ export class GameRoom {
       )];
 
       const players = new Map<string, WorkerPlayerState>();
-      // Placeholder WebSocket for disconnected players (never sent to)
-      const nullWs = null as unknown as WebSocket;
 
       for (const pr of playerRows) {
         const accountId = pr.account_id as string;
         players.set(accountId, {
           accountId,
           displayName: pr.display_name as string,
-          ws: nullWs,
+          ws: null,
           startingBalance: pr.starting_balance as number,
           currentBalance: pr.current_balance as number,
           committed: !!(pr.committed as number),
@@ -1692,7 +1703,7 @@ export class GameRoom {
           optionIndex: pr.option_index as number | null,
           salt: pr.salt as string | null,
           forfeited: !!(pr.forfeited as number),
-          disconnectedAt: phaseEnteredAt, // All disconnected post-eviction
+          disconnectedAt: (pr.disconnected_at as number | null) ?? phaseEnteredAt,
           graceTimer: null,
         });
         this.playerMatchIndex.set(accountId, row.match_id as string);
