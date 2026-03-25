@@ -710,30 +710,36 @@ footer a:hover{color:var(--accent)}
       + 'That salience makes it the natural coordination target: the focal point.';
   }
 
-  opts.forEach(function(opt, idx) {
-    opt.addEventListener('click', function() {
-      if (demo.classList.contains('revealed')) return;
-      opt.style.outline = '2px solid var(--text)';
-      opt.style.outlineOffset = '2px';
-      demo.classList.add('revealed');
-      opts.forEach(function(o) { o.style.cursor = 'default'; });
+  function revealWithTally() {
+    demo.classList.add('revealed');
+    opts.forEach(function(o) { o.style.cursor = 'default'; });
+    fetch('/api/example-tally')
+      .then(function(r) { return r.json(); })
+      .then(renderTally)
+      .catch(function() {});
+  }
 
-      var alreadyVoted = localStorage.getItem('example-voted');
-      if (!alreadyVoted) {
+  // If already voted, show results immediately
+  if (localStorage.getItem('example-voted')) {
+    revealWithTally();
+  } else {
+    opts.forEach(function(opt, idx) {
+      opt.addEventListener('click', function() {
+        if (demo.classList.contains('revealed')) return;
+        opt.style.outline = '2px solid var(--text)';
+        opt.style.outlineOffset = '2px';
+
         fetch('/api/example-vote', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ optionIndex: idx })
         }).catch(function() {});
         localStorage.setItem('example-voted', 'true');
-      }
 
-      fetch('/api/example-tally')
-        .then(function(r) { return r.json(); })
-        .then(renderTally)
-        .catch(function() {});
+        revealWithTally();
+      });
     });
-  });
+  }
 })();
 
 /* ── Deploy status indicator ─────────────── */
