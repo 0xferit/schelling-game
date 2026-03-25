@@ -1164,6 +1164,8 @@ export class GameRoom {
     if (match.commitTimer) { clearTimeout(match.commitTimer); match.commitTimer = null; }
     if (match.revealTimer) { clearTimeout(match.revealTimer); match.revealTimer = null; }
     match.phase = 'ended';
+    // Delete checkpoint immediately so a mid-_endMatch eviction won't resurrect this match
+    this._deleteMatchCheckpoint(match.matchId);
 
     const summary = {
       players: [...match.players.values()].map(p => ({
@@ -1215,9 +1217,8 @@ export class GameRoom {
       }
     }
 
-    // Clean up match and its checkpoint
+    // Clean up match (checkpoint already deleted at top of _endMatch)
     this.activeMatches.delete(match.matchId);
-    this._deleteMatchCheckpoint(match.matchId);
     for (const accountId of matchPlayerIds) {
       this.playerMatchIndex.delete(accountId);
     }
@@ -1634,8 +1635,8 @@ export class GameRoom {
       }
       this.state.storage.sql.exec('COMMIT');
     } catch (err) {
-      this.state.storage.sql.exec('ROLLBACK');
-      throw err;
+      try { this.state.storage.sql.exec('ROLLBACK'); } catch {}
+      console.error('DO storage: checkpoint failed for', match.matchId, err);
     }
   }
 
@@ -1682,48 +1683,53 @@ export class GameRoom {
         continue;
       }
 
-      const playerRows = [...this.state.storage.sql.exec(
-        `SELECT * FROM player_checkpoints WHERE match_id = ?`,
-        row.match_id as string,
-      )];
+      try {
+        const playerRows = [...this.state.storage.sql.exec(
+          `SELECT * FROM player_checkpoints WHERE match_id = ?`,
+          row.match_id as string,
+        )];
 
-      const players = new Map<string, WorkerPlayerState>();
+        const players = new Map<string, WorkerPlayerState>();
 
-      for (const pr of playerRows) {
-        const accountId = pr.account_id as string;
-        players.set(accountId, {
-          accountId,
-          displayName: pr.display_name as string,
-          ws: null,
-          startingBalance: pr.starting_balance as number,
-          currentBalance: pr.current_balance as number,
-          committed: !!(pr.committed as number),
-          revealed: !!(pr.revealed as number),
-          hash: pr.hash as string | null,
-          optionIndex: pr.option_index as number | null,
-          salt: pr.salt as string | null,
-          forfeited: !!(pr.forfeited as number),
-          disconnectedAt: (pr.disconnected_at as number | null) ?? phaseEnteredAt,
-          graceTimer: null,
-        });
-        this.playerMatchIndex.set(accountId, row.match_id as string);
+        for (const pr of playerRows) {
+          const accountId = pr.account_id as string;
+          players.set(accountId, {
+            accountId,
+            displayName: pr.display_name as string,
+            ws: null,
+            startingBalance: pr.starting_balance as number,
+            currentBalance: pr.current_balance as number,
+            committed: !!(pr.committed as number),
+            revealed: !!(pr.revealed as number),
+            hash: pr.hash as string | null,
+            optionIndex: pr.option_index as number | null,
+            salt: pr.salt as string | null,
+            forfeited: !!(pr.forfeited as number),
+            disconnectedAt: (pr.disconnected_at as number | null) ?? phaseEnteredAt,
+            graceTimer: null,
+          });
+          this.playerMatchIndex.set(accountId, row.match_id as string);
+        }
+
+        const match: WorkerMatchState = {
+          matchId: row.match_id as string,
+          players,
+          questions: JSON.parse(row.questions_json as string),
+          currentRound: row.current_round as number,
+          totalRounds: row.total_rounds as number,
+          phase: row.phase as string,
+          phaseEnteredAt,
+          lastSettledRound: row.last_settled_round as number,
+          commitTimer: null,
+          revealTimer: null,
+          resultsTimer: null,
+        };
+
+        this.activeMatches.set(match.matchId, match);
+      } catch (err) {
+        console.error('DO storage: failed to restore match', row.match_id, err);
+        this._deleteMatchCheckpoint(row.match_id as string);
       }
-
-      const match: WorkerMatchState = {
-        matchId: row.match_id as string,
-        players,
-        questions: JSON.parse(row.questions_json as string),
-        currentRound: row.current_round as number,
-        totalRounds: row.total_rounds as number,
-        phase: row.phase as string,
-        phaseEnteredAt,
-        lastSettledRound: row.last_settled_round as number,
-        commitTimer: null,
-        revealTimer: null,
-        resultsTimer: null,
-      };
-
-      this.activeMatches.set(match.matchId, match);
     }
   }
 
@@ -1763,11 +1769,18 @@ export class GameRoom {
     }
 
     // Start grace timers for still-disconnected, non-forfeited players
+    const now = Date.now();
     for (const p of match.players.values()) {
       if (p.disconnectedAt !== null && !p.forfeited && !p.graceTimer) {
-        p.graceTimer = setTimeout(() => {
+        const elapsedGrace = now - p.disconnectedAt;
+        const remainingGrace = GRACE_DURATION_MS - elapsedGrace;
+        if (remainingGrace <= 0) {
           this._forfeitPlayer(match, p.accountId);
-        }, GRACE_DURATION_MS);
+        } else {
+          p.graceTimer = setTimeout(() => {
+            this._forfeitPlayer(match, p.accountId);
+          }, remainingGrace);
+        }
       }
     }
   }
@@ -1807,8 +1820,8 @@ export class GameRoom {
     // Send current round info with remaining time (not full duration)
     if (match.phase === 'commit' || match.phase === 'reveal' || match.phase === 'results') {
       const elapsed = Date.now() - match.phaseEnteredAt;
-      const commitRemaining = Math.max(1, Math.ceil((COMMIT_DURATION * 1000 - elapsed) / 1000));
-      const revealRemaining = Math.max(1, Math.ceil((REVEAL_DURATION * 1000 - elapsed) / 1000));
+      const commitRemaining = Math.max(0, Math.ceil((COMMIT_DURATION * 1000 - elapsed) / 1000));
+      const revealRemaining = Math.max(0, Math.ceil((REVEAL_DURATION * 1000 - elapsed) / 1000));
 
       this._sendTo(accountId, {
         type: 'round_start',
