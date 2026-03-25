@@ -233,15 +233,15 @@ section{padding:6rem 2rem}
   text-align:center;
 }
 .example-opt:hover{border-color:var(--accent);color:var(--accent)}
-.example-opt.popular{
+.example-opt.popular{position:relative}
+.example-demo.revealed .example-opt.popular{
   border-color:var(--accent);
   background:rgba(201,168,76,.08);
   color:var(--accent);
-  position:relative;
 }
 .example-opt.popular::after{
   content:'focal point';
-  display:block;
+  display:none;
   font-size:.55rem;
   font-weight:600;
   letter-spacing:.1em;
@@ -249,10 +249,13 @@ section{padding:6rem 2rem}
   opacity:.6;
   margin-top:.15rem;
 }
+.example-demo.revealed .example-opt.popular::after{display:block}
+.example-demo.revealed .example-insight{display:block}
 .example-insight{
   margin-top:1.5rem;
   font-size:.85rem;
   color:var(--muted);
+  display:none;
   font-style:italic;
   padding-left:1rem;
   border-left:2px solid var(--accent);
@@ -616,12 +619,15 @@ footer a:hover{color:var(--accent)}
 
 /* ── Example option interaction ──────────── */
 (function() {
+  const demo = document.querySelector('.example-demo');
   const opts = document.querySelectorAll('.example-opt');
   opts.forEach(opt => {
     opt.addEventListener('click', () => {
-      opts.forEach(o => o.style.outline = 'none');
-      opt.style.outline = '2px solid var(--accent)';
+      if (demo.classList.contains('revealed')) return;
+      opt.style.outline = '2px solid var(--text)';
       opt.style.outlineOffset = '2px';
+      demo.classList.add('revealed');
+      opts.forEach(o => { o.style.cursor = 'default'; });
     });
   });
 })();
