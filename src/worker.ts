@@ -1,10 +1,19 @@
 import { ethers } from 'ethers';
-import { verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal';
-import { settleRound, ROUND_ANTE } from './domain/settlement';
+import {
+  validateHash,
+  validateOptionIndex,
+  validateSalt,
+  verifyCommit,
+} from './domain/commitReveal';
 import { selectQuestionsForMatch } from './domain/questions';
+import { ROUND_ANTE, settleRound } from './domain/settlement';
+import type {
+  PlayerResultWithBalance,
+  PlayerSettlementInput,
+  Question,
+  RoundResult,
+} from './types/domain';
 import type { Env } from './types/worker-env';
-import type { Question, PlayerSettlementInput, PlayerResultWithBalance, RoundResult } from './types/domain';
-import type { ServerMessage } from './types/messages';
 
 // ---------------------------------------------------------------------------
 // Local interfaces for worker-internal state
@@ -62,26 +71,47 @@ const SESSION_SECRET = 'schelling-game-session-v1'; // in production, use env.SE
 async function createSessionToken(accountId: string): Promise<string> {
   const payload = `${accountId}:${Date.now()}`;
   const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(SESSION_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+    'raw',
+    new TextEncoder().encode(SESSION_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
   );
-  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-  const sig = [...new Uint8Array(sigBuf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const sigBuf = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(payload),
+  );
+  const sig = [...new Uint8Array(sigBuf)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
   return `${payload}:${sig}`;
 }
 
-async function verifySessionToken(token: string | undefined): Promise<string | null> {
+async function verifySessionToken(
+  token: string | undefined,
+): Promise<string | null> {
   if (!token) return null;
   const parts = token.split(':');
   if (parts.length < 3) return null;
   const sig = parts.pop()!;
   const payload = parts.join(':');
   const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(SESSION_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'],
+    'raw',
+    new TextEncoder().encode(SESSION_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify'],
   );
-  const sigBuf = new Uint8Array(sig.match(/.{2}/g)!.map(h => parseInt(h, 16)));
-  const valid = await crypto.subtle.verify('HMAC', key, sigBuf, new TextEncoder().encode(payload));
+  const sigBuf = new Uint8Array(
+    sig.match(/.{2}/g)!.map((h) => parseInt(h, 16)),
+  );
+  const valid = await crypto.subtle.verify(
+    'HMAC',
+    key,
+    sigBuf,
+    new TextEncoder().encode(payload),
+  );
   if (!valid) return null;
   return parts[0] ?? null; // accountId is always the first segment
 }
@@ -116,12 +146,18 @@ const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 // Helper: authenticated account ID from request
 // ---------------------------------------------------------------------------
 
-async function getAuthenticatedAccountId(request: Request): Promise<string | null> {
+async function getAuthenticatedAccountId(
+  request: Request,
+): Promise<string | null> {
   const cookies = parseCookies(request.headers.get('Cookie'));
   return verifySessionToken(cookies.session);
 }
 
-function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
+function jsonResponse(
+  data: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response {
   return Response.json(data, {
     status,
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -147,14 +183,27 @@ export default {
       const accountId = await verifySessionToken(cookies.session);
       if (!accountId) return new Response('Unauthorized', { status: 401 });
 
-      const account = await env.DB.prepare(
+      const account = (await env.DB.prepare(
         'SELECT a.account_id, a.display_name, a.token_balance, a.leaderboard_eligible, a.created_at, ' +
-        's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
-        'WHERE a.account_id = ?'
-      ).bind(accountId).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; created_at: string; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
+          's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
+          'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
+          'WHERE a.account_id = ?',
+      )
+        .bind(accountId)
+        .first()) as {
+        account_id: string;
+        display_name: string | null;
+        token_balance: number;
+        leaderboard_eligible: number;
+        created_at: string;
+        games_played: number;
+        rounds_played: number;
+        coherent_rounds: number;
+        current_streak: number;
+        longest_streak: number;
+      } | null;
 
-      if (!account || !account.display_name) {
+      if (!account?.display_name) {
         return new Response('Profile incomplete', { status: 403 });
       }
 
@@ -163,21 +212,29 @@ export default {
       const doUrl = new URL(request.url);
       doUrl.searchParams.set('accountId', accountId);
       doUrl.searchParams.set('displayName', account.display_name);
-      doUrl.searchParams.set('tokenBalance', String(account.token_balance ?? 0));
+      doUrl.searchParams.set(
+        'tokenBalance',
+        String(account.token_balance ?? 0),
+      );
       return stub.fetch(new Request(doUrl.toString(), request));
     }
 
     // ---- POST /api/logout ----
     if (url.pathname === '/api/logout' && method === 'POST') {
       return jsonResponse({ ok: true }, 200, {
-        'Set-Cookie': 'session=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0',
+        'Set-Cookie':
+          'session=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0',
       });
     }
 
     // ---- POST /api/auth/challenge ----
     if (url.pathname === '/api/auth/challenge' && method === 'POST') {
       let body: { walletAddress?: string };
-      try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
+      try {
+        body = await request.json();
+      } catch {
+        return errorResponse('Invalid JSON');
+      }
       const walletAddress = body.walletAddress;
       if (!walletAddress || typeof walletAddress !== 'string') {
         return errorResponse('walletAddress required');
@@ -189,36 +246,62 @@ export default {
       const message = `Sign this message to authenticate with Schelling Game.\n\nWallet: ${normalized}\nNonce: ${nonce}`;
 
       await env.DB.prepare(
-        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(challengeId, normalized, nonce, message, expiresAt).run();
+        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
+      )
+        .bind(challengeId, normalized, nonce, message, expiresAt)
+        .run();
 
       return jsonResponse({ challengeId, message, expiresAt });
     }
 
     // ---- POST /api/auth/verify ----
     if (url.pathname === '/api/auth/verify' && method === 'POST') {
-      let body: { challengeId?: string; walletAddress?: string; signature?: string };
-      try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
+      let body: {
+        challengeId?: string;
+        walletAddress?: string;
+        signature?: string;
+      };
+      try {
+        body = await request.json();
+      } catch {
+        return errorResponse('Invalid JSON');
+      }
       const { challengeId, walletAddress, signature } = body;
       if (!challengeId || !walletAddress || !signature) {
-        return errorResponse('challengeId, walletAddress, and signature required');
+        return errorResponse(
+          'challengeId, walletAddress, and signature required',
+        );
       }
       const normalized = walletAddress.toLowerCase();
 
-      const challenge = await env.DB.prepare(
-        'SELECT * FROM auth_challenges WHERE challenge_id = ? AND wallet_address = ?'
-      ).bind(challengeId, normalized).first() as { challenge_id: string; wallet_address: string; nonce: string; message: string; expires_at: string } | null;
+      const challenge = (await env.DB.prepare(
+        'SELECT * FROM auth_challenges WHERE challenge_id = ? AND wallet_address = ?',
+      )
+        .bind(challengeId, normalized)
+        .first()) as {
+        challenge_id: string;
+        wallet_address: string;
+        nonce: string;
+        message: string;
+        expires_at: string;
+      } | null;
 
       if (!challenge) return errorResponse('Invalid or expired challenge', 401);
       if (new Date(challenge.expires_at) < new Date()) {
-        await env.DB.prepare('DELETE FROM auth_challenges WHERE challenge_id = ?').bind(challengeId).run();
+        await env.DB.prepare(
+          'DELETE FROM auth_challenges WHERE challenge_id = ?',
+        )
+          .bind(challengeId)
+          .run();
         return errorResponse('Challenge expired', 401);
       }
 
       // Verify signature
       let recoveredAddress: string;
       try {
-        recoveredAddress = ethers.verifyMessage(challenge.message, signature).toLowerCase();
+        recoveredAddress = ethers
+          .verifyMessage(challenge.message, signature)
+          .toLowerCase();
       } catch {
         return errorResponse('Invalid signature', 401);
       }
@@ -227,37 +310,59 @@ export default {
       }
 
       // Delete used challenge
-      await env.DB.prepare('DELETE FROM auth_challenges WHERE challenge_id = ?').bind(challengeId).run();
+      await env.DB.prepare('DELETE FROM auth_challenges WHERE challenge_id = ?')
+        .bind(challengeId)
+        .run();
 
       // Upsert account
       await env.DB.prepare(
         'INSERT INTO accounts (account_id, token_balance, leaderboard_eligible, created_at) VALUES (?, 0, 1, ?) ' +
-        'ON CONFLICT(account_id) DO NOTHING'
-      ).bind(normalized, new Date().toISOString()).run();
+          'ON CONFLICT(account_id) DO NOTHING',
+      )
+        .bind(normalized, new Date().toISOString())
+        .run();
 
       // Upsert player_stats
       await env.DB.prepare(
         'INSERT INTO player_stats (account_id, games_played, rounds_played, coherent_rounds, current_streak, longest_streak) ' +
-        'VALUES (?, 0, 0, 0, 0, 0) ON CONFLICT(account_id) DO NOTHING'
-      ).bind(normalized).run();
+          'VALUES (?, 0, 0, 0, 0, 0) ON CONFLICT(account_id) DO NOTHING',
+      )
+        .bind(normalized)
+        .run();
 
-      const account = await env.DB.prepare(
+      const account = (await env.DB.prepare(
         'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?'
-      ).bind(normalized).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
+          'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?',
+      )
+        .bind(normalized)
+        .first()) as {
+        account_id: string;
+        display_name: string | null;
+        token_balance: number;
+        leaderboard_eligible: number;
+        games_played: number;
+        rounds_played: number;
+        coherent_rounds: number;
+        current_streak: number;
+        longest_streak: number;
+      } | null;
 
       const token = await createSessionToken(normalized);
       const requiresDisplayName = !account!.display_name;
 
-      return jsonResponse({
-        accountId: normalized,
-        displayName: account!.display_name || null,
-        requiresDisplayName,
-        tokenBalance: account!.token_balance ?? 0,
-        leaderboardEligible: !!account!.leaderboard_eligible,
-      }, 200, {
-        'Set-Cookie': `session=${token}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=86400`,
-      });
+      return jsonResponse(
+        {
+          accountId: normalized,
+          displayName: account!.display_name || null,
+          requiresDisplayName,
+          tokenBalance: account!.token_balance ?? 0,
+          leaderboardEligible: !!account!.leaderboard_eligible,
+        },
+        200,
+        {
+          'Set-Cookie': `session=${token}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=86400`,
+        },
+      );
     }
 
     // ---- GET /api/me ----
@@ -265,10 +370,22 @@ export default {
       const accountId = await getAuthenticatedAccountId(request);
       if (!accountId) return errorResponse('Unauthorized', 401);
 
-      const account = await env.DB.prepare(
+      const account = (await env.DB.prepare(
         'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?'
-      ).bind(accountId).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
+          'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?',
+      )
+        .bind(accountId)
+        .first()) as {
+        account_id: string;
+        display_name: string | null;
+        token_balance: number;
+        leaderboard_eligible: number;
+        games_played: number;
+        rounds_played: number;
+        coherent_rounds: number;
+        current_streak: number;
+        longest_streak: number;
+      } | null;
       if (!account) return errorResponse('Account not found', 404);
 
       // Query queue status from the DO
@@ -280,7 +397,7 @@ export default {
         statusUrl.pathname = '/status';
         statusUrl.searchParams.set('accountId', accountId);
         const statusResp = await stub.fetch(new Request(statusUrl.toString()));
-        const statusData = await statusResp.json() as { status?: string };
+        const statusData = (await statusResp.json()) as { status?: string };
         queueStatus = statusData.status || 'idle';
       } catch {
         // DO might not be reachable; default to idle
@@ -302,10 +419,16 @@ export default {
       if (!accountId) return errorResponse('Unauthorized', 401);
 
       let body: { displayName?: string };
-      try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
+      try {
+        body = await request.json();
+      } catch {
+        return errorResponse('Invalid JSON');
+      }
       const displayName = body.displayName;
       if (!displayName || !DISPLAY_NAME_REGEX.test(displayName)) {
-        return errorResponse('displayName must be 1-20 characters: A-Za-z0-9_-');
+        return errorResponse(
+          'displayName must be 1-20 characters: A-Za-z0-9_-',
+        );
       }
 
       // Check if player is in queue/match via DO
@@ -316,23 +439,30 @@ export default {
         statusUrl.pathname = '/status';
         statusUrl.searchParams.set('accountId', accountId);
         const statusResp = await stub.fetch(new Request(statusUrl.toString()));
-        const statusData = await statusResp.json() as { status?: string };
+        const statusData = (await statusResp.json()) as { status?: string };
         if (statusData.status !== 'idle') {
-          return errorResponse('Cannot change display name while queued, forming, or in a match', 409);
+          return errorResponse(
+            'Cannot change display name while queued, forming, or in a match',
+            409,
+          );
         }
       } catch {
         // If DO is unreachable, allow the change
       }
 
       // Check uniqueness
-      const existing = await env.DB.prepare(
-        'SELECT account_id FROM accounts WHERE display_name = ? COLLATE NOCASE AND account_id != ?'
-      ).bind(displayName, accountId).first() as { account_id: string } | null;
+      const existing = (await env.DB.prepare(
+        'SELECT account_id FROM accounts WHERE display_name = ? COLLATE NOCASE AND account_id != ?',
+      )
+        .bind(displayName, accountId)
+        .first()) as { account_id: string } | null;
       if (existing) return errorResponse('Display name already claimed', 409);
 
       await env.DB.prepare(
-        'UPDATE accounts SET display_name = ? WHERE account_id = ?'
-      ).bind(displayName, accountId).run();
+        'UPDATE accounts SET display_name = ? WHERE account_id = ?',
+      )
+        .bind(displayName, accountId)
+        .run();
 
       return jsonResponse({ displayName });
     }
@@ -341,31 +471,37 @@ export default {
     if (url.pathname === '/api/leaderboard' && method === 'GET') {
       const { results } = await env.DB.prepare(
         'SELECT a.account_id, a.display_name, a.token_balance, a.leaderboard_eligible, ' +
-        's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
-        'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL ' +
-        'ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC ' +
-        'LIMIT 100'
+          's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
+          'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
+          'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL ' +
+          'ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC ' +
+          'LIMIT 100',
       ).all();
 
-      const leaderboard = (results || []).map((r: Record<string, unknown>, i: number) => {
-        const gp = (r.games_played as number) || 0;
-        const rp = (r.rounds_played as number) || 0;
-        const cr = (r.coherent_rounds as number) || 0;
-        return {
-          rank: i + 1,
-          displayName: r.display_name,
-          tokenBalance: (r.token_balance as number) ?? 0,
-          leaderboardEligible: true,
-          gamesPlayed: gp,
-          avgNetTokensPerGame: gp > 0 ? Math.round((((r.token_balance as number) ?? 0) / gp) * 100) / 100 : 0,
-          roundsPlayed: rp,
-          coherentRounds: cr,
-          coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
-          currentStreak: (r.current_streak as number) || 0,
-          longestStreak: (r.longest_streak as number) || 0,
-        };
-      });
+      const leaderboard = (results || []).map(
+        (r: Record<string, unknown>, i: number) => {
+          const gp = (r.games_played as number) || 0;
+          const rp = (r.rounds_played as number) || 0;
+          const cr = (r.coherent_rounds as number) || 0;
+          return {
+            rank: i + 1,
+            displayName: r.display_name,
+            tokenBalance: (r.token_balance as number) ?? 0,
+            leaderboardEligible: true,
+            gamesPlayed: gp,
+            avgNetTokensPerGame:
+              gp > 0
+                ? Math.round((((r.token_balance as number) ?? 0) / gp) * 100) /
+                  100
+                : 0,
+            roundsPlayed: rp,
+            coherentRounds: cr,
+            coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
+            currentStreak: (r.current_streak as number) || 0,
+            longestStreak: (r.longest_streak as number) || 0,
+          };
+        },
+      );
 
       return jsonResponse(leaderboard);
     }
@@ -375,15 +511,29 @@ export default {
       const accountId = await getAuthenticatedAccountId(request);
       if (!accountId) return errorResponse('Unauthorized', 401);
 
-      const account = await env.DB.prepare(
+      const account = (await env.DB.prepare(
         'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?'
-      ).bind(accountId).first() as { account_id: string; display_name: string | null; token_balance: number; leaderboard_eligible: number; games_played: number; rounds_played: number; coherent_rounds: number; current_streak: number; longest_streak: number } | null;
+          'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?',
+      )
+        .bind(accountId)
+        .first()) as {
+        account_id: string;
+        display_name: string | null;
+        token_balance: number;
+        leaderboard_eligible: number;
+        games_played: number;
+        rounds_played: number;
+        coherent_rounds: number;
+        current_streak: number;
+        longest_streak: number;
+      } | null;
       if (!account) return errorResponse('Account not found', 404);
 
-      const rankRow = await env.DB.prepare(
-        'SELECT COUNT(*) as rank FROM accounts WHERE leaderboard_eligible = 1 AND token_balance > ? AND display_name IS NOT NULL'
-      ).bind(account.token_balance ?? 0).first() as { rank: number } | null;
+      const rankRow = (await env.DB.prepare(
+        'SELECT COUNT(*) as rank FROM accounts WHERE leaderboard_eligible = 1 AND token_balance > ? AND display_name IS NOT NULL',
+      )
+        .bind(account.token_balance ?? 0)
+        .first()) as { rank: number } | null;
 
       const gp = account.games_played || 0;
       const rp = account.rounds_played || 0;
@@ -395,7 +545,10 @@ export default {
         tokenBalance: account.token_balance ?? 0,
         leaderboardEligible: !!account.leaderboard_eligible,
         gamesPlayed: gp,
-        avgNetTokensPerGame: gp > 0 ? Math.round(((account.token_balance ?? 0) / gp) * 100) / 100 : 0,
+        avgNetTokensPerGame:
+          gp > 0
+            ? Math.round(((account.token_balance ?? 0) / gp) * 100) / 100
+            : 0,
         roundsPlayed: rp,
         coherentRounds: cr,
         coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
@@ -416,17 +569,23 @@ export default {
       const bufB = enc.encode(b);
       if (bufA.byteLength !== bufB.byteLength) {
         // Compare against itself so timing is constant regardless of length mismatch
-        subtle.timingSafeEqual(bufA.buffer as ArrayBuffer, bufA.buffer as ArrayBuffer);
+        subtle.timingSafeEqual(
+          bufA.buffer as ArrayBuffer,
+          bufA.buffer as ArrayBuffer,
+        );
         return false;
       }
-      return subtle.timingSafeEqual(bufA.buffer as ArrayBuffer, bufB.buffer as ArrayBuffer);
+      return subtle.timingSafeEqual(
+        bufA.buffer as ArrayBuffer,
+        bufB.buffer as ArrayBuffer,
+      );
     };
 
     const requireAdmin = async (): Promise<Response | null> => {
       if (!env.ADMIN_KEY) return errorResponse('ADMIN_KEY not configured', 503);
       const auth = request.headers.get('Authorization') ?? '';
       if (!timingSafeEqual(auth, `Bearer ${env.ADMIN_KEY}`)) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1000));
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
           status: 401,
           headers: { 'Content-Type': 'application/json' },
@@ -439,20 +598,41 @@ export default {
     if (url.pathname === '/api/export/votes.csv' && method === 'GET') {
       const denied = await requireAdmin();
       if (denied) return denied;
-      const { results } = await env.DB.prepare('SELECT * FROM vote_logs ORDER BY id ASC').all();
+      const { results } = await env.DB.prepare(
+        'SELECT * FROM vote_logs ORDER BY id ASC',
+      ).all();
       const columns = [
-        'id', 'match_id', 'round_number', 'question_id', 'account_id', 'display_name_snapshot',
-        'revealed_option_index', 'revealed_option_label', 'won_round', 'earns_coordination_credit',
-        'ante_amount', 'round_payout', 'net_delta', 'player_count', 'valid_reveal_count',
-        'top_count', 'winner_count', 'winning_option_indexes_json', 'voided', 'void_reason', 'timestamp',
+        'id',
+        'match_id',
+        'round_number',
+        'question_id',
+        'account_id',
+        'display_name_snapshot',
+        'revealed_option_index',
+        'revealed_option_label',
+        'won_round',
+        'earns_coordination_credit',
+        'ante_amount',
+        'round_payout',
+        'net_delta',
+        'player_count',
+        'valid_reveal_count',
+        'top_count',
+        'winner_count',
+        'winning_option_indexes_json',
+        'voided',
+        'void_reason',
+        'timestamp',
       ];
       const header = columns.join(',');
       const rows = (results || []).map((r: Record<string, unknown>) =>
-        columns.map(c => {
-          const v = r[c];
-          if (v === null || v === undefined) return '';
-          return String(v).includes(',') ? `"${String(v)}"` : String(v);
-        }).join(',')
+        columns
+          .map((c) => {
+            const v = r[c];
+            if (v === null || v === undefined) return '';
+            return String(v).includes(',') ? `"${String(v)}"` : String(v);
+          })
+          .join(','),
       );
       const csv = [header, ...rows].join('\n');
       return new Response(csv, {
@@ -464,46 +644,72 @@ export default {
     }
 
     // ---- POST /api/admin/leaderboard-eligible ----
-    if (url.pathname === '/api/admin/leaderboard-eligible' && method === 'POST') {
+    if (
+      url.pathname === '/api/admin/leaderboard-eligible' &&
+      method === 'POST'
+    ) {
       const denied = await requireAdmin();
       if (denied) return denied;
       let body: { accountId?: string; eligible?: boolean };
-      try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
+      try {
+        body = await request.json();
+      } catch {
+        return errorResponse('Invalid JSON');
+      }
       const { accountId, eligible } = body;
       if (!accountId || typeof eligible !== 'boolean') {
         return errorResponse('accountId and eligible (boolean) required');
       }
       await env.DB.prepare(
-        'UPDATE accounts SET leaderboard_eligible = ? WHERE account_id = ?'
-      ).bind(eligible ? 1 : 0, accountId.toLowerCase()).run();
+        'UPDATE accounts SET leaderboard_eligible = ? WHERE account_id = ?',
+      )
+        .bind(eligible ? 1 : 0, accountId.toLowerCase())
+        .run();
 
-      return jsonResponse({ accountId: accountId.toLowerCase(), leaderboardEligible: eligible });
+      return jsonResponse({
+        accountId: accountId.toLowerCase(),
+        leaderboardEligible: eligible,
+      });
     }
 
     // ---- POST /api/example-vote ----
     if (url.pathname === '/api/example-vote' && method === 'POST') {
       let body: { optionIndex?: number };
-      try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
+      try {
+        body = await request.json();
+      } catch {
+        return errorResponse('Invalid JSON');
+      }
       const idx = body.optionIndex;
-      if (typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0 || idx > 17) {
+      if (
+        typeof idx !== 'number' ||
+        !Number.isInteger(idx) ||
+        idx < 0 ||
+        idx > 17
+      ) {
         return errorResponse('optionIndex must be an integer 0-17', 400);
       }
       await env.DB.prepare(
-        'INSERT INTO example_votes (option_index) VALUES (?)'
-      ).bind(idx).run();
+        'INSERT INTO example_votes (option_index) VALUES (?)',
+      )
+        .bind(idx)
+        .run();
       return jsonResponse({ ok: true });
     }
 
     // ---- GET /api/example-tally ----
     if (url.pathname === '/api/example-tally' && method === 'GET') {
       const { results } = await env.DB.prepare(
-        'SELECT option_index, COUNT(*) as count FROM example_votes GROUP BY option_index'
+        'SELECT option_index, COUNT(*) as count FROM example_votes GROUP BY option_index',
       ).all();
       const votes = (results || []).map((r: Record<string, unknown>) => ({
         optionIndex: r.option_index as number,
         count: r.count as number,
       }));
-      const total = votes.reduce((sum: number, v: { count: number }) => sum + v.count, 0);
+      const total = votes.reduce(
+        (sum: number, v: { count: number }) => sum + v.count,
+        0,
+      );
       return jsonResponse({ total, votes });
     }
 
@@ -593,7 +799,10 @@ export class GameRoom {
     if (request.headers.get('Upgrade') === 'websocket') {
       const accountId = url.searchParams.get('accountId');
       const displayName = url.searchParams.get('displayName');
-      const tokenBalance = parseInt(url.searchParams.get('tokenBalance') || '0', 10);
+      const tokenBalance = parseInt(
+        url.searchParams.get('tokenBalance') || '0',
+        10,
+      );
 
       if (!accountId || !displayName) {
         return new Response('Missing auth params', { status: 400 });
@@ -612,7 +821,12 @@ export class GameRoom {
   // WebSocket lifecycle
   // -------------------------------------------------------------------------
 
-  _handleWebSocket(ws: WebSocket, accountId: string, displayName: string, tokenBalance: number): void {
+  _handleWebSocket(
+    ws: WebSocket,
+    accountId: string,
+    displayName: string,
+    _tokenBalance: number,
+  ): void {
     ws.accept();
 
     // Check for reconnect to an active match
@@ -624,7 +838,7 @@ export class GameRoom {
       const match = this.activeMatches.get(existingMatchId);
       if (match) {
         const playerState = match.players.get(accountId);
-        if (playerState && playerState.disconnectedAt && !playerState.forfeited) {
+        if (playerState?.disconnectedAt && !playerState.forfeited) {
           // Clear grace timer and reattach
           if (playerState.graceTimer) {
             clearTimeout(playerState.graceTimer);
@@ -633,7 +847,9 @@ export class GameRoom {
           playerState.disconnectedAt = null;
           playerState.ws = ws;
           existingConn.ws = ws;
-          this._checkpointPlayerAction(existingMatchId, accountId, { disconnectedAt: null });
+          this._checkpointPlayerAction(existingMatchId, accountId, {
+            disconnectedAt: null,
+          });
           this._setupWsListeners(ws, accountId);
 
           // Broadcast reconnection
@@ -657,7 +873,10 @@ export class GameRoom {
         if (playerState && !playerState.forfeited) {
           // Create connection entry and reattach
           this.connections.set(accountId, {
-            ws, displayName, autoRequeue: false, previousOpponents: new Set(),
+            ws,
+            displayName,
+            autoRequeue: false,
+            previousOpponents: new Set(),
           });
           if (playerState.graceTimer) {
             clearTimeout(playerState.graceTimer);
@@ -665,7 +884,9 @@ export class GameRoom {
           }
           playerState.disconnectedAt = null;
           playerState.ws = ws;
-          this._checkpointPlayerAction(existingMatchId, accountId, { disconnectedAt: null });
+          this._checkpointPlayerAction(existingMatchId, accountId, {
+            disconnectedAt: null,
+          });
           this._setupWsListeners(ws, accountId);
 
           this._ensureMatchTimerRunning(match);
@@ -683,7 +904,9 @@ export class GameRoom {
 
     // Close previous connection if any (not a match reconnect)
     if (existingConn) {
-      try { existingConn.ws.close(1000, 'Replaced by new connection'); } catch {}
+      try {
+        existingConn.ws.close(1000, 'Replaced by new connection');
+      } catch {}
       // Remove from queue if they were queued
       this._removeFromQueue(accountId);
     }
@@ -692,7 +915,9 @@ export class GameRoom {
       ws,
       displayName,
       autoRequeue: false,
-      previousOpponents: existingConn ? existingConn.previousOpponents : new Set(),
+      previousOpponents: existingConn
+        ? existingConn.previousOpponents
+        : new Set(),
     });
 
     this._setupWsListeners(ws, accountId);
@@ -704,10 +929,16 @@ export class GameRoom {
   _setupWsListeners(ws: WebSocket, accountId: string): void {
     ws.addEventListener('message', async (evt: MessageEvent) => {
       try {
-        const msg = JSON.parse(evt.data as string) as { type: string; [key: string]: unknown };
+        const msg = JSON.parse(evt.data as string) as {
+          type: string;
+          [key: string]: unknown;
+        };
         await this._handleMessage(accountId, msg);
       } catch (e) {
-        this._sendTo(accountId, { type: 'error', message: (e as Error).message || 'Internal error' });
+        this._sendTo(accountId, {
+          type: 'error',
+          message: (e as Error).message || 'Internal error',
+        });
       }
     });
 
@@ -724,16 +955,28 @@ export class GameRoom {
   // Message router
   // -------------------------------------------------------------------------
 
-  async _handleMessage(accountId: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
+  async _handleMessage(
+    accountId: string,
+    msg: { type: string; [key: string]: unknown },
+  ): Promise<void> {
     switch (msg.type) {
-      case 'join_queue':  return this._handleJoinQueue(accountId);
-      case 'leave_queue': return this._handleLeaveQueue(accountId);
-      case 'commit':      return this._handleCommit(accountId, msg);
-      case 'reveal':      return this._handleReveal(accountId, msg);
-      case 'chat':            return this._handleChat(accountId, msg);
-      case 'question_rating': return this._handleQuestionRating(accountId, msg);
+      case 'join_queue':
+        return this._handleJoinQueue(accountId);
+      case 'leave_queue':
+        return this._handleLeaveQueue(accountId);
+      case 'commit':
+        return this._handleCommit(accountId, msg);
+      case 'reveal':
+        return this._handleReveal(accountId, msg);
+      case 'chat':
+        return this._handleChat(accountId, msg);
+      case 'question_rating':
+        return this._handleQuestionRating(accountId, msg);
       default:
-        this._sendTo(accountId, { type: 'error', message: `Unknown message type: ${msg.type}` });
+        this._sendTo(accountId, {
+          type: 'error',
+          message: `Unknown message type: ${msg.type}`,
+        });
     }
   }
 
@@ -747,15 +990,24 @@ export class GameRoom {
 
     // Cannot join if already in a match
     if (this.playerMatchIndex.has(accountId)) {
-      return this._sendTo(accountId, { type: 'error', message: 'Cannot join queue while in a match' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Cannot join queue while in a match',
+      });
     }
     // Cannot join if already queued
     if (this.waitingQueue.includes(accountId)) {
-      return this._sendTo(accountId, { type: 'error', message: 'Already in queue' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Already in queue',
+      });
     }
     // Cannot join if in forming match
-    if (this.formingMatch && this.formingMatch.players.includes(accountId)) {
-      return this._sendTo(accountId, { type: 'error', message: 'Already in forming match' });
+    if (this.formingMatch?.players.includes(accountId)) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Already in forming match',
+      });
     }
 
     conn.autoRequeue = true;
@@ -804,7 +1056,10 @@ export class GameRoom {
   _tryFormMatch(): void {
     // If there is already a forming match, try to add from queue
     if (this.formingMatch) {
-      while (this.waitingQueue.length > 0 && this.formingMatch.players.length < MAX_MATCH_SIZE) {
+      while (
+        this.waitingQueue.length > 0 &&
+        this.formingMatch.players.length < MAX_MATCH_SIZE
+      ) {
         const nextId = this.waitingQueue.shift()!;
         this.formingMatch.players.push(nextId);
       }
@@ -824,7 +1079,11 @@ export class GameRoom {
 
     if (reserved.length >= MAX_MATCH_SIZE) {
       // Full house: start immediately
-      this.formingMatch = { players: reserved, timer: null, fillDeadlineMs: null };
+      this.formingMatch = {
+        players: reserved,
+        timer: null,
+        fillDeadlineMs: null,
+      };
       this._startFormingMatch();
       return;
     }
@@ -886,11 +1145,15 @@ export class GameRoom {
       // Load current balance from D1
       let balance = 0;
       try {
-        const row = await this.env.DB.prepare(
-          'SELECT token_balance FROM accounts WHERE account_id = ?'
-        ).bind(accountId).first() as { token_balance: number } | null;
+        const row = (await this.env.DB.prepare(
+          'SELECT token_balance FROM accounts WHERE account_id = ?',
+        )
+          .bind(accountId)
+          .first()) as { token_balance: number } | null;
         if (row) balance = row.token_balance ?? 0;
-      } catch (e) { console.error('D1: fetch balance for', accountId, e); }
+      } catch (e) {
+        console.error('D1: fetch balance for', accountId, e);
+      }
 
       playersMap.set(accountId, {
         accountId,
@@ -929,21 +1192,24 @@ export class GameRoom {
     // Batch create match + match_players in D1
     try {
       const createStmts: D1PreparedStatement[] = [
-        this.env.DB.prepare('INSERT INTO matches (match_id, started_at, round_count, status) VALUES (?, ?, ?, ?)')
-          .bind(matchId, new Date().toISOString(), TOTAL_ROUNDS, 'active'),
+        this.env.DB.prepare(
+          'INSERT INTO matches (match_id, started_at, round_count, status) VALUES (?, ?, ?, ?)',
+        ).bind(matchId, new Date().toISOString(), TOTAL_ROUNDS, 'active'),
       ];
       for (const [acctId, p] of playersMap) {
         createStmts.push(
           this.env.DB.prepare(
-            'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)'
-          ).bind(matchId, acctId, p.displayName, p.startingBalance, 'active')
+            'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+          ).bind(matchId, acctId, p.displayName, p.startingBalance, 'active'),
         );
       }
       await this.env.DB.batch(createStmts);
-    } catch (e) { console.error('D1: insert match/match_players for', matchId, e); }
+    } catch (e) {
+      console.error('D1: insert match/match_players for', matchId, e);
+    }
 
     // Broadcast game_started
-    const playersInfo = [...playersMap.values()].map(p => ({
+    const playersInfo = [...playersMap.values()].map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
     }));
@@ -997,7 +1263,10 @@ export class GameRoom {
   }
 
   _startRevealPhase(match: WorkerMatchState): void {
-    if (match.commitTimer) { clearTimeout(match.commitTimer); match.commitTimer = null; }
+    if (match.commitTimer) {
+      clearTimeout(match.commitTimer);
+      match.commitTimer = null;
+    }
     match.phase = 'reveal';
     match.phaseEnteredAt = Date.now();
 
@@ -1016,7 +1285,10 @@ export class GameRoom {
   }
 
   async _finalizeRound(match: WorkerMatchState): Promise<void> {
-    if (match.revealTimer) { clearTimeout(match.revealTimer); match.revealTimer = null; }
+    if (match.revealTimer) {
+      clearTimeout(match.revealTimer);
+      match.revealTimer = null;
+    }
     match.phase = 'results';
     match.phaseEnteredAt = Date.now();
 
@@ -1024,7 +1296,9 @@ export class GameRoom {
     const alreadySettled = match.currentRound <= match.lastSettledRound;
 
     // Build player array for settlement
-    const settlementPlayers: PlayerSettlementInput[] = [...match.players.values()].map(p => ({
+    const settlementPlayers: PlayerSettlementInput[] = [
+      ...match.players.values(),
+    ].map((p) => ({
       accountId: p.accountId,
       displayName: p.displayName,
       optionIndex: p.revealed ? p.optionIndex : null,
@@ -1043,9 +1317,10 @@ export class GameRoom {
         playerState.currentBalance += pr.netDelta;
       }
       (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
-      pr.revealedOptionLabel = pr.revealedOptionIndex !== null
-        ? (question.options[pr.revealedOptionIndex] || null)
-        : null;
+      pr.revealedOptionLabel =
+        pr.revealedOptionIndex !== null
+          ? question.options[pr.revealedOptionIndex] || null
+          : null;
     }
 
     // Write to D1 only if this round hasn't been settled before (prevents duplicates after restore)
@@ -1063,28 +1338,31 @@ export class GameRoom {
         if (!playerState) continue;
 
         stmts.push(
-          this.env.DB.prepare('UPDATE accounts SET token_balance = ? WHERE account_id = ?')
-            .bind(playerState.currentBalance, pr.accountId)
+          this.env.DB.prepare(
+            'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+          ).bind(playerState.currentBalance, pr.accountId),
         );
 
         if (!result.voided) {
           stmts.push(
-            this.env.DB.prepare('UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?')
-              .bind(pr.accountId)
+            this.env.DB.prepare(
+              'UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?',
+            ).bind(pr.accountId),
           );
           if (pr.earnsCoordinationCredit) {
             stmts.push(
               this.env.DB.prepare(
                 'UPDATE player_stats SET coherent_rounds = coherent_rounds + 1, ' +
-                'current_streak = current_streak + 1, ' +
-                'longest_streak = MAX(longest_streak, current_streak + 1) ' +
-                'WHERE account_id = ?'
-              ).bind(pr.accountId)
+                  'current_streak = current_streak + 1, ' +
+                  'longest_streak = MAX(longest_streak, current_streak + 1) ' +
+                  'WHERE account_id = ?',
+              ).bind(pr.accountId),
             );
           } else {
             stmts.push(
-              this.env.DB.prepare('UPDATE player_stats SET current_streak = 0 WHERE account_id = ?')
-                .bind(pr.accountId)
+              this.env.DB.prepare(
+                'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
+              ).bind(pr.accountId),
             );
           }
         }
@@ -1092,27 +1370,41 @@ export class GameRoom {
         stmts.push(
           this.env.DB.prepare(
             'INSERT INTO vote_logs (match_id, round_number, question_id, account_id, display_name_snapshot, ' +
-            'revealed_option_index, revealed_option_label, won_round, earns_coordination_credit, ' +
-            'ante_amount, round_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
-            'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+              'revealed_option_index, revealed_option_label, won_round, earns_coordination_credit, ' +
+              'ante_amount, round_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
+              'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
+              'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           ).bind(
-            match.matchId, match.currentRound, question.id,
-            pr.accountId, pr.displayName,
-            pr.revealedOptionIndex, pr.revealedOptionLabel,
-            pr.wonRound ? 1 : 0, pr.earnsCoordinationCredit ? 1 : 0,
-            pr.antePaid, pr.roundPayout, pr.netDelta,
-            result.playerCount, result.validRevealCount, result.topCount,
-            result.winnerCount, JSON.stringify(result.winningOptionIndexes),
-            result.voided ? 1 : 0, result.voidReason, now,
-          )
+            match.matchId,
+            match.currentRound,
+            question.id,
+            pr.accountId,
+            pr.displayName,
+            pr.revealedOptionIndex,
+            pr.revealedOptionLabel,
+            pr.wonRound ? 1 : 0,
+            pr.earnsCoordinationCredit ? 1 : 0,
+            pr.antePaid,
+            pr.roundPayout,
+            pr.netDelta,
+            result.playerCount,
+            result.validRevealCount,
+            result.topCount,
+            result.winnerCount,
+            JSON.stringify(result.winningOptionIndexes),
+            result.voided ? 1 : 0,
+            result.voidReason,
+            now,
+          ),
         );
       }
 
       if (stmts.length > 0) {
         try {
           await this.env.DB.batch(stmts);
-        } catch (e) { console.error('D1: batch finalizeRound for', match.matchId, e); }
+        } catch (e) {
+          console.error('D1: batch finalizeRound for', match.matchId, e);
+        }
       }
     }
 
@@ -1130,7 +1422,7 @@ export class GameRoom {
         winningOptionIndexes: result.winningOptionIndexes,
         winnerCount: result.winnerCount,
         payoutPerWinner: result.payoutPerWinner,
-        players: result.players.map(pr => ({
+        players: result.players.map((pr) => ({
           displayName: pr.displayName,
           revealedOptionIndex: pr.revealedOptionIndex,
           wonRound: pr.wonRound,
@@ -1160,20 +1452,29 @@ export class GameRoom {
   }
 
   async _endMatch(match: WorkerMatchState): Promise<void> {
-    if (match.resultsTimer) { clearTimeout(match.resultsTimer); match.resultsTimer = null; }
-    if (match.commitTimer) { clearTimeout(match.commitTimer); match.commitTimer = null; }
-    if (match.revealTimer) { clearTimeout(match.revealTimer); match.revealTimer = null; }
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
+    if (match.commitTimer) {
+      clearTimeout(match.commitTimer);
+      match.commitTimer = null;
+    }
+    if (match.revealTimer) {
+      clearTimeout(match.revealTimer);
+      match.revealTimer = null;
+    }
     match.phase = 'ended';
     // Delete checkpoint immediately so a mid-_endMatch eviction won't resurrect this match
     this._deleteMatchCheckpoint(match.matchId);
 
     const summary = {
-      players: [...match.players.values()].map(p => ({
+      players: [...match.players.values()].map((p) => ({
         displayName: p.displayName,
         startingBalance: p.startingBalance,
         endingBalance: p.currentBalance,
         netDelta: p.currentBalance - p.startingBalance,
-        result: p.forfeited ? 'forfeited' as const : 'completed' as const,
+        result: p.forfeited ? ('forfeited' as const) : ('completed' as const),
       })),
     };
 
@@ -1182,38 +1483,44 @@ export class GameRoom {
     // Batch all endMatch D1 writes
     try {
       const endStmts: D1PreparedStatement[] = [
-        this.env.DB.prepare('UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?')
-          .bind(new Date().toISOString(), 'completed', match.matchId),
+        this.env.DB.prepare(
+          'UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?',
+        ).bind(new Date().toISOString(), 'completed', match.matchId),
       ];
 
       for (const p of match.players.values()) {
         endStmts.push(
           this.env.DB.prepare(
-            'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?'
+            'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?',
           ).bind(
             p.currentBalance,
             p.currentBalance - p.startingBalance,
             p.forfeited ? 'forfeited' : 'completed',
             match.matchId,
             p.accountId,
-          )
+          ),
         );
 
         endStmts.push(
-          this.env.DB.prepare('UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?')
-            .bind(p.accountId)
+          this.env.DB.prepare(
+            'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
+          ).bind(p.accountId),
         );
       }
 
       await this.env.DB.batch(endStmts);
-    } catch (e) { console.error('D1: endMatch writes for', match.matchId, e); }
+    } catch (e) {
+      console.error('D1: endMatch writes for', match.matchId, e);
+    }
 
     // Track opponents for anti-repeat
     const matchPlayerIds = [...match.players.keys()];
     for (const accountId of matchPlayerIds) {
       const conn = this.connections.get(accountId);
       if (conn) {
-        conn.previousOpponents = new Set(matchPlayerIds.filter(id => id !== accountId));
+        conn.previousOpponents = new Set(
+          matchPlayerIds.filter((id) => id !== accountId),
+        );
       }
     }
 
@@ -1227,16 +1534,20 @@ export class GameRoom {
     for (const p of match.players.values()) {
       if (p.forfeited) continue;
       const conn = this.connections.get(p.accountId);
-      if (conn && conn.autoRequeue) {
+      if (conn?.autoRequeue) {
         // Refresh balance from D1 before requeueing
         try {
-          const row = await this.env.DB.prepare(
-            'SELECT token_balance FROM accounts WHERE account_id = ?'
-          ).bind(p.accountId).first() as { token_balance: number } | null;
+          const row = (await this.env.DB.prepare(
+            'SELECT token_balance FROM accounts WHERE account_id = ?',
+          )
+            .bind(p.accountId)
+            .first()) as { token_balance: number } | null;
           if (row) {
             // balance is already updated in D1, just requeue
           }
-        } catch (e) { console.error('D1: refresh balance for requeue', p.accountId, e); }
+        } catch (e) {
+          console.error('D1: refresh balance for requeue', p.accountId, e);
+        }
         this.waitingQueue.push(p.accountId);
       }
     }
@@ -1249,31 +1560,57 @@ export class GameRoom {
   // Commit / Reveal / Chat handlers
   // -------------------------------------------------------------------------
 
-  _handleCommit(accountId: string, msg: { type: string; [key: string]: unknown }): void {
+  _handleCommit(
+    accountId: string,
+    msg: { type: string; [key: string]: unknown },
+  ): void {
     const matchId = this.playerMatchIndex.get(accountId);
-    if (!matchId) return this._sendTo(accountId, { type: 'error', message: 'Not in a match' });
+    if (!matchId)
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Not in a match',
+      });
     const match = this.activeMatches.get(matchId);
-    if (!match) return this._sendTo(accountId, { type: 'error', message: 'Match not found' });
+    if (!match)
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Match not found',
+      });
     if (match.phase !== 'commit') {
-      return this._sendTo(accountId, { type: 'error', message: 'Not in commit phase' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Not in commit phase',
+      });
     }
     const player = match.players.get(accountId);
     if (!player) return;
     if (player.forfeited) {
-      return this._sendTo(accountId, { type: 'error', message: 'You have been forfeited' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'You have been forfeited',
+      });
     }
     if (player.committed) {
-      return this._sendTo(accountId, { type: 'error', message: 'Already committed' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Already committed',
+      });
     }
 
     const { hash } = msg as { hash: unknown; type: string };
     if (!validateHash(hash)) {
-      return this._sendTo(accountId, { type: 'error', message: 'Invalid hash format (expected 64-char hex)' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Invalid hash format (expected 64-char hex)',
+      });
     }
 
     player.committed = true;
     player.hash = hash;
-    this._checkpointPlayerAction(match.matchId, accountId, { committed: true, hash });
+    this._checkpointPlayerAction(match.matchId, accountId, {
+      committed: true,
+      hash,
+    });
 
     // Broadcast commit status
     this._broadcastCommitStatus(match);
@@ -1284,47 +1621,85 @@ export class GameRoom {
     }
   }
 
-  _handleReveal(accountId: string, msg: { type: string; [key: string]: unknown }): void {
+  _handleReveal(
+    accountId: string,
+    msg: { type: string; [key: string]: unknown },
+  ): void {
     const matchId = this.playerMatchIndex.get(accountId);
-    if (!matchId) return this._sendTo(accountId, { type: 'error', message: 'Not in a match' });
+    if (!matchId)
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Not in a match',
+      });
     const match = this.activeMatches.get(matchId);
-    if (!match) return this._sendTo(accountId, { type: 'error', message: 'Match not found' });
+    if (!match)
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Match not found',
+      });
     if (match.phase !== 'reveal') {
-      return this._sendTo(accountId, { type: 'error', message: 'Not in reveal phase' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Not in reveal phase',
+      });
     }
     const player = match.players.get(accountId);
     if (!player) return;
     if (player.forfeited) {
-      return this._sendTo(accountId, { type: 'error', message: 'You have been forfeited' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'You have been forfeited',
+      });
     }
     if (!player.committed) {
-      return this._sendTo(accountId, { type: 'error', message: 'Did not commit this round' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Did not commit this round',
+      });
     }
     if (player.revealed) {
-      return this._sendTo(accountId, { type: 'error', message: 'Already revealed' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Already revealed',
+      });
     }
 
-    const { optionIndex, salt } = msg as { optionIndex: unknown; salt: unknown; type: string };
+    const { optionIndex, salt } = msg as {
+      optionIndex: unknown;
+      salt: unknown;
+      type: string;
+    };
     const question = match.questions[match.currentRound - 1]!;
 
     if (!validateOptionIndex(optionIndex, question.options.length)) {
-      return this._sendTo(accountId, { type: 'error', message: 'Invalid option index' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Invalid option index',
+      });
     }
     if (!validateSalt(salt)) {
-      return this._sendTo(accountId, { type: 'error', message: 'Salt must be a hex string of at least 32 characters' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Salt must be a hex string of at least 32 characters',
+      });
     }
 
     // Verify hash (verifyCommit is synchronous)
     const valid = verifyCommit(optionIndex, salt, player.hash!);
     if (!valid) {
-      return this._sendTo(accountId, { type: 'error', message: 'Hash mismatch: reveal does not match commitment' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Hash mismatch: reveal does not match commitment',
+      });
     }
 
     player.revealed = true;
     player.optionIndex = optionIndex;
     player.salt = salt;
     this._checkpointPlayerAction(match.matchId, accountId, {
-      revealed: true, optionIndex, salt,
+      revealed: true,
+      optionIndex,
+      salt,
     });
 
     // Broadcast reveal status
@@ -1336,18 +1711,26 @@ export class GameRoom {
     }
   }
 
-  _handleChat(accountId: string, msg: { type: string; [key: string]: unknown }): void {
+  _handleChat(
+    accountId: string,
+    msg: { type: string; [key: string]: unknown },
+  ): void {
     const matchId = this.playerMatchIndex.get(accountId);
     if (!matchId) return;
     const match = this.activeMatches.get(matchId);
     if (!match) return;
     if (match.phase !== 'results') {
-      return this._sendTo(accountId, { type: 'error', message: 'Chat only allowed during results phase' });
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Chat only allowed during results phase',
+      });
     }
     const player = match.players.get(accountId);
     if (!player || player.forfeited) return;
 
-    const text = String(msg.text || '').trim().slice(0, MAX_CHAT_LENGTH);
+    const text = String(msg.text || '')
+      .trim()
+      .slice(0, MAX_CHAT_LENGTH);
     if (!text) return;
 
     const messageId = crypto.randomUUID();
@@ -1359,7 +1742,10 @@ export class GameRoom {
     });
   }
 
-  async _handleQuestionRating(accountId: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
+  async _handleQuestionRating(
+    accountId: string,
+    msg: { type: string; [key: string]: unknown },
+  ): Promise<void> {
     const matchId = this.playerMatchIndex.get(accountId);
     if (!matchId) return;
     const match = this.activeMatches.get(matchId);
@@ -1367,7 +1753,12 @@ export class GameRoom {
     const player = match.players.get(accountId);
     if (!player || player.forfeited) return;
 
-    const rating = msg.rating === 'like' ? 'like' : msg.rating === 'dislike' ? 'dislike' : null;
+    const rating =
+      msg.rating === 'like'
+        ? 'like'
+        : msg.rating === 'dislike'
+          ? 'dislike'
+          : null;
     if (!rating) return;
     const questionId = match.questions[match.currentRound - 1]?.id;
     if (!questionId) return;
@@ -1377,23 +1768,33 @@ export class GameRoom {
         INSERT INTO question_ratings (question_id, account_id, match_id, round_number, rating)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(question_id, account_id, match_id) DO UPDATE SET rating = excluded.rating
-      `).bind(questionId, accountId, matchId, match.currentRound, rating).run();
-    } catch { return; }
+      `)
+        .bind(questionId, accountId, matchId, match.currentRound, rating)
+        .run();
+    } catch {
+      return;
+    }
 
     // Broadcast updated tally to match
     const rows = await this.env.DB.prepare(`
       SELECT rating, COUNT(*) as cnt FROM question_ratings
       WHERE question_id = ? AND match_id = ?
       GROUP BY rating
-    `).bind(questionId, matchId).all();
+    `)
+      .bind(questionId, matchId)
+      .all();
 
     const tally = { likes: 0, dislikes: 0 };
-    for (const r of (rows.results as Array<{ rating: string; cnt: number }>)) {
+    for (const r of rows.results as Array<{ rating: string; cnt: number }>) {
       if (r.rating === 'like') tally.likes = r.cnt;
       else if (r.rating === 'dislike') tally.dislikes = r.cnt;
     }
 
-    this._broadcastToMatch(match, { type: 'question_rating_tally', questionId, ...tally });
+    this._broadcastToMatch(match, {
+      type: 'question_rating_tally',
+      questionId,
+      ...tally,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -1425,7 +1826,9 @@ export class GameRoom {
     }
 
     player.disconnectedAt = Date.now();
-    this._checkpointPlayerAction(matchId, accountId, { disconnectedAt: player.disconnectedAt });
+    this._checkpointPlayerAction(matchId, accountId, {
+      disconnectedAt: player.disconnectedAt,
+    });
 
     // Broadcast disconnection
     this._broadcastToMatch(match, {
@@ -1463,7 +1866,10 @@ export class GameRoom {
       this._startRevealPhase(match);
     }
     // During reveal phase: if all committed non-forfeited have revealed, advance
-    if (match.phase === 'reveal' && this._allCommittedNonForfeitedRevealed(match)) {
+    if (
+      match.phase === 'reveal' &&
+      this._allCommittedNonForfeitedRevealed(match)
+    ) {
       this._finalizeRound(match);
     }
   }
@@ -1475,20 +1881,28 @@ export class GameRoom {
   _sendTo(accountId: string, msg: Record<string, unknown>): void {
     const conn = this.connections.get(accountId);
     if (!conn) return;
-    try { conn.ws.send(JSON.stringify(msg)); } catch {}
+    try {
+      conn.ws.send(JSON.stringify(msg));
+    } catch {}
   }
 
-  _broadcastToMatch(match: WorkerMatchState, msg: Record<string, unknown>): void {
+  _broadcastToMatch(
+    match: WorkerMatchState,
+    msg: Record<string, unknown>,
+  ): void {
     const data = JSON.stringify(msg);
     for (const p of match.players.values()) {
       if (!p.forfeited || msg.type === 'game_over') {
-        if (p.ws) try { p.ws.send(data); } catch {}
+        if (p.ws)
+          try {
+            p.ws.send(data);
+          } catch {}
       }
     }
   }
 
   _broadcastCommitStatus(match: WorkerMatchState): void {
-    const committed = [...match.players.values()].map(p => ({
+    const committed = [...match.players.values()].map((p) => ({
       displayName: p.displayName,
       hasCommitted: p.committed,
     }));
@@ -1496,7 +1910,7 @@ export class GameRoom {
   }
 
   _broadcastRevealStatus(match: WorkerMatchState): void {
-    const revealed = [...match.players.values()].map(p => ({
+    const revealed = [...match.players.values()].map((p) => ({
       displayName: p.displayName,
       hasRevealed: p.revealed,
     }));
@@ -1507,10 +1921,14 @@ export class GameRoom {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
-    const isQueued = this.waitingQueue.includes(accountId) ||
-      (this.formingMatch && this.formingMatch.players.includes(accountId));
+    const isQueued =
+      this.waitingQueue.includes(accountId) ||
+      this.formingMatch?.players.includes(accountId);
 
-    this._sendTo(accountId, this._buildQueueStateMsg(accountId, !!isQueued, conn.autoRequeue));
+    this._sendTo(
+      accountId,
+      this._buildQueueStateMsg(accountId, !!isQueued, conn.autoRequeue),
+    );
   }
 
   _broadcastQueueState(): void {
@@ -1518,21 +1936,32 @@ export class GameRoom {
     for (const [accountId, conn] of this.connections) {
       if (this.playerMatchIndex.has(accountId)) continue;
 
-      const isQueued = this.waitingQueue.includes(accountId) ||
-        (this.formingMatch && this.formingMatch.players.includes(accountId));
+      const isQueued =
+        this.waitingQueue.includes(accountId) ||
+        this.formingMatch?.players.includes(accountId);
 
-      const msg = this._buildQueueStateMsg(accountId, !!isQueued, conn.autoRequeue);
-      try { conn.ws.send(JSON.stringify(msg)); } catch {}
+      const msg = this._buildQueueStateMsg(
+        accountId,
+        !!isQueued,
+        conn.autoRequeue,
+      );
+      try {
+        conn.ws.send(JSON.stringify(msg));
+      } catch {}
     }
   }
 
-  _buildQueueStateMsg(_accountId: string, isQueued: boolean, autoRequeue: boolean): Record<string, unknown> {
+  _buildQueueStateMsg(
+    _accountId: string,
+    isQueued: boolean,
+    autoRequeue: boolean,
+  ): Record<string, unknown> {
     // All queued + forming display names
     const allQueuedIds = [...this.waitingQueue];
     if (this.formingMatch) {
       allQueuedIds.unshift(...this.formingMatch.players);
     }
-    const queuedPlayers = allQueuedIds.map(id => {
+    const queuedPlayers = allQueuedIds.map((id) => {
       const c = this.connections.get(id);
       return c ? c.displayName : 'unknown';
     });
@@ -1544,14 +1973,17 @@ export class GameRoom {
       fillDeadlineMs: number | null;
     } | null = null;
     if (this.formingMatch) {
-      const fmPlayers = this.formingMatch.players.map(id => {
+      const fmPlayers = this.formingMatch.players.map((id) => {
         const c = this.connections.get(id);
         return c ? c.displayName : 'unknown';
       });
       formingMatch = {
         playerCount: this.formingMatch.players.length,
         players: fmPlayers,
-        allowedSizes: [3, 5, 7].filter(s => s <= this.formingMatch!.players.length + this.waitingQueue.length),
+        allowedSizes: [3, 5, 7].filter(
+          (s) =>
+            s <= this.formingMatch!.players.length + this.waitingQueue.length,
+        ),
         fillDeadlineMs: this.formingMatch.fillDeadlineMs,
       };
     }
@@ -1570,12 +2002,18 @@ export class GameRoom {
   // Query helpers
   // -------------------------------------------------------------------------
 
-  _getPlayerStatus(accountId: string | null): { status: string; matchId?: string } {
+  _getPlayerStatus(accountId: string | null): {
+    status: string;
+    matchId?: string;
+  } {
     if (!accountId) return { status: 'idle' };
     if (this.playerMatchIndex.has(accountId)) {
-      return { status: 'in_match', matchId: this.playerMatchIndex.get(accountId)! };
+      return {
+        status: 'in_match',
+        matchId: this.playerMatchIndex.get(accountId)!,
+      };
     }
-    if (this.formingMatch && this.formingMatch.players.includes(accountId)) {
+    if (this.formingMatch?.players.includes(accountId)) {
       return { status: 'forming' };
     }
     if (this.waitingQueue.includes(accountId)) {
@@ -1628,33 +2066,77 @@ export class GameRoom {
             (match_id, account_id, display_name, starting_balance, current_balance,
              committed, revealed, hash, option_index, salt, forfeited, disconnected_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          match.matchId, p.accountId, p.displayName, p.startingBalance, p.currentBalance,
-          p.committed ? 1 : 0, p.revealed ? 1 : 0, p.hash, p.optionIndex, p.salt,
-          p.forfeited ? 1 : 0, p.disconnectedAt,
+          match.matchId,
+          p.accountId,
+          p.displayName,
+          p.startingBalance,
+          p.currentBalance,
+          p.committed ? 1 : 0,
+          p.revealed ? 1 : 0,
+          p.hash,
+          p.optionIndex,
+          p.salt,
+          p.forfeited ? 1 : 0,
+          p.disconnectedAt,
         );
       }
       this.state.storage.sql.exec('COMMIT');
     } catch (err) {
-      try { this.state.storage.sql.exec('ROLLBACK'); } catch {}
+      try {
+        this.state.storage.sql.exec('ROLLBACK');
+      } catch {}
       console.error('DO storage: checkpoint failed for', match.matchId, err);
     }
   }
 
-  _checkpointPlayerAction(matchId: string, accountId: string, fields: Partial<{
-    committed: boolean; revealed: boolean; hash: string | null;
-    optionIndex: number | null; salt: string | null; forfeited: boolean;
-    currentBalance: number; disconnectedAt: number | null;
-  }>): void {
+  _checkpointPlayerAction(
+    matchId: string,
+    accountId: string,
+    fields: Partial<{
+      committed: boolean;
+      revealed: boolean;
+      hash: string | null;
+      optionIndex: number | null;
+      salt: string | null;
+      forfeited: boolean;
+      currentBalance: number;
+      disconnectedAt: number | null;
+    }>,
+  ): void {
     const sets: string[] = [];
     const vals: unknown[] = [];
-    if (fields.committed !== undefined) { sets.push('committed = ?'); vals.push(fields.committed ? 1 : 0); }
-    if (fields.revealed !== undefined) { sets.push('revealed = ?'); vals.push(fields.revealed ? 1 : 0); }
-    if (fields.hash !== undefined) { sets.push('hash = ?'); vals.push(fields.hash); }
-    if (fields.optionIndex !== undefined) { sets.push('option_index = ?'); vals.push(fields.optionIndex); }
-    if (fields.salt !== undefined) { sets.push('salt = ?'); vals.push(fields.salt); }
-    if (fields.forfeited !== undefined) { sets.push('forfeited = ?'); vals.push(fields.forfeited ? 1 : 0); }
-    if (fields.currentBalance !== undefined) { sets.push('current_balance = ?'); vals.push(fields.currentBalance); }
-    if (fields.disconnectedAt !== undefined) { sets.push('disconnected_at = ?'); vals.push(fields.disconnectedAt); }
+    if (fields.committed !== undefined) {
+      sets.push('committed = ?');
+      vals.push(fields.committed ? 1 : 0);
+    }
+    if (fields.revealed !== undefined) {
+      sets.push('revealed = ?');
+      vals.push(fields.revealed ? 1 : 0);
+    }
+    if (fields.hash !== undefined) {
+      sets.push('hash = ?');
+      vals.push(fields.hash);
+    }
+    if (fields.optionIndex !== undefined) {
+      sets.push('option_index = ?');
+      vals.push(fields.optionIndex);
+    }
+    if (fields.salt !== undefined) {
+      sets.push('salt = ?');
+      vals.push(fields.salt);
+    }
+    if (fields.forfeited !== undefined) {
+      sets.push('forfeited = ?');
+      vals.push(fields.forfeited ? 1 : 0);
+    }
+    if (fields.currentBalance !== undefined) {
+      sets.push('current_balance = ?');
+      vals.push(fields.currentBalance);
+    }
+    if (fields.disconnectedAt !== undefined) {
+      sets.push('disconnected_at = ?');
+      vals.push(fields.disconnectedAt);
+    }
     if (sets.length === 0) return;
     vals.push(matchId, accountId);
     this.state.storage.sql.exec(
@@ -1664,15 +2146,23 @@ export class GameRoom {
   }
 
   _deleteMatchCheckpoint(matchId: string): void {
-    this.state.storage.sql.exec(`DELETE FROM player_checkpoints WHERE match_id = ?`, matchId);
-    this.state.storage.sql.exec(`DELETE FROM match_checkpoints WHERE match_id = ?`, matchId);
+    this.state.storage.sql.exec(
+      `DELETE FROM player_checkpoints WHERE match_id = ?`,
+      matchId,
+    );
+    this.state.storage.sql.exec(
+      `DELETE FROM match_checkpoints WHERE match_id = ?`,
+      matchId,
+    );
   }
 
   _restoreMatchesFromStorage(): void {
     const now = Date.now();
-    const rows = [...this.state.storage.sql.exec(
-      `SELECT * FROM match_checkpoints WHERE phase != 'ended'`,
-    )];
+    const rows = [
+      ...this.state.storage.sql.exec(
+        `SELECT * FROM match_checkpoints WHERE phase != 'ended'`,
+      ),
+    ];
 
     for (const row of rows) {
       const phaseEnteredAt = row.phase_entered_at as number;
@@ -1684,10 +2174,12 @@ export class GameRoom {
       }
 
       try {
-        const playerRows = [...this.state.storage.sql.exec(
-          `SELECT * FROM player_checkpoints WHERE match_id = ?`,
-          row.match_id as string,
-        )];
+        const playerRows = [
+          ...this.state.storage.sql.exec(
+            `SELECT * FROM player_checkpoints WHERE match_id = ?`,
+            row.match_id as string,
+          ),
+        ];
 
         const players = new Map<string, WorkerPlayerState>();
 
@@ -1705,7 +2197,8 @@ export class GameRoom {
             optionIndex: pr.option_index as number | null,
             salt: pr.salt as string | null,
             forfeited: !!(pr.forfeited as number),
-            disconnectedAt: (pr.disconnected_at as number | null) ?? phaseEnteredAt,
+            disconnectedAt:
+              (pr.disconnected_at as number | null) ?? phaseEnteredAt,
             graceTimer: null,
           });
           this.playerMatchIndex.set(accountId, row.match_id as string);
@@ -1786,7 +2279,10 @@ export class GameRoom {
   }
 
   _advanceAfterResults(match: WorkerMatchState): void {
-    if (match.currentRound >= match.totalRounds || !this._hasNonForfeitedPlayers(match)) {
+    if (
+      match.currentRound >= match.totalRounds ||
+      !this._hasNonForfeitedPlayers(match)
+    ) {
       this._endMatch(match);
     } else {
       this._startCommitPhase(match);
@@ -1806,7 +2302,7 @@ export class GameRoom {
     if (!player) return;
 
     // Send game_started so the client knows the match context
-    const playersInfo = [...match.players.values()].map(p => ({
+    const playersInfo = [...match.players.values()].map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
     }));
@@ -1818,10 +2314,20 @@ export class GameRoom {
     });
 
     // Send current round info with remaining time (not full duration)
-    if (match.phase === 'commit' || match.phase === 'reveal' || match.phase === 'results') {
+    if (
+      match.phase === 'commit' ||
+      match.phase === 'reveal' ||
+      match.phase === 'results'
+    ) {
       const elapsed = Date.now() - match.phaseEnteredAt;
-      const commitRemaining = Math.max(0, Math.ceil((COMMIT_DURATION * 1000 - elapsed) / 1000));
-      const revealRemaining = Math.max(0, Math.ceil((REVEAL_DURATION * 1000 - elapsed) / 1000));
+      const commitRemaining = Math.max(
+        0,
+        Math.ceil((COMMIT_DURATION * 1000 - elapsed) / 1000),
+      );
+      const revealRemaining = Math.max(
+        0,
+        Math.ceil((REVEAL_DURATION * 1000 - elapsed) / 1000),
+      );
 
       this._sendTo(accountId, {
         type: 'round_start',
@@ -1832,7 +2338,8 @@ export class GameRoom {
           type: question.type,
           options: question.options,
         },
-        commitDuration: match.phase === 'commit' ? commitRemaining : COMMIT_DURATION,
+        commitDuration:
+          match.phase === 'commit' ? commitRemaining : COMMIT_DURATION,
         roundAnte: ROUND_ANTE,
         phase: match.phase,
       });
@@ -1841,14 +2348,15 @@ export class GameRoom {
         this._sendTo(accountId, {
           type: 'phase_change',
           phase: match.phase === 'results' ? 'results' : 'reveal',
-          revealDuration: match.phase === 'reveal' ? revealRemaining : REVEAL_DURATION,
+          revealDuration:
+            match.phase === 'reveal' ? revealRemaining : REVEAL_DURATION,
         });
       }
 
       // Send commit status
       this._sendTo(accountId, {
         type: 'commit_status',
-        committed: [...match.players.values()].map(p => ({
+        committed: [...match.players.values()].map((p) => ({
           displayName: p.displayName,
           hasCommitted: p.committed,
         })),
@@ -1858,7 +2366,7 @@ export class GameRoom {
       if (match.phase === 'reveal' || match.phase === 'results') {
         this._sendTo(accountId, {
           type: 'reveal_status',
-          revealed: [...match.players.values()].map(p => ({
+          revealed: [...match.players.values()].map((p) => ({
             displayName: p.displayName,
             hasRevealed: p.revealed,
           })),

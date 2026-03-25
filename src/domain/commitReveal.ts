@@ -8,7 +8,11 @@ export function createCommitHash(optionIndex: number, salt: string): string {
   return crypto.createHash('sha256').update(preimage).digest('hex');
 }
 
-export function verifyCommit(optionIndex: number, salt: string, hash: string): boolean {
+export function verifyCommit(
+  optionIndex: number,
+  salt: string,
+  hash: string,
+): boolean {
   return createCommitHash(optionIndex, salt) === hash;
 }
 
@@ -25,6 +29,13 @@ export function validateHash(hash: unknown): hash is string {
 }
 
 // Validate optionIndex: must be non-negative integer within option count
-export function validateOptionIndex(optionIndex: unknown, optionCount: number): optionIndex is number {
-  return Number.isInteger(optionIndex) && (optionIndex as number) >= 0 && (optionIndex as number) < optionCount;
+export function validateOptionIndex(
+  optionIndex: unknown,
+  optionCount: number,
+): optionIndex is number {
+  return (
+    Number.isInteger(optionIndex) &&
+    (optionIndex as number) >= 0 &&
+    (optionIndex as number) < optionCount
+  );
 }

@@ -1,25 +1,26 @@
-import Database from 'better-sqlite3';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 
 import type {
   AccountWithStats,
+  AddMatchPlayerParams,
   AuthChallengeRow,
   CreateChallengeParams,
   CreateMatchParams,
-  AddMatchPlayerParams,
-  UpdateMatchPlayerParams,
-  VoteLogEntry,
-  VoteLogRow,
-  UpdatePlayerStatsParams,
+  ExampleVoteTally,
   LeaderboardEntry,
   PlayerRankEntry,
   PlayerStatsRow,
-  ExampleVoteTally,
+  UpdateMatchPlayerParams,
+  UpdatePlayerStatsParams,
+  VoteLogEntry,
+  VoteLogRow,
 } from './types/db';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'schelling.db');
+const DB_PATH =
+  process.env.DB_PATH || path.join(__dirname, '..', 'schelling.db');
 
 let db: Database.Database | undefined;
 
@@ -117,17 +118,25 @@ function initSchema(): void {
 // Auth challenge queries
 // ---------------------------------------------------------------------------
 
-function createChallenge({ challengeId, walletAddress, message, nonce, expiresAt }: CreateChallengeParams): void {
-  getDb().prepare(`
+function createChallenge({
+  challengeId,
+  walletAddress,
+  message,
+  nonce,
+  expiresAt,
+}: CreateChallengeParams): void {
+  getDb()
+    .prepare(`
     INSERT INTO auth_challenges (challenge_id, wallet_address, message, nonce, expires_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(challengeId, walletAddress, message, nonce, expiresAt);
+  `)
+    .run(challengeId, walletAddress, message, nonce, expiresAt);
 }
 
 function getChallenge(challengeId: string): AuthChallengeRow | null {
-  const row = getDb().prepare(
-    'SELECT * FROM auth_challenges WHERE challenge_id = ?'
-  ).get(challengeId) as AuthChallengeRow | undefined;
+  const row = getDb()
+    .prepare('SELECT * FROM auth_challenges WHERE challenge_id = ?')
+    .get(challengeId) as AuthChallengeRow | undefined;
   if (!row) return null;
   if (row.used) return null;
   if (new Date(row.expires_at) < new Date()) return null;
@@ -135,9 +144,9 @@ function getChallenge(challengeId: string): AuthChallengeRow | null {
 }
 
 function markChallengeUsed(challengeId: string): void {
-  getDb().prepare(
-    'UPDATE auth_challenges SET used = 1 WHERE challenge_id = ?'
-  ).run(challengeId);
+  getDb()
+    .prepare('UPDATE auth_challenges SET used = 1 WHERE challenge_id = ?')
+    .run(challengeId);
 }
 
 // ---------------------------------------------------------------------------
@@ -157,42 +166,53 @@ function upsertAccount(accountId: string): void {
 }
 
 function getAccount(accountId: string): AccountWithStats | undefined {
-  return getDb().prepare(`
+  return getDb()
+    .prepare(`
     SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds,
            s.current_streak, s.longest_streak
     FROM accounts a
     LEFT JOIN player_stats s ON a.account_id = s.account_id
     WHERE a.account_id = ?
-  `).get(accountId) as AccountWithStats | undefined;
+  `)
+    .get(accountId) as AccountWithStats | undefined;
 }
 
 function setDisplayName(accountId: string, displayName: string): void {
   const d = getDb();
-  const existing = d.prepare(
-    'SELECT account_id FROM accounts WHERE display_name = ? AND account_id != ?'
-  ).get(displayName, accountId) as { account_id: string } | undefined;
+  const existing = d
+    .prepare(
+      'SELECT account_id FROM accounts WHERE display_name = ? AND account_id != ?',
+    )
+    .get(displayName, accountId) as { account_id: string } | undefined;
   if (existing) {
     throw new Error(`Display name "${displayName}" is already taken`);
   }
-  d.prepare(
-    'UPDATE accounts SET display_name = ? WHERE account_id = ?'
-  ).run(displayName, accountId);
+  d.prepare('UPDATE accounts SET display_name = ? WHERE account_id = ?').run(
+    displayName,
+    accountId,
+  );
 }
 
-function getAccountByDisplayName(displayName: string): AccountWithStats | undefined {
-  return getDb().prepare(`
+function getAccountByDisplayName(
+  displayName: string,
+): AccountWithStats | undefined {
+  return getDb()
+    .prepare(`
     SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds,
            s.current_streak, s.longest_streak
     FROM accounts a
     LEFT JOIN player_stats s ON a.account_id = s.account_id
     WHERE a.display_name = ?
-  `).get(displayName) as AccountWithStats | undefined;
+  `)
+    .get(displayName) as AccountWithStats | undefined;
 }
 
 function updateBalance(accountId: string, delta: number): void {
-  getDb().prepare(
-    'UPDATE accounts SET token_balance = token_balance + ? WHERE account_id = ?'
-  ).run(delta, accountId);
+  getDb()
+    .prepare(
+      'UPDATE accounts SET token_balance = token_balance + ? WHERE account_id = ?',
+    )
+    .run(delta, accountId);
 }
 
 // ---------------------------------------------------------------------------
@@ -200,31 +220,50 @@ function updateBalance(accountId: string, delta: number): void {
 // ---------------------------------------------------------------------------
 
 function createMatch({ matchId, playerCount }: CreateMatchParams): void {
-  getDb().prepare(`
+  getDb()
+    .prepare(`
     INSERT INTO matches (match_id, player_count) VALUES (?, ?)
-  `).run(matchId, playerCount);
+  `)
+    .run(matchId, playerCount);
 }
 
-function addMatchPlayer({ matchId, accountId, displayNameSnapshot, startingBalance }: AddMatchPlayerParams): void {
-  getDb().prepare(`
+function addMatchPlayer({
+  matchId,
+  accountId,
+  displayNameSnapshot,
+  startingBalance,
+}: AddMatchPlayerParams): void {
+  getDb()
+    .prepare(`
     INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance)
     VALUES (?, ?, ?, ?)
-  `).run(matchId, accountId, displayNameSnapshot, startingBalance);
+  `)
+    .run(matchId, accountId, displayNameSnapshot, startingBalance);
 }
 
-function updateMatchPlayer({ matchId, accountId, endingBalance, netDelta, result }: UpdateMatchPlayerParams): void {
-  getDb().prepare(`
+function updateMatchPlayer({
+  matchId,
+  accountId,
+  endingBalance,
+  netDelta,
+  result,
+}: UpdateMatchPlayerParams): void {
+  getDb()
+    .prepare(`
     UPDATE match_players
     SET ending_balance = ?, net_delta = ?, result = ?
     WHERE match_id = ? AND account_id = ?
-  `).run(endingBalance, netDelta, result, matchId, accountId);
+  `)
+    .run(endingBalance, netDelta, result, matchId, accountId);
 }
 
 function endMatch(matchId: string): void {
-  getDb().prepare(`
+  getDb()
+    .prepare(`
     UPDATE matches SET ended_at = datetime('now'), status = 'completed'
     WHERE match_id = ?
-  `).run(matchId);
+  `)
+    .run(matchId);
 }
 
 // ---------------------------------------------------------------------------
@@ -232,48 +271,63 @@ function endMatch(matchId: string): void {
 // ---------------------------------------------------------------------------
 
 function insertVoteLog(entry: VoteLogEntry): void {
-  getDb().prepare(`
+  getDb()
+    .prepare(`
     INSERT INTO vote_logs
       (match_id, round_number, question_id, account_id, display_name_snapshot,
        revealed_option_index, revealed_option_label, won_round, earns_coordination_credit,
        ante_amount, round_payout, net_delta, player_count, valid_reveal_count,
        top_count, winner_count, winning_option_indexes_json, voided, void_reason)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    entry.matchId,
-    entry.roundNumber,
-    entry.questionId,
-    entry.accountId,
-    entry.displayNameSnapshot,
-    entry.revealedOptionIndex ?? null,
-    entry.revealedOptionLabel ?? null,
-    entry.wonRound ? 1 : 0,
-    entry.earnsCoordinationCredit ? 1 : 0,
-    entry.anteAmount ?? 60,
-    entry.roundPayout ?? 0,
-    entry.netDelta ?? 0,
-    entry.playerCount,
-    entry.validRevealCount ?? null,
-    entry.topCount ?? null,
-    entry.winnerCount ?? null,
-    entry.winningOptionIndexesJson ?? null,
-    entry.voided ? 1 : 0,
-    entry.voidReason ?? null,
-  );
+  `)
+    .run(
+      entry.matchId,
+      entry.roundNumber,
+      entry.questionId,
+      entry.accountId,
+      entry.displayNameSnapshot,
+      entry.revealedOptionIndex ?? null,
+      entry.revealedOptionLabel ?? null,
+      entry.wonRound ? 1 : 0,
+      entry.earnsCoordinationCredit ? 1 : 0,
+      entry.anteAmount ?? 60,
+      entry.roundPayout ?? 0,
+      entry.netDelta ?? 0,
+      entry.playerCount,
+      entry.validRevealCount ?? null,
+      entry.topCount ?? null,
+      entry.winnerCount ?? null,
+      entry.winningOptionIndexesJson ?? null,
+      entry.voided ? 1 : 0,
+      entry.voidReason ?? null,
+    );
 }
 
 function getAllVoteLogs(): VoteLogRow[] {
-  return getDb().prepare('SELECT * FROM vote_logs ORDER BY id ASC').all() as VoteLogRow[];
+  return getDb()
+    .prepare('SELECT * FROM vote_logs ORDER BY id ASC')
+    .all() as VoteLogRow[];
 }
 
 // ---------------------------------------------------------------------------
 // Player stats
 // ---------------------------------------------------------------------------
 
-function updatePlayerStats(accountId: string, { roundsPlayed, coherentRounds, isGameEnd, wonRound, earnsCoordinationCredit }: UpdatePlayerStatsParams): void {
+function updatePlayerStats(
+  accountId: string,
+  {
+    roundsPlayed,
+    coherentRounds,
+    isGameEnd,
+    wonRound,
+    earnsCoordinationCredit,
+  }: UpdatePlayerStatsParams,
+): void {
   const d = getDb();
 
-  const stats = d.prepare('SELECT * FROM player_stats WHERE account_id = ?').get(accountId) as PlayerStatsRow | undefined;
+  const stats = d
+    .prepare('SELECT * FROM player_stats WHERE account_id = ?')
+    .get(accountId) as PlayerStatsRow | undefined;
   if (!stats) return;
 
   let newStreak = stats.current_streak;
@@ -316,7 +370,8 @@ function updatePlayerStats(accountId: string, { roundsPlayed, coherentRounds, is
 // ---------------------------------------------------------------------------
 
 function getLeaderboard(limit: number = 50): LeaderboardEntry[] {
-  return getDb().prepare(`
+  return getDb()
+    .prepare(`
     SELECT
       ROW_NUMBER() OVER (
         ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC
@@ -342,13 +397,15 @@ function getLeaderboard(limit: number = 50): LeaderboardEntry[] {
     WHERE a.leaderboard_eligible = 1
     ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC
     LIMIT ?
-  `).all(limit) as LeaderboardEntry[];
+  `)
+    .all(limit) as LeaderboardEntry[];
 }
 
 function getPlayerRank(accountId: string): PlayerRankEntry | null {
   const d = getDb();
 
-  const row = d.prepare(`
+  const row = d
+    .prepare(`
     SELECT
       a.account_id,
       a.display_name AS displayName,
@@ -370,11 +427,14 @@ function getPlayerRank(accountId: string): PlayerRankEntry | null {
     FROM accounts a
     JOIN player_stats s ON a.account_id = s.account_id
     WHERE a.account_id = ?
-  `).get(accountId) as PlayerRankEntry | undefined;
+  `)
+    .get(accountId) as PlayerRankEntry | undefined;
 
   if (!row) return null;
 
-  const rank = (d.prepare(`
+  const rank = (
+    d
+      .prepare(`
     SELECT COUNT(*) + 1 AS rank
     FROM accounts a2
     JOIN player_stats s2 ON a2.account_id = s2.account_id
@@ -384,11 +444,16 @@ function getPlayerRank(accountId: string): PlayerRankEntry | null {
         OR (a2.token_balance = ? AND s2.coherent_rounds > ?)
         OR (a2.token_balance = ? AND s2.coherent_rounds = ? AND a2.display_name < ?)
       )
-  `).get(
-    row.tokenBalance,
-    row.tokenBalance, row.coherentRounds,
-    row.tokenBalance, row.coherentRounds, row.displayName ?? '',
-  ) as { rank: number }).rank;
+  `)
+      .get(
+        row.tokenBalance,
+        row.tokenBalance,
+        row.coherentRounds,
+        row.tokenBalance,
+        row.coherentRounds,
+        row.displayName ?? '',
+      ) as { rank: number }
+  ).rank;
 
   return { ...row, rank };
 }
@@ -398,9 +463,11 @@ function getPlayerRank(accountId: string): PlayerRankEntry | null {
 // ---------------------------------------------------------------------------
 
 function setLeaderboardEligible(accountId: string, eligible: boolean): void {
-  getDb().prepare(
-    'UPDATE accounts SET leaderboard_eligible = ? WHERE account_id = ?'
-  ).run(eligible ? 1 : 0, accountId);
+  getDb()
+    .prepare(
+      'UPDATE accounts SET leaderboard_eligible = ? WHERE account_id = ?',
+    )
+    .run(eligible ? 1 : 0, accountId);
 }
 
 // ---------------------------------------------------------------------------
@@ -408,15 +475,17 @@ function setLeaderboardEligible(accountId: string, eligible: boolean): void {
 // ---------------------------------------------------------------------------
 
 function insertExampleVote(optionIndex: number): void {
-  getDb().prepare(
-    'INSERT INTO example_votes (option_index) VALUES (?)'
-  ).run(optionIndex);
+  getDb()
+    .prepare('INSERT INTO example_votes (option_index) VALUES (?)')
+    .run(optionIndex);
 }
 
 function getExampleVoteTally(): { total: number; votes: ExampleVoteTally[] } {
-  const rows = getDb().prepare(
-    'SELECT option_index, COUNT(*) as count FROM example_votes GROUP BY option_index'
-  ).all() as ExampleVoteTally[];
+  const rows = getDb()
+    .prepare(
+      'SELECT option_index, COUNT(*) as count FROM example_votes GROUP BY option_index',
+    )
+    .all() as ExampleVoteTally[];
   const total = rows.reduce((sum, r) => sum + r.count, 0);
   return { total, votes: rows };
 }

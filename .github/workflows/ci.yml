@@ -12,15 +12,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Type check (Node)
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Type check (Worker)
-        run: npx tsc --noEmit -p tsconfig.worker.json
+        run: npm run typecheck:worker
 
       - name: Tests
         run: npm test

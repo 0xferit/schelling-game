@@ -7,6 +7,7 @@
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "test": "tsx test/test.ts",
+    "lint": "biome check .",
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "stamp-build": "sed -i.bak -e \"s/__BUILD_HASH__/$(git rev-parse --short HEAD)/\" -e \"s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/\" public/index.html public/app.html",
@@ -33,6 +34,7 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.9",
     "@cloudflare/workers-types": "^4.20260317.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",

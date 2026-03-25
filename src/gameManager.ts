@@ -1,17 +1,22 @@
 import { v4 as uuidv4 } from 'uuid';
 import type WebSocket from 'ws';
-import queue from './matchmaking';
-import { verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal';
-import { settleRound, ROUND_ANTE } from './domain/settlement';
-import { selectQuestionsForMatch } from './domain/questions';
 import db from './db';
+import {
+  validateHash,
+  validateOptionIndex,
+  validateSalt,
+  verifyCommit,
+} from './domain/commitReveal';
+import { selectQuestionsForMatch } from './domain/questions';
+import { ROUND_ANTE, settleRound } from './domain/settlement';
+import queue from './matchmaking';
 import type { Question } from './types/domain';
 import type { ClientMessage } from './types/messages';
 
-const COMMIT_DURATION = 30;    // seconds
-const REVEAL_DURATION = 15;    // seconds
-const RESULTS_DURATION = 12;   // seconds
-const RECONNECT_GRACE = 15;    // seconds
+const COMMIT_DURATION = 30; // seconds
+const REVEAL_DURATION = 15; // seconds
+const RESULTS_DURATION = 12; // seconds
+const RECONNECT_GRACE = 15; // seconds
 const TOTAL_ROUNDS = 10;
 const MAX_CHAT_LENGTH = 300;
 
@@ -68,7 +73,11 @@ function send(ws: WebSocket | null, obj: object): void {
   if (ws?.readyState === 1) ws.send(JSON.stringify(obj));
 }
 
-function broadcastMatch(match: MatchState, obj: object, excludeId: string | null = null): void {
+function broadcastMatch(
+  match: MatchState,
+  obj: object,
+  excludeId: string | null = null,
+): void {
   for (const [id, p] of match.players) {
     if (id !== excludeId && p.ws) send(p.ws, obj);
   }
@@ -113,13 +122,21 @@ function handleMessage(ws: WebSocket, rawData: string): void {
   }
 
   switch (msg.type) {
-    case 'join_queue':  return handleJoinQueue(ws);
-    case 'leave_queue': return handleLeaveQueue(ws);
-    case 'commit':      return handleCommit(ws, msg);
-    case 'reveal':      return handleReveal(ws, msg);
-    case 'chat':        return handleChat(ws, msg);
+    case 'join_queue':
+      return handleJoinQueue(ws);
+    case 'leave_queue':
+      return handleLeaveQueue(ws);
+    case 'commit':
+      return handleCommit(ws, msg);
+    case 'reveal':
+      return handleReveal(ws, msg);
+    case 'chat':
+      return handleChat(ws, msg);
     default:
-      send(ws, { type: 'error', message: `Unknown message type: ${(msg as { type: string }).type}` });
+      send(ws, {
+        type: 'error',
+        message: `Unknown message type: ${(msg as { type: string }).type}`,
+      });
   }
 }
 
@@ -135,7 +152,10 @@ function handleJoinQueue(ws: WebSocket): void {
 
   const account = db.getAccount(accountId);
   if (!account?.display_name) {
-    return send(ws, { type: 'error', message: 'Display name required before queueing' });
+    return send(ws, {
+      type: 'error',
+      message: 'Display name required before queueing',
+    });
   }
 
   let session = sessionState.get(accountId);
@@ -175,22 +195,33 @@ function handleLeaveQueue(ws: WebSocket): void {
 // Commit handler
 // ---------------------------------------------------------------------------
 
-function handleCommit(ws: WebSocket, msg: { type: 'commit'; hash: string }): void {
+function handleCommit(
+  ws: WebSocket,
+  msg: { type: 'commit'; hash: string },
+): void {
   const accountId = ws._accountId;
-  if (!accountId) return send(ws, { type: 'error', message: 'Not authenticated' });
+  if (!accountId)
+    return send(ws, { type: 'error', message: 'Not authenticated' });
 
   const match = getMatchForAccount(accountId);
   if (!match) return send(ws, { type: 'error', message: 'Not in a match' });
-  if (match.phase !== 'commit') return send(ws, { type: 'error', message: 'Not in commit phase' });
+  if (match.phase !== 'commit')
+    return send(ws, { type: 'error', message: 'Not in commit phase' });
 
   const player = match.players.get(accountId);
-  if (!player) return send(ws, { type: 'error', message: 'Player not found in match' });
-  if (player.forfeited) return send(ws, { type: 'error', message: 'Forfeited players cannot act' });
-  if (player.committed) return send(ws, { type: 'error', message: 'Already committed' });
+  if (!player)
+    return send(ws, { type: 'error', message: 'Player not found in match' });
+  if (player.forfeited)
+    return send(ws, { type: 'error', message: 'Forfeited players cannot act' });
+  if (player.committed)
+    return send(ws, { type: 'error', message: 'Already committed' });
 
   const { hash } = msg;
   if (!validateHash(hash)) {
-    return send(ws, { type: 'error', message: 'Invalid hash format (expected 64-char lowercase hex)' });
+    return send(ws, {
+      type: 'error',
+      message: 'Invalid hash format (expected 64-char lowercase hex)',
+    });
   }
 
   player.committed = true;
@@ -198,16 +229,16 @@ function handleCommit(ws: WebSocket, msg: { type: 'commit'; hash: string }): voi
 
   broadcastMatch(match, {
     type: 'commit_status',
-    committed: Array.from(match.players.values()).map(p => ({
+    committed: Array.from(match.players.values()).map((p) => ({
       displayName: p.displayName,
       hasCommitted: p.committed,
     })),
   });
 
   const eligible = Array.from(match.players.values()).filter(
-    p => !p.forfeited && p.disconnectedAt === null
+    (p) => !p.forfeited && p.disconnectedAt === null,
   );
-  if (eligible.length > 0 && eligible.every(p => p.committed)) {
+  if (eligible.length > 0 && eligible.every((p) => p.committed)) {
     clearTimeout(match.commitTimer!);
     match.commitTimer = null;
     startRevealPhase(match);
@@ -218,33 +249,52 @@ function handleCommit(ws: WebSocket, msg: { type: 'commit'; hash: string }): voi
 // Reveal handler
 // ---------------------------------------------------------------------------
 
-function handleReveal(ws: WebSocket, msg: { type: 'reveal'; optionIndex: number; salt: string }): void {
+function handleReveal(
+  ws: WebSocket,
+  msg: { type: 'reveal'; optionIndex: number; salt: string },
+): void {
   const accountId = ws._accountId;
-  if (!accountId) return send(ws, { type: 'error', message: 'Not authenticated' });
+  if (!accountId)
+    return send(ws, { type: 'error', message: 'Not authenticated' });
 
   const match = getMatchForAccount(accountId);
   if (!match) return send(ws, { type: 'error', message: 'Not in a match' });
-  if (match.phase !== 'reveal') return send(ws, { type: 'error', message: 'Not in reveal phase' });
+  if (match.phase !== 'reveal')
+    return send(ws, { type: 'error', message: 'Not in reveal phase' });
 
   const player = match.players.get(accountId);
-  if (!player) return send(ws, { type: 'error', message: 'Player not found in match' });
-  if (player.forfeited) return send(ws, { type: 'error', message: 'Forfeited players cannot act' });
-  if (!player.committed) return send(ws, { type: 'error', message: 'Did not commit this round' });
-  if (player.revealed) return send(ws, { type: 'error', message: 'Already revealed' });
+  if (!player)
+    return send(ws, { type: 'error', message: 'Player not found in match' });
+  if (player.forfeited)
+    return send(ws, { type: 'error', message: 'Forfeited players cannot act' });
+  if (!player.committed)
+    return send(ws, { type: 'error', message: 'Did not commit this round' });
+  if (player.revealed)
+    return send(ws, { type: 'error', message: 'Already revealed' });
 
   const { optionIndex, salt } = msg;
 
   const question = match.questions[match.currentRound]!;
   if (!validateOptionIndex(optionIndex, question.options.length)) {
-    return send(ws, { type: 'error', message: 'Invalid optionIndex: must be an integer within question options range' });
+    return send(ws, {
+      type: 'error',
+      message:
+        'Invalid optionIndex: must be an integer within question options range',
+    });
   }
 
   if (!validateSalt(salt)) {
-    return send(ws, { type: 'error', message: 'Invalid salt: must be hex string of at least 32 characters' });
+    return send(ws, {
+      type: 'error',
+      message: 'Invalid salt: must be hex string of at least 32 characters',
+    });
   }
 
   if (!verifyCommit(optionIndex, salt, player.hash!)) {
-    return send(ws, { type: 'error', message: 'Hash mismatch: reveal does not match commitment' });
+    return send(ws, {
+      type: 'error',
+      message: 'Hash mismatch: reveal does not match commitment',
+    });
   }
 
   player.revealed = true;
@@ -253,16 +303,16 @@ function handleReveal(ws: WebSocket, msg: { type: 'reveal'; optionIndex: number;
 
   broadcastMatch(match, {
     type: 'reveal_status',
-    revealed: Array.from(match.players.values()).map(p => ({
+    revealed: Array.from(match.players.values()).map((p) => ({
       displayName: p.displayName,
       hasRevealed: p.revealed,
     })),
   });
 
   const mustReveal = Array.from(match.players.values()).filter(
-    p => p.committed && !p.forfeited
+    (p) => p.committed && !p.forfeited,
   );
-  if (mustReveal.length > 0 && mustReveal.every(p => p.revealed)) {
+  if (mustReveal.length > 0 && mustReveal.every((p) => p.revealed)) {
     clearTimeout(match.revealTimer!);
     match.revealTimer = null;
     finalizeRound(match);
@@ -275,19 +325,29 @@ function handleReveal(ws: WebSocket, msg: { type: 'reveal'; optionIndex: number;
 
 function handleChat(ws: WebSocket, msg: { type: 'chat'; text: string }): void {
   const accountId = ws._accountId;
-  if (!accountId) return send(ws, { type: 'error', message: 'Not authenticated' });
+  if (!accountId)
+    return send(ws, { type: 'error', message: 'Not authenticated' });
 
   const match = getMatchForAccount(accountId);
   if (!match) return send(ws, { type: 'error', message: 'Not in a match' });
   if (match.phase !== 'results') {
-    return send(ws, { type: 'error', message: 'Chat only allowed during results phase' });
+    return send(ws, {
+      type: 'error',
+      message: 'Chat only allowed during results phase',
+    });
   }
 
   const player = match.players.get(accountId);
   if (!player) return;
-  if (player.forfeited) return send(ws, { type: 'error', message: 'Forfeited players cannot chat' });
+  if (player.forfeited)
+    return send(ws, {
+      type: 'error',
+      message: 'Forfeited players cannot chat',
+    });
 
-  const text = String(msg.text || '').trim().slice(0, MAX_CHAT_LENGTH);
+  const text = String(msg.text || '')
+    .trim()
+    .slice(0, MAX_CHAT_LENGTH);
   if (!text) return;
 
   const messageId = `msg_${uuidv4()}`;
@@ -365,24 +425,32 @@ function handleReconnect(ws: WebSocket, accountId: string): void {
         player.graceTimer = null;
       }
 
-      broadcastMatch(match, {
-        type: 'player_reconnected',
-        displayName: player.displayName,
-      }, accountId);
+      broadcastMatch(
+        match,
+        {
+          type: 'player_reconnected',
+          displayName: player.displayName,
+        },
+        accountId,
+      );
 
       sendMatchStateCatchup(ws, match, accountId);
     }
   }
 }
 
-function sendMatchStateCatchup(ws: WebSocket, match: MatchState, accountId: string): void {
+function sendMatchStateCatchup(
+  ws: WebSocket,
+  match: MatchState,
+  _accountId: string,
+): void {
   const question = match.questions[match.currentRound]!;
 
   send(ws, {
     type: 'game_started',
     matchId: match.matchId,
     roundCount: match.totalRounds,
-    players: Array.from(match.players.values()).map(p => ({
+    players: Array.from(match.players.values()).map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
     })),
@@ -407,7 +475,7 @@ function sendMatchStateCatchup(ws: WebSocket, match: MatchState, accountId: stri
 
   send(ws, {
     type: 'commit_status',
-    committed: Array.from(match.players.values()).map(p => ({
+    committed: Array.from(match.players.values()).map((p) => ({
       displayName: p.displayName,
       hasCommitted: p.committed,
     })),
@@ -416,7 +484,7 @@ function sendMatchStateCatchup(ws: WebSocket, match: MatchState, accountId: stri
   if (match.phase === 'reveal' || match.phase === 'results') {
     send(ws, {
       type: 'reveal_status',
-      revealed: Array.from(match.players.values()).map(p => ({
+      revealed: Array.from(match.players.values()).map((p) => ({
         displayName: p.displayName,
         hasRevealed: p.revealed,
       })),
@@ -427,18 +495,18 @@ function sendMatchStateCatchup(ws: WebSocket, match: MatchState, accountId: stri
 function checkAutoAdvance(match: MatchState): void {
   if (match.phase === 'commit') {
     const eligible = Array.from(match.players.values()).filter(
-      p => !p.forfeited && p.disconnectedAt === null
+      (p) => !p.forfeited && p.disconnectedAt === null,
     );
-    if (eligible.length > 0 && eligible.every(p => p.committed)) {
+    if (eligible.length > 0 && eligible.every((p) => p.committed)) {
       clearTimeout(match.commitTimer!);
       match.commitTimer = null;
       startRevealPhase(match);
     }
   } else if (match.phase === 'reveal') {
     const mustReveal = Array.from(match.players.values()).filter(
-      p => p.committed && !p.forfeited
+      (p) => p.committed && !p.forfeited,
     );
-    if (mustReveal.length > 0 && mustReveal.every(p => p.revealed)) {
+    if (mustReveal.length > 0 && mustReveal.every((p) => p.revealed)) {
       clearTimeout(match.revealTimer!);
       match.revealTimer = null;
       finalizeRound(match);
@@ -494,7 +562,9 @@ function onMatchReady(players: QueuePlayer[], matchId: string): void {
     const session = sessionState.get(p.accountId);
     if (session) {
       session.previousOpponents = new Set(
-        players.filter(x => x.accountId !== p.accountId).map(x => x.accountId)
+        players
+          .filter((x) => x.accountId !== p.accountId)
+          .map((x) => x.accountId),
       );
     }
   }
@@ -518,7 +588,7 @@ function onMatchReady(players: QueuePlayer[], matchId: string): void {
     type: 'game_started',
     matchId,
     roundCount: TOTAL_ROUNDS,
-    players: Array.from(playerMap.values()).map(p => ({
+    players: Array.from(playerMap.values()).map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
     })),
@@ -576,7 +646,7 @@ function finalizeRound(match: MatchState): void {
 
   const question = match.questions[match.currentRound]!;
 
-  const settleInput = Array.from(match.players.values()).map(p => ({
+  const settleInput = Array.from(match.players.values()).map((p) => ({
     accountId: p.accountId,
     displayName: p.displayName,
     optionIndex: p.optionIndex,
@@ -589,7 +659,7 @@ function finalizeRound(match: MatchState): void {
   const resultWithNum = { ...result, roundNum: match.currentRound + 1 };
 
   // Apply balance deltas and annotate with newBalance
-  const enrichedPlayers = resultWithNum.players.map(pr => {
+  const enrichedPlayers = resultWithNum.players.map((pr) => {
     if (pr.netDelta !== 0) {
       db.updateBalance(pr.accountId, pr.netDelta);
     }
@@ -643,7 +713,10 @@ function finalizeRound(match: MatchState): void {
   match.resultsTimer = setTimeout(() => {
     match.resultsTimer = null;
     match.currentRound++;
-    if (match.currentRound >= match.totalRounds || !hasNonForfeitedPlayers(match)) {
+    if (
+      match.currentRound >= match.totalRounds ||
+      !hasNonForfeitedPlayers(match)
+    ) {
       endMatch(match);
     } else {
       startCommitPhase(match);
@@ -662,36 +735,40 @@ function endMatch(match: MatchState): void {
   clearTimers(match);
 
   const summary = {
-    players: Array.from(match.players.values()).map(p => {
-      const account = db.getAccount(p.accountId);
-      const endingBalance = account?.token_balance ?? 0;
-      const netDelta = endingBalance - p.startingBalance;
-      const result = p.forfeited ? 'forfeited' as const : 'completed' as const;
+    players: Array.from(match.players.values())
+      .map((p) => {
+        const account = db.getAccount(p.accountId);
+        const endingBalance = account?.token_balance ?? 0;
+        const netDelta = endingBalance - p.startingBalance;
+        const result = p.forfeited
+          ? ('forfeited' as const)
+          : ('completed' as const);
 
-      db.updateMatchPlayer({
-        matchId: match.matchId,
-        accountId: p.accountId,
-        endingBalance,
-        netDelta,
-        result,
-      });
+        db.updateMatchPlayer({
+          matchId: match.matchId,
+          accountId: p.accountId,
+          endingBalance,
+          netDelta,
+          result,
+        });
 
-      db.updatePlayerStats(p.accountId, {
-        roundsPlayed: 0,
-        coherentRounds: 0,
-        isGameEnd: true,
-        wonRound: false,
-        earnsCoordinationCredit: false,
-      });
+        db.updatePlayerStats(p.accountId, {
+          roundsPlayed: 0,
+          coherentRounds: 0,
+          isGameEnd: true,
+          wonRound: false,
+          earnsCoordinationCredit: false,
+        });
 
-      return {
-        displayName: p.displayName,
-        startingBalance: p.startingBalance,
-        endingBalance,
-        netDelta,
-        result,
-      };
-    }).sort((a, b) => b.endingBalance - a.endingBalance),
+        return {
+          displayName: p.displayName,
+          startingBalance: p.startingBalance,
+          endingBalance,
+          netDelta,
+          result,
+        };
+      })
+      .sort((a, b) => b.endingBalance - a.endingBalance),
   };
 
   db.endMatch(match.matchId);
@@ -713,7 +790,7 @@ function endMatch(match: MatchState): void {
   for (const [accountId, p] of match.players) {
     if (p.forfeited) continue;
     const session = sessionState.get(accountId);
-    if (!session || !session.autoRequeue) continue;
+    if (!session?.autoRequeue) continue;
     if (!session.ws || session.ws.readyState !== 1) continue;
 
     const account = db.getAccount(accountId);
@@ -743,7 +820,10 @@ function endMatch(match: MatchState): void {
 // Account state for /api/me
 // ---------------------------------------------------------------------------
 
-function getAccountState(accountId: string): { autoRequeue: boolean; queueStatus: string } {
+function getAccountState(accountId: string): {
+  autoRequeue: boolean;
+  queueStatus: string;
+} {
   const session = sessionState.get(accountId);
   const isQueued = queue.isQueued(accountId);
   const inMatch = playerMatchIndex.has(accountId);
@@ -765,17 +845,18 @@ function getAccountState(accountId: string): { autoRequeue: boolean; queueStatus
 // Wire up the matchmaking callback
 // ---------------------------------------------------------------------------
 
-queue.onMatchReady = (players, matchId) => onMatchReady(players as unknown as QueuePlayer[], matchId);
+queue.onMatchReady = (players, matchId) =>
+  onMatchReady(players as unknown as QueuePlayer[], matchId);
 
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
 export {
-  handleMessage,
-  handleDisconnect,
-  handleReconnect,
-  getAccountState,
-  sessionState,
   activeMatches,
+  getAccountState,
+  handleDisconnect,
+  handleMessage,
+  handleReconnect,
+  sessionState,
 };

@@ -1,7 +1,7 @@
-import { ethers } from 'ethers';
 import crypto from 'node:crypto';
+import { ethers } from 'ethers';
 import db from './db';
-import type { AccountRow, AuthChallengeRow } from './types/db';
+import type { AccountRow } from './types/db';
 
 export interface Session {
   accountId: string;
@@ -24,15 +24,27 @@ const sessions: Map<string, Session> = new Map(); // sessionToken -> { accountId
  * @param walletAddress - Ethereum address (0x...)
  * @returns challengeId, message, and expiresAt
  */
-export function createChallenge(walletAddress: string): { challengeId: string; message: string; expiresAt: string } {
+export function createChallenge(walletAddress: string): {
+  challengeId: string;
+  message: string;
+  expiresAt: string;
+} {
   // Normalize to checksum address
   const normalized: string = ethers.getAddress(walletAddress);
   const nonce: string = crypto.randomBytes(32).toString('hex');
   const challengeId: string = `ch_${crypto.randomBytes(16).toString('hex')}`;
-  const expiresAt: string = new Date(Date.now() + CHALLENGE_TTL_MS).toISOString();
+  const expiresAt: string = new Date(
+    Date.now() + CHALLENGE_TTL_MS,
+  ).toISOString();
   const message: string = `Sign this message to authenticate with Schelling Game.\n\nWallet: ${normalized}\nNonce: ${nonce}\nExpires: ${expiresAt}`;
 
-  db.createChallenge({ challengeId, walletAddress: normalized, message, nonce, expiresAt });
+  db.createChallenge({
+    challengeId,
+    walletAddress: normalized,
+    message,
+    nonce,
+    expiresAt,
+  });
 
   return { challengeId, message, expiresAt };
 }
@@ -43,15 +55,28 @@ export function createChallenge(walletAddress: string): { challengeId: string; m
  * @returns sessionToken and account info
  * @throws Error on invalid/expired challenge or bad signature
  */
-export function verifyChallenge({ challengeId, walletAddress, signature }: { challengeId: string; walletAddress: string; signature: string }): { sessionToken: string; account: AccountResponse } {
+export function verifyChallenge({
+  challengeId,
+  walletAddress,
+  signature,
+}: {
+  challengeId: string;
+  walletAddress: string;
+  signature: string;
+}): { sessionToken: string; account: AccountResponse } {
   const normalized: string = ethers.getAddress(walletAddress);
   const challenge = db.getChallenge(challengeId);
   if (!challenge) throw new Error('Challenge not found or already used');
-  if (challenge.wallet_address !== normalized) throw new Error('Wallet address mismatch');
-  if (new Date(challenge.expires_at) < new Date()) throw new Error('Challenge expired');
+  if (challenge.wallet_address !== normalized)
+    throw new Error('Wallet address mismatch');
+  if (new Date(challenge.expires_at) < new Date())
+    throw new Error('Challenge expired');
 
   // Verify the signature
-  const recoveredAddress: string = ethers.verifyMessage(challenge.message, signature);
+  const recoveredAddress: string = ethers.verifyMessage(
+    challenge.message,
+    signature,
+  );
   if (recoveredAddress.toLowerCase() !== normalized.toLowerCase()) {
     throw new Error('Signature verification failed');
   }
@@ -112,7 +137,10 @@ export function isValidAddress(address: string): boolean {
 
 // Dev-mode shortcut: create a session without wallet signing
 // Only use when NODE_ENV !== 'production'
-export function devCreateSession(walletAddress: string): { sessionToken: string; account: AccountResponse } {
+export function devCreateSession(walletAddress: string): {
+  sessionToken: string;
+  account: AccountResponse;
+} {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Dev sessions not allowed in production');
   }

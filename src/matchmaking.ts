@@ -1,5 +1,5 @@
-import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import type WebSocket from 'ws';
 
 const FILL_TIMER_MS = 20_000; // 20 seconds
 const ALLOWED_SIZES = [3, 5, 7];
@@ -69,11 +69,15 @@ class MatchmakingQueue {
    */
   dequeue(accountId: string): void {
     // Remove from waiting queue
-    this.waitingQueue = this.waitingQueue.filter(p => p.accountId !== accountId);
+    this.waitingQueue = this.waitingQueue.filter(
+      (p) => p.accountId !== accountId,
+    );
 
     // Remove from forming match
     if (this.formingMatch) {
-      const idx = this.formingMatch.players.findIndex(p => p.accountId === accountId);
+      const idx = this.formingMatch.players.findIndex(
+        (p) => p.accountId === accountId,
+      );
       if (idx !== -1) {
         this.formingMatch.players.splice(idx, 1);
         // If below 3, cancel forming
@@ -85,14 +89,20 @@ class MatchmakingQueue {
   }
 
   isQueued(accountId: string): boolean {
-    if (this.waitingQueue.some(p => p.accountId === accountId)) return true;
-    if (this.formingMatch?.players.some(p => p.accountId === accountId)) return true;
+    if (this.waitingQueue.some((p) => p.accountId === accountId)) return true;
+    if (this.formingMatch?.players.some((p) => p.accountId === accountId))
+      return true;
     return false;
   }
 
   isInActiveMatch(accountId: string): boolean {
     for (const match of this.activeMatches.values()) {
-      if ((match as { players?: { accountId: string }[] }).players && (match as { players: { accountId: string }[] }).players.some(p => p.accountId === accountId)) return true;
+      if (
+        (match as { players: { accountId: string }[] }).players?.some(
+          (p) => p.accountId === accountId,
+        )
+      )
+        return true;
     }
     return false;
   }
@@ -115,20 +125,27 @@ class MatchmakingQueue {
     const queuedPlayers = [
       ...(this.formingMatch ? this.formingMatch.players : []),
       ...this.waitingQueue,
-    ].map(p => p.displayName);
+    ].map((p) => p.displayName);
 
     return {
       type: 'queue_state',
-      status: this.formingMatch?.players.some(p => p.accountId === forAccountId) ? 'forming' :
-              this.waitingQueue.some(p => p.accountId === forAccountId) ? 'queued' : 'idle',
+      status: this.formingMatch?.players.some(
+        (p) => p.accountId === forAccountId,
+      )
+        ? 'forming'
+        : this.waitingQueue.some((p) => p.accountId === forAccountId)
+          ? 'queued'
+          : 'idle',
       queuedCount: queuedPlayers.length,
       queuedPlayers,
-      formingMatch: this.formingMatch ? {
-        playerCount: this.formingMatch.players.length,
-        players: this.formingMatch.players.map(p => p.displayName),
-        allowedSizes: ALLOWED_SIZES,
-        fillDeadlineMs: this.formingMatch.fillDeadlineMs,
-      } : null,
+      formingMatch: this.formingMatch
+        ? {
+            playerCount: this.formingMatch.players.length,
+            players: this.formingMatch.players.map((p) => p.displayName),
+            allowedSizes: ALLOWED_SIZES,
+            fillDeadlineMs: this.formingMatch.fillDeadlineMs,
+          }
+        : null,
     };
   }
 
@@ -166,10 +183,12 @@ class MatchmakingQueue {
    * Update a player's WebSocket reference (for reconnects).
    */
   updatePlayerWs(accountId: string, ws: WebSocket): void {
-    const inQueue = this.waitingQueue.find(p => p.accountId === accountId);
+    const inQueue = this.waitingQueue.find((p) => p.accountId === accountId);
     if (inQueue) inQueue.ws = ws;
     if (this.formingMatch) {
-      const inForming = this.formingMatch.players.find(p => p.accountId === accountId);
+      const inForming = this.formingMatch.players.find(
+        (p) => p.accountId === accountId,
+      );
       if (inForming) inForming.ws = ws;
     }
   }
@@ -179,7 +198,10 @@ class MatchmakingQueue {
   _tryFormMatch(): void {
     if (this.formingMatch) {
       // Try to add more players to existing forming match
-      while (this.waitingQueue.length > 0 && this.formingMatch.players.length < MAX_MATCH_SIZE) {
+      while (
+        this.waitingQueue.length > 0 &&
+        this.formingMatch.players.length < MAX_MATCH_SIZE
+      ) {
         const next = this.waitingQueue.shift()!;
         this.formingMatch.players.push(next);
       }
@@ -203,7 +225,10 @@ class MatchmakingQueue {
     };
 
     // Try to add more
-    while (this.waitingQueue.length > 0 && this.formingMatch.players.length < MAX_MATCH_SIZE) {
+    while (
+      this.waitingQueue.length > 0 &&
+      this.formingMatch.players.length < MAX_MATCH_SIZE
+    ) {
       const next = this.waitingQueue.shift()!;
       this.formingMatch.players.push(next);
     }
@@ -265,5 +290,5 @@ class MatchmakingQueue {
 // Singleton
 const queue = new MatchmakingQueue();
 export default queue;
-export { MatchmakingQueue, FILL_TIMER_MS, ALLOWED_SIZES, MAX_MATCH_SIZE };
-export type { QueueEntry, FormingMatch, EnqueueInput };
+export type { EnqueueInput, FormingMatch, QueueEntry };
+export { ALLOWED_SIZES, FILL_TIMER_MS, MAX_MATCH_SIZE, MatchmakingQueue };

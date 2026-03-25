@@ -1,14 +1,22 @@
-import type { PlayerSettlementInput, PlayerResult, RoundResult, Question } from '../types/domain';
+import type {
+  PlayerResult,
+  PlayerSettlementInput,
+  Question,
+  RoundResult,
+} from '../types/domain';
 
 const ROUND_ANTE = 60;
 
-export function settleRound(players: PlayerSettlementInput[], question: Question): RoundResult {
-  const attached = players.filter(p => p.attached);
+export function settleRound(
+  players: PlayerSettlementInput[],
+  question: Question,
+): RoundResult {
+  const attached = players.filter((p) => p.attached);
   const roundPlayerCount = attached.length;
   const pot = roundPlayerCount * ROUND_ANTE;
 
   // Collect valid reveals
-  const validReveals = players.filter(p => p.validReveal);
+  const validReveals = players.filter((p) => p.validReveal);
   const validRevealCount = validReveals.length;
 
   // Zero valid reveals: void
@@ -19,7 +27,10 @@ export function settleRound(players: PlayerSettlementInput[], question: Question
   // Count votes per option
   const optionCounts = new Map<number, number>();
   for (const p of validReveals) {
-    optionCounts.set(p.optionIndex!, (optionCounts.get(p.optionIndex!) || 0) + 1);
+    optionCounts.set(
+      p.optionIndex!,
+      (optionCounts.get(p.optionIndex!) || 0) + 1,
+    );
   }
 
   // Find topCount and winning options
@@ -41,7 +52,7 @@ export function settleRound(players: PlayerSettlementInput[], question: Question
   const payoutPerWinner = Math.floor(pot / winnerCount);
 
   // Build player results
-  const playerResults: PlayerResult[] = attached.map(p => {
+  const playerResults: PlayerResult[] = attached.map((p) => {
     const wonRound = winnerSet.has(p.accountId);
     const earnsCoordinationCredit = wonRound && topCount >= 2;
     const antePaid = ROUND_ANTE;
@@ -52,7 +63,10 @@ export function settleRound(players: PlayerSettlementInput[], question: Question
       accountId: p.accountId,
       displayName: p.displayName,
       revealedOptionIndex: p.validReveal ? p.optionIndex : null,
-      revealedOptionLabel: p.validReveal && p.optionIndex != null ? (question.options[p.optionIndex] || null) : null,
+      revealedOptionLabel:
+        p.validReveal && p.optionIndex != null
+          ? question.options[p.optionIndex] || null
+          : null,
       wonRound,
       earnsCoordinationCredit,
       antePaid,
@@ -75,18 +89,24 @@ export function settleRound(players: PlayerSettlementInput[], question: Question
   };
 }
 
-function buildVoidResult(players: PlayerSettlementInput[], roundPlayerCount: number, reason: string): RoundResult {
-  const playerResults: PlayerResult[] = players.filter(p => p.attached).map(p => ({
-    accountId: p.accountId,
-    displayName: p.displayName,
-    revealedOptionIndex: null,
-    revealedOptionLabel: null,
-    wonRound: false,
-    earnsCoordinationCredit: false,
-    antePaid: 0,
-    roundPayout: 0,
-    netDelta: 0,
-  }));
+function buildVoidResult(
+  players: PlayerSettlementInput[],
+  roundPlayerCount: number,
+  reason: string,
+): RoundResult {
+  const playerResults: PlayerResult[] = players
+    .filter((p) => p.attached)
+    .map((p) => ({
+      accountId: p.accountId,
+      displayName: p.displayName,
+      revealedOptionIndex: null,
+      revealedOptionLabel: null,
+      wonRound: false,
+      earnsCoordinationCredit: false,
+      antePaid: 0,
+      roundPayout: 0,
+      netDelta: 0,
+    }));
 
   return {
     voided: true,
