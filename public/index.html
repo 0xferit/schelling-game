@@ -216,7 +216,7 @@ section{padding:6rem 2rem}
 }
 .example-options{
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:repeat(3,1fr);
   gap:.6rem;
 }
 .example-opt{
@@ -349,7 +349,7 @@ footer a:hover{color:var(--accent)}
 @media(max-width:700px){
   .concept-grid{grid-template-columns:1fr}
   .mech-steps{grid-template-columns:1fr}
-  .example-options{grid-template-columns:1fr}
+  .example-options{grid-template-columns:1fr 1fr}
   nav{padding:1rem 1.25rem}
   section{padding:4rem 1.25rem}
   .hero{padding:5rem 1.25rem 3rem}
@@ -432,7 +432,7 @@ footer a:hover{color:var(--accent)}
     <div class="section-label reveal">Try It</div>
     <h2 class="section-title reveal">Which would you pick?</h2>
     <div class="example-demo reveal">
-      <div class="example-question">Which number does not belong?</div>
+      <div class="example-question">Pick a number.</div>
       <div class="example-options">
         <button class="example-opt">13</button>
         <button class="example-opt">7</button>
@@ -440,10 +440,16 @@ footer a:hover{color:var(--accent)}
         <button class="example-opt">29</button>
         <button class="example-opt">41</button>
         <button class="example-opt">3</button>
+        <button class="example-opt">67</button>
+        <button class="example-opt">19</button>
+        <button class="example-opt">53</button>
+        <button class="example-opt">2</button>
+        <button class="example-opt">37</button>
+        <button class="example-opt">11</button>
       </div>
       <p class="example-insight">
-        100 is the only non-prime, the only round number, the only one with three digits.
-        It stands out, and everyone knows it. That shared intuition is the focal point.
+        No instructions, yet most people pick 100. It is round, familiar, and visually distinct.
+        That silent consensus is the focal point.
       </p>
     </div>
   </div>
