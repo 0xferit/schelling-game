@@ -199,10 +199,28 @@ app.get('/api/leaderboard/me', authenticateSession, (req: Request, res: Response
 });
 
 // ---------------------------------------------------------------------------
+// Admin auth middleware
+// ---------------------------------------------------------------------------
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const key = process.env.ADMIN_KEY;
+  if (!key) {
+    res.status(503).json({ error: 'ADMIN_KEY not configured' });
+    return;
+  }
+  const auth = req.headers.authorization;
+  if (auth !== `Bearer ${key}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+}
+
+// ---------------------------------------------------------------------------
 // REST API: CSV export
 // ---------------------------------------------------------------------------
 
-app.get('/api/export/votes.csv', (_req: Request, res: Response) => {
+app.get('/api/export/votes.csv', requireAdmin, (_req: Request, res: Response) => {
   try {
     const rows = db.getAllVoteLogs();
     const headers = [
@@ -261,7 +279,7 @@ app.get('/api/export/votes.csv', (_req: Request, res: Response) => {
 // REST API: Admin
 // ---------------------------------------------------------------------------
 
-app.post('/api/admin/leaderboard-eligible', (req: Request, res: Response) => {
+app.post('/api/admin/leaderboard-eligible', requireAdmin, (req: Request, res: Response) => {
   try {
     const { accountId, eligible } = req.body;
     if (!accountId) {

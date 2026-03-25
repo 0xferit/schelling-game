@@ -8,4 +8,5 @@ declare global {
 export interface Env {
   DB: D1Database;
   GAME_ROOM: DurableObjectNamespace;
+  ADMIN_KEY?: string;
 }

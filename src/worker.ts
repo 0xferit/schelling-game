@@ -401,8 +401,22 @@ export default {
       });
     }
 
+    // ---- Admin auth helper ----
+    const requireAdmin = (): Response | null => {
+      if (!env.ADMIN_KEY) return errorResponse('ADMIN_KEY not configured', 503);
+      if (request.headers.get('Authorization') !== `Bearer ${env.ADMIN_KEY}`) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return null;
+    };
+
     // ---- GET /api/export/votes.csv ----
     if (url.pathname === '/api/export/votes.csv' && method === 'GET') {
+      const denied = requireAdmin();
+      if (denied) return denied;
       const { results } = await env.DB.prepare('SELECT * FROM vote_logs ORDER BY id ASC').all();
       const columns = [
         'id', 'match_id', 'round_number', 'question_id', 'account_id', 'display_name_snapshot',
@@ -429,7 +443,8 @@ export default {
 
     // ---- POST /api/admin/leaderboard-eligible ----
     if (url.pathname === '/api/admin/leaderboard-eligible' && method === 'POST') {
-      // Minimal admin endpoint; production should add proper admin auth.
+      const denied = requireAdmin();
+      if (denied) return denied;
       let body: { accountId?: string; eligible?: boolean };
       try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
       const { accountId, eligible } = body;
