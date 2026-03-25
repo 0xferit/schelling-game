@@ -20,7 +20,7 @@ interface ConnectionState {
 interface WorkerPlayerState {
   accountId: string;
   displayName: string;
-  ws: WebSocket;
+  ws: WebSocket | null;
   startingBalance: number;
   currentBalance: number;
   committed: boolean;
@@ -40,6 +40,8 @@ interface WorkerMatchState {
   currentRound: number;
   totalRounds: number;
   phase: string;
+  phaseEnteredAt: number;
+  lastSettledRound: number;
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
@@ -108,6 +110,7 @@ const GRACE_DURATION_MS = 15_000;
 const MAX_CHAT_LENGTH = 300;
 const MAX_MATCH_SIZE = 7;
 const MIN_MATCH_SIZE = 3;
+const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
 // Helper: authenticated account ID from request
@@ -541,6 +544,39 @@ export class GameRoom {
     this.formingMatch = null;
     this.activeMatches = new Map();
     this.playerMatchIndex = new Map();
+
+    // Initialize DO-local SQLite tables for state persistence
+    this.state.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS match_checkpoints (
+        match_id        TEXT PRIMARY KEY,
+        phase           TEXT NOT NULL,
+        current_round   INTEGER NOT NULL,
+        total_rounds    INTEGER NOT NULL,
+        questions_json  TEXT NOT NULL,
+        phase_entered_at INTEGER NOT NULL,
+        last_settled_round INTEGER NOT NULL DEFAULT 0,
+        created_at      INTEGER NOT NULL
+      )
+    `);
+    this.state.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS player_checkpoints (
+        match_id         TEXT NOT NULL,
+        account_id       TEXT NOT NULL,
+        display_name     TEXT NOT NULL,
+        starting_balance INTEGER NOT NULL,
+        current_balance  INTEGER NOT NULL,
+        committed        INTEGER NOT NULL DEFAULT 0,
+        revealed         INTEGER NOT NULL DEFAULT 0,
+        hash             TEXT,
+        option_index     INTEGER,
+        salt             TEXT,
+        forfeited        INTEGER NOT NULL DEFAULT 0,
+        disconnected_at  INTEGER,
+        PRIMARY KEY (match_id, account_id)
+      )
+    `);
+
+    this._restoreMatchesFromStorage();
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -597,6 +633,7 @@ export class GameRoom {
           playerState.disconnectedAt = null;
           playerState.ws = ws;
           existingConn.ws = ws;
+          this._checkpointPlayerAction(existingMatchId, accountId, { disconnectedAt: null });
           this._setupWsListeners(ws, accountId);
 
           // Broadcast reconnection
@@ -606,6 +643,38 @@ export class GameRoom {
           });
 
           // Send current match state to reconnected player
+          this._sendMatchStateToPlayer(match, accountId);
+          return;
+        }
+      }
+    }
+
+    // Post-eviction reconnect: player has a restored match but no connection entry
+    if (!existingConn && existingMatchId) {
+      const match = this.activeMatches.get(existingMatchId);
+      if (match) {
+        const playerState = match.players.get(accountId);
+        if (playerState && !playerState.forfeited) {
+          // Create connection entry and reattach
+          this.connections.set(accountId, {
+            ws, displayName, autoRequeue: false, previousOpponents: new Set(),
+          });
+          if (playerState.graceTimer) {
+            clearTimeout(playerState.graceTimer);
+            playerState.graceTimer = null;
+          }
+          playerState.disconnectedAt = null;
+          playerState.ws = ws;
+          this._checkpointPlayerAction(existingMatchId, accountId, { disconnectedAt: null });
+          this._setupWsListeners(ws, accountId);
+
+          this._ensureMatchTimerRunning(match);
+
+          this._broadcastToMatch(match, {
+            type: 'player_reconnected',
+            displayName,
+          });
+
           this._sendMatchStateToPlayer(match, accountId);
           return;
         }
@@ -849,6 +918,8 @@ export class GameRoom {
       currentRound: 0,
       totalRounds: TOTAL_ROUNDS,
       phase: 'starting',
+      phaseEnteredAt: Date.now(),
+      lastSettledRound: 0,
       commitTimer: null,
       revealTimer: null,
       resultsTimer: null,
@@ -891,6 +962,7 @@ export class GameRoom {
   _startCommitPhase(match: WorkerMatchState): void {
     match.phase = 'commit';
     match.currentRound++;
+    match.phaseEnteredAt = Date.now();
     const question = match.questions[match.currentRound - 1]!;
 
     // Reset per-round player state
@@ -901,6 +973,8 @@ export class GameRoom {
       p.optionIndex = null;
       p.salt = null;
     }
+
+    this._checkpointMatch(match);
 
     this._broadcastToMatch(match, {
       type: 'round_start',
@@ -917,6 +991,7 @@ export class GameRoom {
     });
 
     match.commitTimer = setTimeout(() => {
+      match.commitTimer = null;
       this._startRevealPhase(match);
     }, COMMIT_DURATION * 1000);
   }
@@ -924,6 +999,9 @@ export class GameRoom {
   _startRevealPhase(match: WorkerMatchState): void {
     if (match.commitTimer) { clearTimeout(match.commitTimer); match.commitTimer = null; }
     match.phase = 'reveal';
+    match.phaseEnteredAt = Date.now();
+
+    this._checkpointMatch(match);
 
     this._broadcastToMatch(match, {
       type: 'phase_change',
@@ -932,6 +1010,7 @@ export class GameRoom {
     });
 
     match.revealTimer = setTimeout(() => {
+      match.revealTimer = null;
       this._finalizeRound(match);
     }, REVEAL_DURATION * 1000);
   }
@@ -939,8 +1018,10 @@ export class GameRoom {
   async _finalizeRound(match: WorkerMatchState): Promise<void> {
     if (match.revealTimer) { clearTimeout(match.revealTimer); match.revealTimer = null; }
     match.phase = 'results';
+    match.phaseEnteredAt = Date.now();
 
     const question = match.questions[match.currentRound - 1]!;
+    const alreadySettled = match.currentRound <= match.lastSettledRound;
 
     // Build player array for settlement
     const settlementPlayers: PlayerSettlementInput[] = [...match.players.values()].map(p => ({
@@ -954,91 +1035,88 @@ export class GameRoom {
 
     const result: RoundResult = settleRound(settlementPlayers, question);
 
-    // Apply balance changes, update match state, and collect D1 statements
-    const stmts: D1PreparedStatement[] = [];
-    const now = new Date().toISOString();
-
+    // Apply balance changes to in-memory state (always needed for correct broadcast)
     for (const pr of result.players) {
       const playerState = match.players.get(pr.accountId);
       if (!playerState) continue;
-
-      playerState.currentBalance += pr.netDelta;
+      if (!alreadySettled) {
+        playerState.currentBalance += pr.netDelta;
+      }
       (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
-
-      // Resolve option label for vote log
       pr.revealedOptionLabel = pr.revealedOptionIndex !== null
         ? (question.options[pr.revealedOptionIndex] || null)
         : null;
+    }
 
-      // Balance update
-      stmts.push(
-        this.env.DB.prepare('UPDATE accounts SET token_balance = ? WHERE account_id = ?')
-          .bind(playerState.currentBalance, pr.accountId)
-      );
+    // Write to D1 only if this round hasn't been settled before (prevents duplicates after restore)
+    if (!alreadySettled) {
+      match.lastSettledRound = match.currentRound;
+      // Checkpoint before D1 batch so lastSettledRound survives eviction between
+      // the D1 writes and the post-settlement checkpoint below
+      this._checkpointMatch(match);
 
-      // Stats update
-      if (!result.voided) {
+      const stmts: D1PreparedStatement[] = [];
+      const now = new Date().toISOString();
+
+      for (const pr of result.players) {
+        const playerState = match.players.get(pr.accountId);
+        if (!playerState) continue;
+
         stmts.push(
-          this.env.DB.prepare('UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?')
-            .bind(pr.accountId)
+          this.env.DB.prepare('UPDATE accounts SET token_balance = ? WHERE account_id = ?')
+            .bind(playerState.currentBalance, pr.accountId)
         );
 
-        if (pr.earnsCoordinationCredit) {
+        if (!result.voided) {
           stmts.push(
-            this.env.DB.prepare(
-              'UPDATE player_stats SET coherent_rounds = coherent_rounds + 1, ' +
-              'current_streak = current_streak + 1, ' +
-              'longest_streak = MAX(longest_streak, current_streak + 1) ' +
-              'WHERE account_id = ?'
-            ).bind(pr.accountId)
-          );
-        } else {
-          stmts.push(
-            this.env.DB.prepare('UPDATE player_stats SET current_streak = 0 WHERE account_id = ?')
+            this.env.DB.prepare('UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?')
               .bind(pr.accountId)
           );
+          if (pr.earnsCoordinationCredit) {
+            stmts.push(
+              this.env.DB.prepare(
+                'UPDATE player_stats SET coherent_rounds = coherent_rounds + 1, ' +
+                'current_streak = current_streak + 1, ' +
+                'longest_streak = MAX(longest_streak, current_streak + 1) ' +
+                'WHERE account_id = ?'
+              ).bind(pr.accountId)
+            );
+          } else {
+            stmts.push(
+              this.env.DB.prepare('UPDATE player_stats SET current_streak = 0 WHERE account_id = ?')
+                .bind(pr.accountId)
+            );
+          }
         }
+
+        stmts.push(
+          this.env.DB.prepare(
+            'INSERT INTO vote_logs (match_id, round_number, question_id, account_id, display_name_snapshot, ' +
+            'revealed_option_index, revealed_option_label, won_round, earns_coordination_credit, ' +
+            'ante_amount, round_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
+            'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).bind(
+            match.matchId, match.currentRound, question.id,
+            pr.accountId, pr.displayName,
+            pr.revealedOptionIndex, pr.revealedOptionLabel,
+            pr.wonRound ? 1 : 0, pr.earnsCoordinationCredit ? 1 : 0,
+            pr.antePaid, pr.roundPayout, pr.netDelta,
+            result.playerCount, result.validRevealCount, result.topCount,
+            result.winnerCount, JSON.stringify(result.winningOptionIndexes),
+            result.voided ? 1 : 0, result.voidReason, now,
+          )
+        );
       }
 
-      // Vote log
-      stmts.push(
-        this.env.DB.prepare(
-          'INSERT INTO vote_logs (match_id, round_number, question_id, account_id, display_name_snapshot, ' +
-          'revealed_option_index, revealed_option_label, won_round, earns_coordination_credit, ' +
-          'ante_amount, round_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
-          'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
-          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(
-          match.matchId,
-          match.currentRound,
-          question.id,
-          pr.accountId,
-          pr.displayName,
-          pr.revealedOptionIndex,
-          pr.revealedOptionLabel,
-          pr.wonRound ? 1 : 0,
-          pr.earnsCoordinationCredit ? 1 : 0,
-          pr.antePaid,
-          pr.roundPayout,
-          pr.netDelta,
-          result.playerCount,
-          result.validRevealCount,
-          result.topCount,
-          result.winnerCount,
-          JSON.stringify(result.winningOptionIndexes),
-          result.voided ? 1 : 0,
-          result.voidReason,
-          now,
-        )
-      );
+      if (stmts.length > 0) {
+        try {
+          await this.env.DB.batch(stmts);
+        } catch (e) { console.error('D1: batch finalizeRound for', match.matchId, e); }
+      }
     }
 
-    // Execute all round writes in a single D1 batch
-    if (stmts.length > 0) {
-      try {
-        await this.env.DB.batch(stmts);
-      } catch (e) { console.error('D1: batch finalizeRound for', match.matchId, e); }
-    }
+    this._checkpointMatch(match);
 
     // Broadcast round_result
     this._broadcastToMatch(match, {
@@ -1066,20 +1144,18 @@ export class GameRoom {
     });
 
     // Check early termination: no non-forfeited players remain
-    const nonForfeited = [...match.players.values()].filter(p => !p.forfeited);
-    if (nonForfeited.length === 0) {
-      // End match immediately after results display
-      match.resultsTimer = setTimeout(() => this._endMatch(match), RESULTS_DURATION * 1000);
+    if (!this._hasNonForfeitedPlayers(match)) {
+      match.resultsTimer = setTimeout(() => {
+        match.resultsTimer = null;
+        this._endMatch(match);
+      }, RESULTS_DURATION * 1000);
       return;
     }
 
     // After results display, advance
     match.resultsTimer = setTimeout(() => {
-      if (match.currentRound >= match.totalRounds) {
-        this._endMatch(match);
-      } else {
-        this._startCommitPhase(match);
-      }
+      match.resultsTimer = null;
+      this._advanceAfterResults(match);
     }, RESULTS_DURATION * 1000);
   }
 
@@ -1139,8 +1215,9 @@ export class GameRoom {
       }
     }
 
-    // Clean up match
+    // Clean up match and its checkpoint
     this.activeMatches.delete(match.matchId);
+    this._deleteMatchCheckpoint(match.matchId);
     for (const accountId of matchPlayerIds) {
       this.playerMatchIndex.delete(accountId);
     }
@@ -1195,6 +1272,7 @@ export class GameRoom {
 
     player.committed = true;
     player.hash = hash;
+    this._checkpointPlayerAction(match.matchId, accountId, { committed: true, hash });
 
     // Broadcast commit status
     this._broadcastCommitStatus(match);
@@ -1244,6 +1322,9 @@ export class GameRoom {
     player.revealed = true;
     player.optionIndex = optionIndex;
     player.salt = salt;
+    this._checkpointPlayerAction(match.matchId, accountId, {
+      revealed: true, optionIndex, salt,
+    });
 
     // Broadcast reveal status
     this._broadcastRevealStatus(match);
@@ -1343,6 +1424,7 @@ export class GameRoom {
     }
 
     player.disconnectedAt = Date.now();
+    this._checkpointPlayerAction(matchId, accountId, { disconnectedAt: player.disconnectedAt });
 
     // Broadcast disconnection
     this._broadcastToMatch(match, {
@@ -1363,6 +1445,7 @@ export class GameRoom {
 
     player.forfeited = true;
     player.graceTimer = null;
+    this._checkpointPlayerAction(match.matchId, accountId, { forfeited: true });
 
     this._broadcastToMatch(match, {
       type: 'player_forfeited',
@@ -1398,7 +1481,7 @@ export class GameRoom {
     const data = JSON.stringify(msg);
     for (const p of match.players.values()) {
       if (!p.forfeited || msg.type === 'game_over') {
-        try { p.ws.send(data); } catch {}
+        if (p.ws) try { p.ws.send(data); } catch {}
       }
     }
   }
@@ -1514,6 +1597,196 @@ export class GameRoom {
     return true;
   }
 
+  // -------------------------------------------------------------------------
+  // DO SQLite persistence: checkpoint, restore, cleanup
+  // -------------------------------------------------------------------------
+
+  _checkpointMatch(match: WorkerMatchState): void {
+    this.state.storage.sql.exec('BEGIN');
+    try {
+      this.state.storage.sql.exec(
+        `DELETE FROM player_checkpoints WHERE match_id = ?`,
+        match.matchId,
+      );
+      this.state.storage.sql.exec(
+        `INSERT OR REPLACE INTO match_checkpoints
+          (match_id, phase, current_round, total_rounds, questions_json, phase_entered_at, last_settled_round, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        match.matchId,
+        match.phase,
+        match.currentRound,
+        match.totalRounds,
+        JSON.stringify(match.questions),
+        match.phaseEnteredAt,
+        match.lastSettledRound,
+        Date.now(),
+      );
+      for (const p of match.players.values()) {
+        this.state.storage.sql.exec(
+          `INSERT INTO player_checkpoints
+            (match_id, account_id, display_name, starting_balance, current_balance,
+             committed, revealed, hash, option_index, salt, forfeited, disconnected_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          match.matchId, p.accountId, p.displayName, p.startingBalance, p.currentBalance,
+          p.committed ? 1 : 0, p.revealed ? 1 : 0, p.hash, p.optionIndex, p.salt,
+          p.forfeited ? 1 : 0, p.disconnectedAt,
+        );
+      }
+      this.state.storage.sql.exec('COMMIT');
+    } catch (err) {
+      this.state.storage.sql.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  _checkpointPlayerAction(matchId: string, accountId: string, fields: Partial<{
+    committed: boolean; revealed: boolean; hash: string | null;
+    optionIndex: number | null; salt: string | null; forfeited: boolean;
+    currentBalance: number; disconnectedAt: number | null;
+  }>): void {
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (fields.committed !== undefined) { sets.push('committed = ?'); vals.push(fields.committed ? 1 : 0); }
+    if (fields.revealed !== undefined) { sets.push('revealed = ?'); vals.push(fields.revealed ? 1 : 0); }
+    if (fields.hash !== undefined) { sets.push('hash = ?'); vals.push(fields.hash); }
+    if (fields.optionIndex !== undefined) { sets.push('option_index = ?'); vals.push(fields.optionIndex); }
+    if (fields.salt !== undefined) { sets.push('salt = ?'); vals.push(fields.salt); }
+    if (fields.forfeited !== undefined) { sets.push('forfeited = ?'); vals.push(fields.forfeited ? 1 : 0); }
+    if (fields.currentBalance !== undefined) { sets.push('current_balance = ?'); vals.push(fields.currentBalance); }
+    if (fields.disconnectedAt !== undefined) { sets.push('disconnected_at = ?'); vals.push(fields.disconnectedAt); }
+    if (sets.length === 0) return;
+    vals.push(matchId, accountId);
+    this.state.storage.sql.exec(
+      `UPDATE player_checkpoints SET ${sets.join(', ')} WHERE match_id = ? AND account_id = ?`,
+      ...vals,
+    );
+  }
+
+  _deleteMatchCheckpoint(matchId: string): void {
+    this.state.storage.sql.exec(`DELETE FROM player_checkpoints WHERE match_id = ?`, matchId);
+    this.state.storage.sql.exec(`DELETE FROM match_checkpoints WHERE match_id = ?`, matchId);
+  }
+
+  _restoreMatchesFromStorage(): void {
+    const now = Date.now();
+    const rows = [...this.state.storage.sql.exec(
+      `SELECT * FROM match_checkpoints WHERE phase != 'ended'`,
+    )];
+
+    for (const row of rows) {
+      const phaseEnteredAt = row.phase_entered_at as number;
+
+      // Discard stale matches nobody will reconnect to
+      if (now - phaseEnteredAt > STALE_MATCH_THRESHOLD_MS) {
+        this._deleteMatchCheckpoint(row.match_id as string);
+        continue;
+      }
+
+      const playerRows = [...this.state.storage.sql.exec(
+        `SELECT * FROM player_checkpoints WHERE match_id = ?`,
+        row.match_id as string,
+      )];
+
+      const players = new Map<string, WorkerPlayerState>();
+
+      for (const pr of playerRows) {
+        const accountId = pr.account_id as string;
+        players.set(accountId, {
+          accountId,
+          displayName: pr.display_name as string,
+          ws: null,
+          startingBalance: pr.starting_balance as number,
+          currentBalance: pr.current_balance as number,
+          committed: !!(pr.committed as number),
+          revealed: !!(pr.revealed as number),
+          hash: pr.hash as string | null,
+          optionIndex: pr.option_index as number | null,
+          salt: pr.salt as string | null,
+          forfeited: !!(pr.forfeited as number),
+          disconnectedAt: (pr.disconnected_at as number | null) ?? phaseEnteredAt,
+          graceTimer: null,
+        });
+        this.playerMatchIndex.set(accountId, row.match_id as string);
+      }
+
+      const match: WorkerMatchState = {
+        matchId: row.match_id as string,
+        players,
+        questions: JSON.parse(row.questions_json as string),
+        currentRound: row.current_round as number,
+        totalRounds: row.total_rounds as number,
+        phase: row.phase as string,
+        phaseEnteredAt,
+        lastSettledRound: row.last_settled_round as number,
+        commitTimer: null,
+        revealTimer: null,
+        resultsTimer: null,
+      };
+
+      this.activeMatches.set(match.matchId, match);
+    }
+  }
+
+  _ensureMatchTimerRunning(match: WorkerMatchState): void {
+    const elapsed = Date.now() - match.phaseEnteredAt;
+
+    if (match.phase === 'commit' && !match.commitTimer) {
+      const remaining = Math.max(0, COMMIT_DURATION * 1000 - elapsed);
+      if (remaining <= 0) {
+        this._startRevealPhase(match);
+      } else {
+        match.commitTimer = setTimeout(() => {
+          match.commitTimer = null;
+          this._startRevealPhase(match);
+        }, remaining);
+      }
+    } else if (match.phase === 'reveal' && !match.revealTimer) {
+      const remaining = Math.max(0, REVEAL_DURATION * 1000 - elapsed);
+      if (remaining <= 0) {
+        this._finalizeRound(match);
+      } else {
+        match.revealTimer = setTimeout(() => {
+          match.revealTimer = null;
+          this._finalizeRound(match);
+        }, remaining);
+      }
+    } else if (match.phase === 'results' && !match.resultsTimer) {
+      const remaining = Math.max(0, RESULTS_DURATION * 1000 - elapsed);
+      if (remaining <= 0) {
+        this._advanceAfterResults(match);
+      } else {
+        match.resultsTimer = setTimeout(() => {
+          match.resultsTimer = null;
+          this._advanceAfterResults(match);
+        }, remaining);
+      }
+    }
+
+    // Start grace timers for still-disconnected, non-forfeited players
+    for (const p of match.players.values()) {
+      if (p.disconnectedAt !== null && !p.forfeited && !p.graceTimer) {
+        p.graceTimer = setTimeout(() => {
+          this._forfeitPlayer(match, p.accountId);
+        }, GRACE_DURATION_MS);
+      }
+    }
+  }
+
+  _advanceAfterResults(match: WorkerMatchState): void {
+    if (match.currentRound >= match.totalRounds || !this._hasNonForfeitedPlayers(match)) {
+      this._endMatch(match);
+    } else {
+      this._startCommitPhase(match);
+    }
+  }
+
+  _hasNonForfeitedPlayers(match: WorkerMatchState): boolean {
+    for (const p of match.players.values()) {
+      if (!p.forfeited) return true;
+    }
+    return false;
+  }
+
   _sendMatchStateToPlayer(match: WorkerMatchState, accountId: string): void {
     const question = match.questions[match.currentRound - 1]!;
     const player = match.players.get(accountId);
@@ -1531,8 +1804,12 @@ export class GameRoom {
       players: playersInfo,
     });
 
-    // Send current round info
+    // Send current round info with remaining time (not full duration)
     if (match.phase === 'commit' || match.phase === 'reveal' || match.phase === 'results') {
+      const elapsed = Date.now() - match.phaseEnteredAt;
+      const commitRemaining = Math.max(1, Math.ceil((COMMIT_DURATION * 1000 - elapsed) / 1000));
+      const revealRemaining = Math.max(1, Math.ceil((REVEAL_DURATION * 1000 - elapsed) / 1000));
+
       this._sendTo(accountId, {
         type: 'round_start',
         round: match.currentRound,
@@ -1542,7 +1819,7 @@ export class GameRoom {
           type: question.type,
           options: question.options,
         },
-        commitDuration: COMMIT_DURATION,
+        commitDuration: match.phase === 'commit' ? commitRemaining : COMMIT_DURATION,
         roundAnte: ROUND_ANTE,
         phase: match.phase,
       });
@@ -1551,7 +1828,7 @@ export class GameRoom {
         this._sendTo(accountId, {
           type: 'phase_change',
           phase: match.phase === 'results' ? 'results' : 'reveal',
-          revealDuration: REVEAL_DURATION,
+          revealDuration: match.phase === 'reveal' ? revealRemaining : REVEAL_DURATION,
         });
       }
 
