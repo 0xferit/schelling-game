@@ -1208,6 +1208,9 @@ export class GameRoom {
     if (!matchId) return;
     const match = this.activeMatches.get(matchId);
     if (!match) return;
+    if (match.phase !== 'results') {
+      return this._sendTo(accountId, { type: 'error', message: 'Chat only allowed during results phase' });
+    }
     const player = match.players.get(accountId);
     if (!player || player.forfeited) return;
 
