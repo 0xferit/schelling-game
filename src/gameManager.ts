@@ -343,6 +343,9 @@ function handleDisconnect(ws: WebSocket): void {
         }
       }, RECONNECT_GRACE * 1000);
     }
+  } else {
+    // Player is not in a match; clean up session state to prevent unbounded growth
+    sessionState.delete(accountId);
   }
 }
 
@@ -726,6 +729,16 @@ function endMatch(match: MatchState): void {
       ws: session.ws,
       previousOpponents: session.previousOpponents,
     });
+  }
+
+  // Clean up session state for players not re-enqueued with closed connections
+  for (const [accountId] of match.players) {
+    if (!queue.isQueued(accountId)) {
+      const session = sessionState.get(accountId);
+      if (session && (!session.ws || session.ws.readyState !== 1)) {
+        sessionState.delete(accountId);
+      }
+    }
   }
 
   broadcastQueueState();
