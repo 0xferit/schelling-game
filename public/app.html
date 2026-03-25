@@ -416,7 +416,7 @@ async function api(method, path, body) {
 $('#connect-wallet-btn').addEventListener('click', async () => {
   const status = $('#auth-status');
   if (!window.ethereum) {
-    status.textContent = 'No Ethereum wallet detected. Please install one.';
+    status.innerHTML = 'No Ethereum wallet detected. <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">Find a wallet</a> to get started.';
     return;
   }
   try {
@@ -503,7 +503,10 @@ async function checkSession() {
       onAuthComplete();
     }
   } catch (_) {
-    // not logged in
+    // not logged in; check if wallet is available
+    if (!window.ethereum) {
+      $('#auth-status').innerHTML = 'No Ethereum wallet detected. <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">Find a wallet</a> to get started.';
+    }
   }
 }
 
