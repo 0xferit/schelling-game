@@ -203,10 +203,15 @@ section{padding:6rem 2rem}
 
 /* ── EXAMPLE ─────────────────────────────── */
 .example{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
-.example-demo{
-  margin-top:3rem;
-  max-width:520px;
+.example-layout{
+  display:grid;
+  grid-template-columns:280px 1fr;
+  gap:3rem;
+  align-items:start;
 }
+.example-left{position:sticky;top:6rem}
+.example-left .section-title{margin-bottom:1.5rem}
+.example-demo{}
 .example-question{
   font-family:var(--serif);
   font-size:1.6rem;
@@ -234,7 +239,7 @@ section{padding:6rem 2rem}
 }
 .example-opt:hover{border-color:var(--accent);color:var(--accent)}
 .example-opt.popular{position:relative}
-.example-demo.revealed .example-opt.popular{
+.example-layout.revealed .example-opt.popular{
   border-color:var(--accent);
   background:rgba(201,168,76,.08);
   color:var(--accent);
@@ -249,8 +254,8 @@ section{padding:6rem 2rem}
   opacity:.6;
   margin-top:.15rem;
 }
-.example-demo.revealed .example-opt.popular::after{display:block}
-.example-demo.revealed .example-insight{display:block}
+.example-layout.revealed .example-opt.popular::after{display:block}
+.example-layout.revealed .example-insight{display:block}
 .example-insight{
   margin-top:1.5rem;
   font-size:.85rem;
@@ -352,6 +357,8 @@ footer a:hover{color:var(--accent)}
 @media(max-width:700px){
   .concept-grid{grid-template-columns:1fr}
   .mech-steps{grid-template-columns:1fr}
+  .example-layout{grid-template-columns:1fr}
+  .example-left{position:static}
   .example-options{grid-template-columns:repeat(3,1fr)}
   nav{padding:1rem 1.25rem}
   section{padding:4rem 1.25rem}
@@ -432,34 +439,38 @@ footer a:hover{color:var(--accent)}
 <!-- ══ EXAMPLE ═══════════════════════════ -->
 <section class="example">
   <div class="container">
-    <div class="section-label reveal">Try It</div>
-    <h2 class="section-title reveal">Which would you pick?</h2>
-    <div class="example-demo reveal">
-      <div class="example-question">Pick a number.</div>
-      <div class="example-options">
-        <button class="example-opt">13</button>
-        <button class="example-opt">7</button>
-        <button class="example-opt">61</button>
-        <button class="example-opt">29</button>
-        <button class="example-opt">41</button>
-        <button class="example-opt">3</button>
-        <button class="example-opt">67</button>
-        <button class="example-opt">19</button>
-        <button class="example-opt popular">100</button>
-        <button class="example-opt">53</button>
-        <button class="example-opt">2</button>
-        <button class="example-opt">37</button>
-        <button class="example-opt">11</button>
-        <button class="example-opt">71</button>
-        <button class="example-opt">43</button>
-        <button class="example-opt">59</button>
-        <button class="example-opt">23</button>
-        <button class="example-opt">47</button>
+    <div class="example-layout reveal">
+      <div class="example-left">
+        <div class="section-label">Try It</div>
+        <h2 class="section-title">Which would<br/>you pick?</h2>
+        <p class="example-insight">
+          No instructions, yet most people pick 100. It is round, familiar, and visually distinct.
+          That silent consensus is the focal point.
+        </p>
       </div>
-      <p class="example-insight">
-        No instructions, yet most people pick 100. It is round, familiar, and visually distinct.
-        That silent consensus is the focal point.
-      </p>
+      <div class="example-demo">
+        <div class="example-question">Pick a number.</div>
+        <div class="example-options">
+          <button class="example-opt">13</button>
+          <button class="example-opt">7</button>
+          <button class="example-opt">61</button>
+          <button class="example-opt">29</button>
+          <button class="example-opt">41</button>
+          <button class="example-opt">3</button>
+          <button class="example-opt">67</button>
+          <button class="example-opt">19</button>
+          <button class="example-opt popular">100</button>
+          <button class="example-opt">53</button>
+          <button class="example-opt">2</button>
+          <button class="example-opt">37</button>
+          <button class="example-opt">11</button>
+          <button class="example-opt">71</button>
+          <button class="example-opt">43</button>
+          <button class="example-opt">59</button>
+          <button class="example-opt">23</button>
+          <button class="example-opt">47</button>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -619,7 +630,7 @@ footer a:hover{color:var(--accent)}
 
 /* ── Example option interaction ──────────── */
 (function() {
-  const demo = document.querySelector('.example-demo');
+  const demo = document.querySelector('.example-layout');
   const opts = document.querySelectorAll('.example-opt');
   opts.forEach(opt => {
     opt.addEventListener('click', () => {
