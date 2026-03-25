@@ -1,5 +1,7 @@
 # schelling-game
 
+[![Deploy](https://github.com/0xferit/schelling-game/actions/workflows/deploy.yml/badge.svg)](https://github.com/0xferit/schelling-game/actions/workflows/deploy.yml)
+
 Prototype commit-reveal coordination game.
 
 The canonical public-product specification lives in [docs/game-spec.md](docs/game-spec.md). It describes the intended public matchmaking product, including wallet-backed identity, queue formation, gameplay rules, leaderboard semantics, API contracts, and a current implementation-gap appendix.
