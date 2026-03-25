@@ -216,21 +216,21 @@ section{padding:6rem 2rem}
 }
 .example-options{
   display:grid;
-  grid-template-columns:repeat(3,1fr);
+  grid-template-columns:repeat(6,1fr);
   gap:.6rem;
 }
 .example-opt{
   background:var(--surface2);
   border:1px solid var(--border);
   border-radius:3px;
-  padding:.75rem 1rem;
+  padding:.6rem .5rem;
   font-family:var(--sans);
   font-size:.9rem;
   font-weight:400;
   color:var(--text);
   cursor:pointer;
   transition:all .2s;
-  text-align:left;
+  text-align:center;
 }
 .example-opt:hover{border-color:var(--accent);color:var(--accent)}
 .example-opt.popular{
@@ -241,13 +241,13 @@ section{padding:6rem 2rem}
 }
 .example-opt.popular::after{
   content:'focal point';
-  position:absolute;
-  right:.6rem;top:50%;transform:translateY(-50%);
-  font-size:.6rem;
+  display:block;
+  font-size:.55rem;
   font-weight:600;
   letter-spacing:.1em;
   text-transform:uppercase;
   opacity:.6;
+  margin-top:.15rem;
 }
 .example-insight{
   margin-top:1.5rem;
@@ -349,7 +349,7 @@ footer a:hover{color:var(--accent)}
 @media(max-width:700px){
   .concept-grid{grid-template-columns:1fr}
   .mech-steps{grid-template-columns:1fr}
-  .example-options{grid-template-columns:1fr 1fr}
+  .example-options{grid-template-columns:repeat(3,1fr)}
   nav{padding:1rem 1.25rem}
   section{padding:4rem 1.25rem}
   .hero{padding:5rem 1.25rem 3rem}
@@ -436,16 +436,22 @@ footer a:hover{color:var(--accent)}
       <div class="example-options">
         <button class="example-opt">13</button>
         <button class="example-opt">7</button>
-        <button class="example-opt popular">100</button>
+        <button class="example-opt">61</button>
         <button class="example-opt">29</button>
         <button class="example-opt">41</button>
         <button class="example-opt">3</button>
         <button class="example-opt">67</button>
         <button class="example-opt">19</button>
+        <button class="example-opt popular">100</button>
         <button class="example-opt">53</button>
         <button class="example-opt">2</button>
         <button class="example-opt">37</button>
         <button class="example-opt">11</button>
+        <button class="example-opt">71</button>
+        <button class="example-opt">43</button>
+        <button class="example-opt">59</button>
+        <button class="example-opt">23</button>
+        <button class="example-opt">47</button>
       </div>
       <p class="example-insight">
         No instructions, yet most people pick 100. It is round, familiar, and visually distinct.
