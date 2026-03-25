@@ -166,11 +166,7 @@ function handleLeaveQueue(ws: WebSocket): void {
   if (!accountId) return;
 
   queue.dequeue(accountId);
-
-  const session = sessionState.get(accountId);
-  if (session) {
-    session.autoRequeue = false;
-  }
+  sessionState.delete(accountId);
 
   broadcastQueueState();
 }
@@ -731,13 +727,12 @@ function endMatch(match: MatchState): void {
     });
   }
 
-  // Clean up session state for players not re-enqueued with closed connections
+  // Clean up session state for players not re-enqueued.
+  // handleJoinQueue() creates a fresh entry, so deleting here is safe
+  // even if the player is still connected and rejoins later.
   for (const [accountId] of match.players) {
     if (!queue.isQueued(accountId)) {
-      const session = sessionState.get(accountId);
-      if (session && (!session.ws || session.ws.readyState !== 1)) {
-        sessionState.delete(accountId);
-      }
+      sessionState.delete(accountId);
     }
   }
 
