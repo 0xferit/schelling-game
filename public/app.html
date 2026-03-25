@@ -509,13 +509,24 @@ async function checkSession() {
 // ═══════════════════════════════════════════════════════════════
 //  WEBSOCKET
 // ═══════════════════════════════════════════════════════════════
+const WS_MAX_RETRIES = 10;
+const WS_BASE_DELAY = 1000;
+const WS_MAX_DELAY = 30000;
+let wsRetryCount = 0;
+
 function connectWebSocket() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   S.ws = new WebSocket(`${proto}//${location.host}/ws`);
-  S.ws.onopen = () => {};
+  S.ws.onopen = () => { wsRetryCount = 0; };
   S.ws.onclose = () => {
-    notify('Connection lost. Reconnecting...', 'warn');
-    setTimeout(connectWebSocket, 2000);
+    if (wsRetryCount >= WS_MAX_RETRIES) {
+      notify('Connection lost. Please refresh the page.', 'error');
+      return;
+    }
+    const delay = Math.min(WS_BASE_DELAY * Math.pow(2, wsRetryCount), WS_MAX_DELAY);
+    wsRetryCount++;
+    notify('Connection lost. Reconnecting (' + wsRetryCount + '/' + WS_MAX_RETRIES + ')...', 'warn');
+    setTimeout(connectWebSocket, delay);
   };
   S.ws.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
