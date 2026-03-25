@@ -630,15 +630,43 @@ footer a:hover{color:var(--accent)}
 
 /* ── Example option interaction ──────────── */
 (function() {
-  const demo = document.querySelector('.example-layout');
-  const opts = document.querySelectorAll('.example-opt');
-  opts.forEach(opt => {
-    opt.addEventListener('click', () => {
+  var demo = document.querySelector('.example-layout');
+  var opts = document.querySelectorAll('.example-opt');
+  var insight = document.querySelector('.example-insight');
+  var STATIC_INSIGHT = insight.textContent;
+
+  function renderTally(data) {
+    if (!data || !data.total) return;
+    var maxVote = data.votes.reduce(function(a, b) { return b.count > a.count ? b : a; }, { count: 0 });
+    var pct = Math.round((maxVote.count / data.total) * 100);
+    var label = opts[maxVote.optionIndex] ? opts[maxVote.optionIndex].textContent.trim() : '?';
+    insight.textContent = pct + '% of ' + data.total + ' visitors picked ' + label + '. '
+      + 'It is the only non-prime, the only round number, and the only three-digit number in the set. '
+      + 'That salience makes it the natural coordination target: the focal point.';
+  }
+
+  opts.forEach(function(opt, idx) {
+    opt.addEventListener('click', function() {
       if (demo.classList.contains('revealed')) return;
       opt.style.outline = '2px solid var(--text)';
       opt.style.outlineOffset = '2px';
       demo.classList.add('revealed');
-      opts.forEach(o => { o.style.cursor = 'default'; });
+      opts.forEach(function(o) { o.style.cursor = 'default'; });
+
+      var alreadyVoted = localStorage.getItem('example-voted');
+      if (!alreadyVoted) {
+        fetch('/api/example-vote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ optionIndex: idx })
+        }).catch(function() {});
+        localStorage.setItem('example-voted', 'true');
+      }
+
+      fetch('/api/example-tally')
+        .then(function(r) { return r.json(); })
+        .then(renderTally)
+        .catch(function() {});
     });
   });
 })();

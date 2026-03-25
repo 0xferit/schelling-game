@@ -443,6 +443,33 @@ export default {
       return jsonResponse({ accountId: accountId.toLowerCase(), leaderboardEligible: eligible });
     }
 
+    // ---- POST /api/example-vote ----
+    if (url.pathname === '/api/example-vote' && method === 'POST') {
+      let body: { optionIndex?: number };
+      try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }
+      const idx = body.optionIndex;
+      if (typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0 || idx > 17) {
+        return errorResponse('optionIndex must be an integer 0-17', 400);
+      }
+      await env.DB.prepare(
+        'INSERT INTO example_votes (option_index) VALUES (?)'
+      ).bind(idx).run();
+      return jsonResponse({ ok: true });
+    }
+
+    // ---- GET /api/example-tally ----
+    if (url.pathname === '/api/example-tally' && method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT option_index, COUNT(*) as count FROM example_votes GROUP BY option_index'
+      ).all();
+      const votes = (results || []).map((r: Record<string, unknown>) => ({
+        optionIndex: r.option_index as number,
+        count: r.count as number,
+      }));
+      const total = votes.reduce((sum: number, v: { count: number }) => sum + v.count, 0);
+      return jsonResponse({ total, votes });
+    }
+
     // All other paths fall through to static asset serving (configured in wrangler.toml).
     return new Response('Not found', { status: 404 });
   },

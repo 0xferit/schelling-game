@@ -281,6 +281,34 @@ app.post('/api/admin/leaderboard-eligible', (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// REST API: Example votes (landing page focal point demo)
+// ---------------------------------------------------------------------------
+
+app.post('/api/example-vote', (req: Request, res: Response) => {
+  try {
+    const idx = req.body?.optionIndex;
+    if (typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0 || idx > 17) {
+      res.status(400).json({ error: 'optionIndex must be an integer 0-17' });
+      return;
+    }
+    db.insertExampleVote(idx);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/example-tally', (_req: Request, res: Response) => {
+  try {
+    const tally = db.getExampleVoteTally();
+    const votes = tally.votes.map(v => ({ optionIndex: v.option_index, count: v.count }));
+    res.json({ total: tally.total, votes });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Static files
 // ---------------------------------------------------------------------------
 

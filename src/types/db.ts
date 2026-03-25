@@ -162,3 +162,8 @@ export interface UpdatePlayerStatsParams {
   wonRound: boolean;
   earnsCoordinationCredit: boolean;
 }
+
+export interface ExampleVoteTally {
+  option_index: number;
+  count: number;
+}

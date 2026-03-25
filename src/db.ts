@@ -15,6 +15,7 @@ import type {
   LeaderboardEntry,
   PlayerRankEntry,
   PlayerStatsRow,
+  ExampleVoteTally,
 } from './types/db';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -102,6 +103,12 @@ function initSchema(): void {
       voided                      INTEGER DEFAULT 0,
       void_reason                 TEXT,
       timestamp                   TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS example_votes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      option_index  INTEGER NOT NULL,
+      created_at    TEXT DEFAULT (datetime('now'))
     );
   `);
 }
@@ -397,6 +404,24 @@ function setLeaderboardEligible(accountId: string, eligible: boolean): void {
 }
 
 // ---------------------------------------------------------------------------
+// Example votes (landing page focal point demo)
+// ---------------------------------------------------------------------------
+
+function insertExampleVote(optionIndex: number): void {
+  getDb().prepare(
+    'INSERT INTO example_votes (option_index) VALUES (?)'
+  ).run(optionIndex);
+}
+
+function getExampleVoteTally(): { total: number; votes: ExampleVoteTally[] } {
+  const rows = getDb().prepare(
+    'SELECT option_index, COUNT(*) as count FROM example_votes GROUP BY option_index'
+  ).all() as ExampleVoteTally[];
+  const total = rows.reduce((sum, r) => sum + r.count, 0);
+  return { total, votes: rows };
+}
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 
@@ -420,4 +445,6 @@ export default {
   getLeaderboard,
   getPlayerRank,
   setLeaderboardEligible,
+  insertExampleVote,
+  getExampleVoteTally,
 };
