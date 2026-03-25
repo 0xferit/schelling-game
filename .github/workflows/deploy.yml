@@ -21,7 +21,7 @@ jobs:
           sed -i \
             -e "s/__BUILD_HASH__/$(git rev-parse --short HEAD)/" \
             -e "s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/" \
-            public/index.html
+            public/index.html public/app.html
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
