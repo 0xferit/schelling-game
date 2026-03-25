@@ -402,9 +402,28 @@ export default {
     }
 
     // ---- Admin auth helper ----
-    const requireAdmin = (): Response | null => {
+    // crypto.subtle.timingSafeEqual exists in the Workers runtime but the
+    // @cloudflare/workers-types definitions haven't added it yet.
+    const subtle = crypto.subtle as unknown as {
+      timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean;
+    };
+    const timingSafeEqual = (a: string, b: string): boolean => {
+      const enc = new TextEncoder();
+      const bufA = enc.encode(a);
+      const bufB = enc.encode(b);
+      if (bufA.byteLength !== bufB.byteLength) {
+        // Compare against itself so timing is constant regardless of length mismatch
+        subtle.timingSafeEqual(bufA.buffer as ArrayBuffer, bufA.buffer as ArrayBuffer);
+        return false;
+      }
+      return subtle.timingSafeEqual(bufA.buffer as ArrayBuffer, bufB.buffer as ArrayBuffer);
+    };
+
+    const requireAdmin = async (): Promise<Response | null> => {
       if (!env.ADMIN_KEY) return errorResponse('ADMIN_KEY not configured', 503);
-      if (request.headers.get('Authorization') !== `Bearer ${env.ADMIN_KEY}`) {
+      const auth = request.headers.get('Authorization') ?? '';
+      if (!timingSafeEqual(auth, `Bearer ${env.ADMIN_KEY}`)) {
+        await new Promise(r => setTimeout(r, 1000));
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
           status: 401,
           headers: { 'Content-Type': 'application/json' },
@@ -415,7 +434,7 @@ export default {
 
     // ---- GET /api/export/votes.csv ----
     if (url.pathname === '/api/export/votes.csv' && method === 'GET') {
-      const denied = requireAdmin();
+      const denied = await requireAdmin();
       if (denied) return denied;
       const { results } = await env.DB.prepare('SELECT * FROM vote_logs ORDER BY id ASC').all();
       const columns = [
@@ -443,7 +462,7 @@ export default {
 
     // ---- POST /api/admin/leaderboard-eligible ----
     if (url.pathname === '/api/admin/leaderboard-eligible' && method === 'POST') {
-      const denied = requireAdmin();
+      const denied = await requireAdmin();
       if (denied) return denied;
       let body: { accountId?: string; eligible?: boolean };
       try { body = await request.json(); } catch { return errorResponse('Invalid JSON'); }

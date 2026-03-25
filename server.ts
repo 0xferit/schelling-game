@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response, type NextFunction } from 'express';
@@ -202,14 +203,28 @@ app.get('/api/leaderboard/me', authenticateSession, (req: Request, res: Response
 // Admin auth middleware
 // ---------------------------------------------------------------------------
 
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+const ADMIN_AUTH_FAIL_DELAY_MS = 1000;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    // Compare against itself so timing is constant regardless of length mismatch
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   const key = process.env.ADMIN_KEY;
   if (!key) {
     res.status(503).json({ error: 'ADMIN_KEY not configured' });
     return;
   }
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${key}`) {
+  const auth = req.headers.authorization ?? '';
+  if (!timingSafeEqual(auth, `Bearer ${key}`)) {
+    await new Promise(r => setTimeout(r, ADMIN_AUTH_FAIL_DELAY_MS));
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
