@@ -684,8 +684,8 @@ function onRoundStart(msg) {
   // Timer
   startTimer(msg.commitDuration);
 
-  // Chat
-  enableChat(true);
+  // Chat disabled during commit phase to preserve independent judgment
+  enableChat(false);
 
   // Reset player dots
   renderPlayers();
@@ -807,6 +807,7 @@ function onRoundResult(msg) {
 
   renderRoundResult(r);
   renderPlayers();
+  enableChat(true);
 }
 
 function renderRoundResult(r) {

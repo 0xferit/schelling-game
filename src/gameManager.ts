@@ -283,8 +283,8 @@ function handleChat(ws: WebSocket, msg: { type: 'chat'; text: string }): void {
 
   const match = getMatchForAccount(accountId);
   if (!match) return send(ws, { type: 'error', message: 'Not in a match' });
-  if (match.phase !== 'commit') {
-    return send(ws, { type: 'error', message: 'Chat only allowed during commit phase' });
+  if (match.phase !== 'results') {
+    return send(ws, { type: 'error', message: 'Chat only allowed during results phase' });
   }
 
   const player = match.players.get(accountId);
