@@ -820,7 +820,7 @@ export class GameRoom {
           'SELECT token_balance FROM accounts WHERE account_id = ?'
         ).bind(accountId).first() as { token_balance: number } | null;
         if (row) balance = row.token_balance ?? 0;
-      } catch {}
+      } catch (e) { console.error('D1: fetch balance for', accountId, e); }
 
       playersMap.set(accountId, {
         accountId,
@@ -865,7 +865,7 @@ export class GameRoom {
           'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)'
         ).bind(matchId, acctId, p.displayName, p.startingBalance, 'active').run();
       }
-    } catch {}
+    } catch (e) { console.error('D1: insert match/match_players for', matchId, e); }
 
     // Broadcast game_started
     const playersInfo = [...playersMap.values()].map(p => ({
@@ -968,7 +968,7 @@ export class GameRoom {
         await this.env.DB.prepare(
           'UPDATE accounts SET token_balance = ? WHERE account_id = ?'
         ).bind(playerState.currentBalance, pr.accountId).run();
-      } catch {}
+      } catch (e) { console.error('D1: update balance for', pr.accountId, e); }
 
       // Update stats
       if (!result.voided) {
@@ -991,7 +991,7 @@ export class GameRoom {
               'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?'
             ).bind(pr.accountId).run();
           }
-        } catch {}
+        } catch (e) { console.error('D1: update player_stats for', pr.accountId, e); }
       }
 
       // Insert vote log
@@ -1024,7 +1024,7 @@ export class GameRoom {
           result.voidReason,
           new Date().toISOString(),
         ).run();
-      } catch {}
+      } catch (e) { console.error('D1: insert vote_log for', pr.accountId, e); }
     }
 
     // Broadcast round_result
@@ -1111,7 +1111,7 @@ export class GameRoom {
           'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?'
         ).bind(p.accountId).run();
       }
-    } catch {}
+    } catch (e) { console.error('D1: endMatch writes for', match.matchId, e); }
 
     // Track opponents for anti-repeat
     const matchPlayerIds = [...match.players.keys()];
@@ -1141,7 +1141,7 @@ export class GameRoom {
           if (row) {
             // balance is already updated in D1, just requeue
           }
-        } catch {}
+        } catch (e) { console.error('D1: refresh balance for requeue', p.accountId, e); }
         this.waitingQueue.push(p.accountId);
       }
     }
