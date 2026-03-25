@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "node-server",
-      "runtimeExecutable": "tsx",
-      "runtimeArgs": ["server.ts"],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "server.ts"],
       "port": 3000
     },
     {
