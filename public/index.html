@@ -2,1145 +2,616 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Schelling Game</title>
-<script src="https://cdn.jsdelivr.net/npm/ethers@6/dist/ethers.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <style>
-/* ── Reset & tokens ─────────────────────────────────────────────── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0f0f0f;--surface:#1a1a1a;--surface2:#242424;--border:#2e2e2e;
-  --text:#e0e0e0;--muted:#888;--accent:#4a90d9;--accent2:#357abd;
-  --green:#4caf50;--red:#e53935;--orange:#ff9800;--yellow:#fdd835;
-  --radius:8px;--font:'Segoe UI',system-ui,sans-serif;
+  --bg:#0a0a0a;
+  --surface:#111;
+  --surface2:#1a1a1a;
+  --border:#222;
+  --text:#e8e4de;
+  --muted:#807a6f;
+  --accent:#c9a84c;
+  --accent2:#dfc06a;
+  --serif:'Cormorant Garamond',Georgia,serif;
+  --sans:'Outfit',system-ui,sans-serif;
 }
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.5}
-button{cursor:pointer;border:none;border-radius:var(--radius);padding:.5rem 1.1rem;font-size:.9rem;font-family:inherit;transition:background .15s,transform .1s}
-button:active{transform:scale(.97)}
-button:disabled{opacity:.4;cursor:default;transform:none}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover:not(:disabled){background:var(--accent2)}
-.btn-danger{background:var(--red);color:#fff}
-.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
-.btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
-input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:.95rem;padding:.5rem .75rem;width:100%;outline:none;transition:border-color .15s}
-input:focus{border-color:var(--accent)}
-label{font-size:.85rem;color:var(--muted);display:block;margin-bottom:.3rem}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem}
-.hidden{display:none!important}
-/* ── Layout ─────────────────────────────────────────────────────── */
-#app{max-width:900px;margin:0 auto;padding:1rem}
-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:.75rem;flex-wrap:wrap;gap:.5rem}
-header h1{font-size:1.4rem;letter-spacing:.05em;color:var(--accent)}
-#header-profile{display:flex;align-items:center;gap:.75rem;font-size:.85rem;color:var(--muted)}
-#header-profile .name{color:var(--text);font-weight:600}
-#header-profile .bal{color:var(--accent)}
-#logout-btn{padding:.25rem .5rem;font-size:.75rem;line-height:1}
-nav{display:flex;gap:.5rem}
-/* ── Views ──────────────────────────────────────────────────────── */
-.view{display:none}.view.active{display:block}
-/* Auth */
-#auth-view{max-width:420px;margin:2rem auto;text-align:center}
-#auth-view h2{margin-bottom:1rem}
-#auth-view .card{display:flex;flex-direction:column;gap:.75rem;align-items:stretch}
-#auth-status{font-size:.85rem;color:var(--muted);min-height:1.5em}
-#name-section{display:flex;flex-direction:column;gap:.5rem}
-#name-section .row{display:flex;gap:.5rem}
-#name-section input{flex:1}
-/* Queue */
-#queue-view .card{max-width:520px;margin:0 auto}
-#queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
-#queue-players li{background:var(--surface2);border:1px solid var(--border);border-radius:50px;padding:.2rem .75rem;font-size:.85rem}
-#forming-banner{background:rgba(255,152,0,.1);border:1px solid var(--orange);border-radius:var(--radius);padding:.6rem 1rem;font-size:.9rem;color:var(--orange);text-align:center;margin-top:.75rem}
-.toggle-row{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--muted);margin-top:.75rem}
-.toggle-row input[type=checkbox]{width:auto;accent-color:var(--accent)}
-/* Play */
-#play-view.active{display:grid;grid-template-columns:1fr 280px;gap:1rem}
-@media(max-width:650px){#play-view{grid-template-columns:1fr}}
-#play-main{display:flex;flex-direction:column;gap:.75rem}
-/* Timer */
-.timer-wrap{display:flex;align-items:center;gap:.75rem;font-size:.9rem;color:var(--muted)}
-.timer-bar-outer{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
-.timer-bar{height:100%;background:var(--accent);transition:width .25s linear,background .3s}
-.timer-num{font-weight:700;min-width:2.5rem;text-align:right}
-.timer-num.urgent{color:var(--red);animation:pulse .5s infinite alternate}
-@keyframes pulse{to{opacity:.3}}
-/* Question */
-#question-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem}
-#phase-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;color:var(--muted)}
-#question-text{font-size:1.1rem;font-weight:600;margin-bottom:1rem;line-height:1.4}
-#select-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem}
-.opt-btn{background:var(--surface2);border:2px solid var(--border);border-radius:var(--radius);padding:.6rem .9rem;cursor:pointer;text-align:center;font-size:.9rem;transition:border-color .15s,background .15s;user-select:none}
-.opt-btn:hover:not(.disabled){border-color:var(--accent)}
-.opt-btn.selected{border-color:var(--accent);background:rgba(74,144,217,.15);color:var(--accent);font-weight:600}
-.opt-btn.disabled{opacity:.4;cursor:default;pointer-events:none}
-#commit-area{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
-#commit-btn{flex:1;min-width:140px}
-#commit-status{font-size:.85rem;color:var(--muted)}
-#reveal-area{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
-#reveal-btn{flex:1;min-width:140px}
-#reveal-status{font-size:.85rem;color:var(--muted)}
-/* Round result overlay */
-#round-result-banner{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-top:.75rem}
-#round-result-banner h3{font-size:.95rem;margin-bottom:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-#result-table{width:100%;border-collapse:collapse;font-size:.85rem}
-#result-table th,#result-table td{padding:.35rem .5rem;text-align:left;border-bottom:1px solid var(--border)}
-#result-table th{color:var(--muted);font-weight:600;font-size:.75rem;text-transform:uppercase}
-#result-table tr:last-child td{border-bottom:none}
-.won-yes{color:var(--green);font-weight:600}
-.won-no{color:var(--red)}
-.credit-yes{color:var(--yellow);font-weight:600}
-.delta-pos{color:var(--green);font-weight:700}
-.delta-neg{color:var(--red);font-weight:700}
-.delta-zero{color:var(--muted)}
-/* Sidebar */
-#play-sidebar{display:flex;flex-direction:column;gap:.75rem}
-#players-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
-#players-panel h3{font-size:.85rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:.6rem}
-.player-row{display:flex;align-items:center;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--border);font-size:.88rem}
-.player-row:last-child{border-bottom:none}
-.player-name{display:flex;align-items:center;gap:.4rem}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0}
-.dot.committed{background:var(--orange)}
-.dot.revealed{background:var(--green)}
-.dot.forfeited{background:var(--red)}
-.dot.disconnected{background:var(--red);animation:pulse 1s infinite alternate}
-.balance-badge{font-size:.8rem;color:var(--muted)}
-/* Chat */
-#chat-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;display:flex;flex-direction:column;gap:.5rem;max-height:260px}
-#chat-panel h3{font-size:.85rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
-#chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:.35rem;min-height:60px;max-height:160px}
-.chat-msg{font-size:.83rem;line-height:1.4}
-.chat-msg .from{font-weight:600;color:var(--accent);margin-right:.3rem}
-#chat-input-row{display:flex;gap:.4rem}
-#chat-input{flex:1;font-size:.85rem}
-#chat-send{padding:.4rem .8rem;font-size:.85rem}
-#chat-disabled-note{font-size:.75rem;color:var(--muted);text-align:center;padding:.3rem}
-/* Summary */
-#summary-view .card{max-width:620px;margin:0 auto}
-#summary-table{width:100%;border-collapse:collapse;font-size:.9rem}
-#summary-table th,#summary-table td{padding:.5rem .75rem;text-align:left;border-bottom:1px solid var(--border)}
-#summary-table th{color:var(--muted);font-weight:600;font-size:.8rem;text-transform:uppercase}
-#summary-table tr:last-child td{border-bottom:none}
-/* Leaderboard */
-#leaderboard-view .card{overflow-x:auto}
-#lb-table{width:100%;border-collapse:collapse;font-size:.9rem}
-#lb-table th,#lb-table td{padding:.5rem .75rem;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
-#lb-table th{color:var(--muted);font-weight:600;font-size:.8rem;text-transform:uppercase}
-#lb-table tr:last-child td{border-bottom:none}
-#lb-table tr.me td{background:rgba(74,144,217,.08);color:var(--accent)}
-#my-rank-card{margin-bottom:.75rem;background:rgba(74,144,217,.08);border-color:var(--accent)}
-/* Notifications */
-#notif{position:fixed;top:1rem;right:1rem;display:flex;flex-direction:column;gap:.4rem;z-index:999;pointer-events:none}
-.notif-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem 1rem;font-size:.85rem;min-width:220px;animation:slideIn .2s ease;pointer-events:auto}
-.notif-item.error{border-color:var(--red);color:var(--red)}
-.notif-item.success{border-color:var(--green);color:var(--green)}
-.notif-item.warn{border-color:var(--orange);color:var(--orange)}
-@keyframes slideIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
-.mt1{margin-top:.5rem}.mt2{margin-top:1rem}
-#build-info{text-align:center;padding:2rem 1rem 1rem;font-size:.7rem;color:#444;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-weight:300;
+  line-height:1.7;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ── NAV ─────────────────────────────────── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  padding:1.25rem 2rem;
+  display:flex;align-items:center;justify-content:space-between;
+  background:rgba(10,10,10,.85);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid rgba(255,255,255,.04);
+  transition:background .3s;
+}
+nav .logo{
+  font-family:var(--serif);
+  font-size:1.3rem;
+  font-weight:700;
+  letter-spacing:.03em;
+  color:var(--text);
+}
+nav .logo span{color:var(--accent)}
+nav .play-link{
+  font-size:.85rem;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--accent);
+  text-decoration:none;
+  padding:.5rem 1.25rem;
+  border:1px solid var(--accent);
+  border-radius:2px;
+  transition:all .2s;
+}
+nav .play-link:hover{background:var(--accent);color:var(--bg)}
+
+/* ── HERO ────────────────────────────────── */
+.hero{
+  min-height:100vh;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  text-align:center;
+  padding:6rem 2rem 4rem;
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 45%, rgba(201,168,76,.06) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(201,168,76,.03) 0%, transparent 50%);
+  pointer-events:none;
+}
+.hero-canvas{
+  position:absolute;inset:0;
+  pointer-events:none;
+  opacity:.7;
+}
+.hero-overtitle{
+  font-size:.8rem;
+  font-weight:500;
+  letter-spacing:.25em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:1.5rem;
+  position:relative;
+}
+.hero h1{
+  font-family:var(--serif);
+  font-size:clamp(3rem, 8vw, 6.5rem);
+  font-weight:700;
+  line-height:1.05;
+  letter-spacing:-.02em;
+  margin-bottom:1.5rem;
+  position:relative;
+}
+.hero h1 em{
+  font-style:italic;
+  color:var(--accent);
+}
+.hero-sub{
+  font-size:clamp(1rem, 2.5vw, 1.25rem);
+  color:var(--muted);
+  max-width:540px;
+  margin-bottom:3rem;
+  position:relative;
+}
+.hero-cta{
+  display:inline-block;
+  font-family:var(--sans);
+  font-size:.9rem;
+  font-weight:600;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--bg);
+  background:var(--accent);
+  padding:.9rem 2.5rem;
+  border:none;
+  border-radius:2px;
+  text-decoration:none;
+  cursor:pointer;
+  position:relative;
+  transition:all .25s;
+}
+.hero-cta:hover{background:var(--accent2);transform:translateY(-1px)}
+.hero-scroll{
+  position:absolute;
+  bottom:2rem;
+  color:var(--muted);
+  font-size:.75rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  animation:float 2.5s ease-in-out infinite;
+}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+
+/* ── SECTIONS ────────────────────────────── */
+section{padding:6rem 2rem}
+.container{max-width:960px;margin:0 auto}
+
+.section-label{
+  font-size:.7rem;
+  font-weight:600;
+  letter-spacing:.3em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:1rem;
+}
+.section-title{
+  font-family:var(--serif);
+  font-size:clamp(2rem, 5vw, 3.2rem);
+  font-weight:600;
+  line-height:1.15;
+  margin-bottom:1.5rem;
+}
+.section-body{
+  color:var(--muted);
+  font-size:1.05rem;
+  max-width:620px;
+}
+
+/* ── CONCEPT ─────────────────────────────── */
+.concept{border-top:1px solid var(--border)}
+.concept-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:3rem;
+  margin-top:3rem;
+}
+.concept-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:3px;
+  padding:2rem;
+  transition:border-color .3s;
+}
+.concept-card:hover{border-color:var(--accent)}
+.concept-card .num{
+  font-family:var(--serif);
+  font-size:2.5rem;
+  font-weight:700;
+  color:rgba(201,168,76,.2);
+  line-height:1;
+  margin-bottom:.75rem;
+}
+.concept-card h3{
+  font-family:var(--serif);
+  font-size:1.3rem;
+  font-weight:600;
+  margin-bottom:.5rem;
+}
+.concept-card p{color:var(--muted);font-size:.92rem}
+
+/* ── EXAMPLE ─────────────────────────────── */
+.example{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.example-demo{
+  margin-top:3rem;
+  max-width:520px;
+}
+.example-question{
+  font-family:var(--serif);
+  font-size:1.6rem;
+  font-weight:600;
+  margin-bottom:1.5rem;
+  line-height:1.3;
+}
+.example-options{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:.6rem;
+}
+.example-opt{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:3px;
+  padding:.75rem 1rem;
+  font-family:var(--sans);
+  font-size:.9rem;
+  font-weight:400;
+  color:var(--text);
+  cursor:pointer;
+  transition:all .2s;
+  text-align:left;
+}
+.example-opt:hover{border-color:var(--accent);color:var(--accent)}
+.example-opt.popular{
+  border-color:var(--accent);
+  background:rgba(201,168,76,.08);
+  color:var(--accent);
+  position:relative;
+}
+.example-opt.popular::after{
+  content:'focal point';
+  position:absolute;
+  right:.6rem;top:50%;transform:translateY(-50%);
+  font-size:.6rem;
+  font-weight:600;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  opacity:.6;
+}
+.example-insight{
+  margin-top:1.5rem;
+  font-size:.85rem;
+  color:var(--muted);
+  font-style:italic;
+  padding-left:1rem;
+  border-left:2px solid var(--accent);
+}
+
+/* ── THEORY ──────────────────────────────── */
+.theory{border-top:1px solid var(--border)}
+.theory-quote{
+  font-family:var(--serif);
+  font-size:clamp(1.4rem, 3.5vw, 2rem);
+  font-weight:400;
+  font-style:italic;
+  line-height:1.5;
+  color:var(--text);
+  max-width:700px;
+  margin:3rem 0 1rem;
+  position:relative;
+  padding-left:2rem;
+}
+.theory-quote::before{
+  content:'';
+  position:absolute;
+  left:0;top:0;bottom:0;
+  width:2px;
+  background:var(--accent);
+}
+.theory-attrib{
+  font-size:.85rem;
+  color:var(--muted);
+  padding-left:2rem;
+}
+
+/* ── MECHANICS ───────────────────────────── */
+.mechanics{border-top:1px solid var(--border)}
+.mech-steps{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:2rem;
+  margin-top:3rem;
+}
+.mech-step{position:relative;padding-left:0}
+.mech-step .icon{
+  font-size:1.8rem;
+  margin-bottom:.75rem;
+  display:block;
+  filter:grayscale(.3);
+}
+.mech-step h3{
+  font-family:var(--serif);
+  font-size:1.15rem;
+  font-weight:600;
+  margin-bottom:.4rem;
+}
+.mech-step p{color:var(--muted);font-size:.88rem}
+.mech-note{
+  margin-top:2.5rem;
+  padding:1.25rem 1.5rem;
+  background:rgba(201,168,76,.04);
+  border:1px solid rgba(201,168,76,.12);
+  border-radius:3px;
+  font-size:.88rem;
+  color:var(--muted);
+}
+.mech-note strong{color:var(--text);font-weight:500}
+
+/* ── FINAL CTA ───────────────────────────── */
+.final-cta{
+  text-align:center;
+  padding:8rem 2rem;
+  border-top:1px solid var(--border);
+  position:relative;
+}
+.final-cta::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 50% 60% at 50% 60%, rgba(201,168,76,.05) 0%, transparent 70%);
+  pointer-events:none;
+}
+.final-cta .section-title{margin-bottom:1rem;position:relative}
+.final-cta p{color:var(--muted);margin-bottom:2.5rem;position:relative}
+.final-cta .hero-cta{position:relative}
+
+/* ── FOOTER ──────────────────────────────── */
+footer{
+  padding:2rem;
+  text-align:center;
+  font-size:.75rem;
+  color:#333;
+  border-top:1px solid var(--border);
+}
+footer a{color:var(--muted);text-decoration:none}
+footer a:hover{color:var(--accent)}
+
+/* ── RESPONSIVE ──────────────────────────── */
+@media(max-width:700px){
+  .concept-grid{grid-template-columns:1fr}
+  .mech-steps{grid-template-columns:1fr}
+  .example-options{grid-template-columns:1fr}
+  nav{padding:1rem 1.25rem}
+  section{padding:4rem 1.25rem}
+  .hero{padding:5rem 1.25rem 3rem}
+}
+
+/* ── HERO ENTRANCE ────────────────────────── */
+@keyframes heroIn{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+.hero-anim{animation:heroIn .7s ease forwards;opacity:0}
+.ha-1{animation-delay:.15s}
+.ha-2{animation-delay:.3s}
+.ha-3{animation-delay:.45s}
+
+/* ── SCROLL ANIMATIONS ───────────────────── */
+@keyframes revealUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.reveal{animation:revealUp .5s ease both}
+.reveal-delay-1{animation-delay:.08s}
+.reveal-delay-2{animation-delay:.16s}
+.reveal-delay-3{animation-delay:.24s}
+.reveal-delay-4{animation-delay:.32s}
 </style>
 </head>
 <body>
-<div id="app">
-  <header>
-    <h1>Schelling Game</h1>
-    <div id="header-profile" class="hidden">
-      <span class="name" id="header-name"></span>
-      <span class="bal" id="header-balance"></span>
-      <button class="btn-ghost" id="logout-btn" title="Log out">✕</button>
-    </div>
-    <nav>
-      <button class="btn-ghost" id="nav-leaderboard">Leaderboard</button>
-      <button class="btn-ghost" id="nav-queue" class="hidden">Queue</button>
-    </nav>
-  </header>
 
-  <!-- ── AUTH ──────────────────────────────────────────────────── -->
-  <div id="auth-view" class="view active">
-    <div class="card">
-      <h2>Connect Wallet</h2>
-      <p id="auth-status">Connect your Ethereum wallet to sign in.</p>
-      <button class="btn-primary" id="connect-wallet-btn">Connect Ethereum Wallet</button>
-      <div id="name-section" class="hidden">
-        <label>Claim your display name (1-20 chars, A-Z 0-9 _ -)</label>
-        <div class="row">
-          <input id="name-input" type="text" placeholder="e.g. alice" maxlength="20" autocomplete="off" pattern="^[A-Za-z0-9_-]{1,20}$"/>
-          <button class="btn-primary" id="claim-name-btn">Claim</button>
-        </div>
+<nav>
+  <div class="logo">Schelling <span>Game</span></div>
+  <a href="/app.html" class="play-link">Play</a>
+</nav>
+
+<!-- ══ HERO ══════════════════════════════ -->
+<section class="hero">
+  <canvas class="hero-canvas" id="convergence"></canvas>
+  <div class="hero-overtitle hero-anim">A coordination game</div>
+  <h1 class="hero-anim ha-1">Think Like<br/><em>Everyone</em> Else</h1>
+  <p class="hero-sub hero-anim ha-2">
+    No communication. No hints. Just you and a question.
+    Pick the answer you think most others will pick.
+  </p>
+  <a href="/app.html" class="hero-cta hero-anim ha-3">Play Now</a>
+  <div class="hero-scroll">Scroll</div>
+</section>
+
+<!-- ══ CONCEPT ═══════════════════════════ -->
+<section class="concept">
+  <div class="container">
+    <div class="section-label reveal">The Premise</div>
+    <h2 class="section-title reveal">What if winning meant<br/>agreeing with strangers?</h2>
+    <p class="section-body reveal">
+      Schelling Game puts you in a room with other players. Everyone sees the same
+      question. Everyone picks an answer alone. Those who converge on the most
+      popular choice split the pot. The rest lose their ante.
+    </p>
+    <div class="concept-grid">
+      <div class="concept-card reveal reveal-delay-1">
+        <div class="num">01</div>
+        <h3>No Communication</h3>
+        <p>You cannot see what others pick, discuss strategy, or signal your intent. Your only tool is intuition about what feels obvious.</p>
+      </div>
+      <div class="concept-card reveal reveal-delay-2">
+        <div class="num">02</div>
+        <h3>Commit-Reveal</h3>
+        <p>Answers are cryptographically committed before anyone reveals. No one can cheat by waiting to see what others chose.</p>
+      </div>
+      <div class="concept-card reveal reveal-delay-3">
+        <div class="num">03</div>
+        <h3>Plurality Wins</h3>
+        <p>The most-chosen answer wins the round. If you picked it, you earn tokens from those who did not. Simple, brutal, elegant.</p>
+      </div>
+      <div class="concept-card reveal reveal-delay-4">
+        <div class="num">04</div>
+        <h3>10 Rounds</h3>
+        <p>Each match is 10 rounds of different questions. Consistency matters. One lucky guess will not carry you through.</p>
       </div>
     </div>
   </div>
+</section>
 
-  <!-- ── QUEUE ─────────────────────────────────────────────────── -->
-  <div id="queue-view" class="view">
-    <div class="card">
-      <h2>Public Queue</h2>
-      <p style="color:var(--muted);font-size:.9rem;margin:.5rem 0">Waiting for players. Matches form automatically with 3, 5, or 7 players.</p>
-      <div style="font-size:.9rem;color:var(--muted)">Players in queue: <strong id="queue-count">0</strong></div>
-      <ul id="queue-players"></ul>
-      <div id="forming-banner" class="hidden">
-        Match forming: <strong id="forming-count">0</strong> players reserved.
-        Fill closes in <strong id="forming-timer">--</strong>s
+<!-- ══ EXAMPLE ═══════════════════════════ -->
+<section class="example">
+  <div class="container">
+    <div class="section-label reveal">Try It</div>
+    <h2 class="section-title reveal">Which would you pick?</h2>
+    <div class="example-demo reveal">
+      <div class="example-question">Pick the most beautiful color.</div>
+      <div class="example-options">
+        <button class="example-opt popular">Blue</button>
+        <button class="example-opt">Red</button>
+        <button class="example-opt">Green</button>
+        <button class="example-opt">Purple</button>
+        <button class="example-opt">Gold</button>
+        <button class="example-opt">White</button>
       </div>
-      <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap">
-        <button class="btn-primary" id="join-queue-btn">Join Queue</button>
-        <button class="btn-danger hidden" id="leave-queue-btn">Leave Queue</button>
-      </div>
-      <div class="toggle-row">
-        <input type="checkbox" id="auto-requeue-toggle" checked/>
-        <label for="auto-requeue-toggle" style="margin:0">Auto-requeue after match</label>
-      </div>
+      <p class="example-insight">
+        Blue is the world's most common favorite color. If you picked it, you were
+        thinking like most people. That instinct is what wins in Schelling Game.
+      </p>
     </div>
   </div>
+</section>
 
-  <!-- ── PLAY ──────────────────────────────────────────────────── -->
-  <div id="play-view" class="view">
-    <div id="play-main">
-      <!-- Timer -->
-      <div class="timer-wrap">
-        <div id="phase-timer-label" style="min-width:3.5rem;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Commit</div>
-        <div class="timer-bar-outer"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
-        <div class="timer-num" id="timer-num">30</div>
+<!-- ══ THEORY ════════════════════════════ -->
+<section class="theory">
+  <div class="container">
+    <div class="section-label reveal">The Theory</div>
+    <h2 class="section-title reveal">Focal Points</h2>
+    <p class="section-body reveal">
+      In 1960, economist Thomas Schelling discovered that people can coordinate
+      without communicating by gravitating toward answers that feel naturally
+      prominent: focal points.
+    </p>
+    <blockquote class="theory-quote reveal">
+      People can often concert their intentions or expectations with
+      others if each knows that the other is trying to do the same.
+    </blockquote>
+    <p class="theory-attrib reveal">Thomas C. Schelling, The Strategy of Conflict (1960)</p>
+  </div>
+</section>
+
+<!-- ══ MECHANICS ═════════════════════════ -->
+<section class="mechanics">
+  <div class="container">
+    <div class="section-label reveal">How It Works</div>
+    <h2 class="section-title reveal">Three phases, every round</h2>
+    <div class="mech-steps">
+      <div class="mech-step reveal reveal-delay-1">
+        <span class="icon">I</span>
+        <h3>Commit</h3>
+        <p>Read the question, pick your answer, lock it in with a cryptographic hash. 30 seconds. No take-backs.</p>
       </div>
-
-      <!-- Question -->
-      <div id="question-card">
-        <div id="phase-label">Game <span id="round-num">1</span> / 10</div>
-        <div id="question-text">Waiting for game...</div>
-        <div id="select-grid"></div>
-        <div id="commit-area" class="hidden">
-          <button class="btn-primary" id="commit-btn" disabled>Lock In</button>
-          <span id="commit-status"></span>
-        </div>
-        <div id="reveal-area" class="hidden">
-          <button class="btn-primary" id="reveal-btn">Reveal</button>
-          <span id="reveal-status"></span>
-        </div>
+      <div class="mech-step reveal reveal-delay-2">
+        <span class="icon">II</span>
+        <h3>Reveal</h3>
+        <p>Everyone opens their sealed answer. The server verifies each hash matches. 15 seconds.</p>
       </div>
-
-      <!-- Game result -->
-      <div id="round-result-banner" class="hidden">
-        <h3>Game <span id="result-round-num">?</span> Result</h3>
-        <div id="void-banner" class="hidden" style="color:var(--orange);margin-bottom:.5rem;font-weight:600">Game voided: all antes refunded</div>
-        <table id="result-table">
-          <thead><tr>
-            <th>Player</th><th>Choice</th><th>Won</th><th>Coord. Credit</th><th>Net</th><th>Balance</th>
-          </tr></thead>
-          <tbody id="result-tbody"></tbody>
-        </table>
-        <div id="result-note" style="font-size:.8rem;color:var(--muted);margin-top:.5rem"></div>
-        <div id="rating-row" class="hidden" style="display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)">
-          <span>Rate this question:</span>
-          <button id="rating-like" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128077; <span id="rating-likes">0</span></button>
-          <button id="rating-dislike" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128078; <span id="rating-dislikes">0</span></button>
-        </div>
+      <div class="mech-step reveal reveal-delay-3">
+        <span class="icon">III</span>
+        <h3>Settle</h3>
+        <p>The plurality wins. Token ante is collected from all players, then redistributed to those who converged.</p>
       </div>
     </div>
-
-    <!-- Sidebar -->
-    <div id="play-sidebar">
-      <div id="players-panel">
-        <h3>Players</h3>
-        <div id="players-list"></div>
-      </div>
-      <div id="chat-panel">
-        <h3>Chat</h3>
-        <div id="chat-messages"></div>
-        <div id="chat-input-row">
-          <input id="chat-input" type="text" placeholder="Message..." maxlength="300" autocomplete="off"/>
-          <button class="btn-ghost" id="chat-send">Send</button>
-        </div>
-      </div>
+    <div class="mech-note reveal">
+      <strong>Wallet sign-in required.</strong> Connect any Ethereum wallet (Zerion, Rabby, MetaMask, etc.) to play.
+      Tokens are internal to the game and carry no financial value.
     </div>
   </div>
+</section>
 
-  <!-- ── SUMMARY ───────────────────────────────────────────────── -->
-  <div id="summary-view" class="view">
-    <div class="card">
-      <h2>Game Over</h2>
-      <table id="summary-table">
-        <thead><tr>
-          <th>Player</th><th>Start</th><th>End</th><th>Net</th><th>Status</th>
-        </tr></thead>
-        <tbody id="summary-tbody"></tbody>
-      </table>
-      <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap;align-items:center">
-        <button class="btn-primary" id="requeue-btn">Back to Queue</button>
-        <button class="btn-ghost" id="summary-lb-btn">Leaderboard</button>
-        <div class="toggle-row" style="margin-top:0;margin-left:auto">
-          <input type="checkbox" id="summary-auto-requeue" checked/>
-          <label for="summary-auto-requeue" style="margin:0">Auto-requeue</label>
-        </div>
-      </div>
-    </div>
-  </div>
+<!-- ══ FINAL CTA ═════════════════════════ -->
+<section class="final-cta">
+  <h2 class="section-title reveal">Ready to find the focal point?</h2>
+  <p class="reveal">3 to 7 players. 10 rounds. One question: can you think like everyone else?</p>
+  <a href="/app.html" class="hero-cta reveal">Play Now</a>
+</section>
 
-  <!-- ── LEADERBOARD ───────────────────────────────────────────── -->
-  <div id="leaderboard-view" class="view">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-      <h2>Leaderboard</h2>
-      <button class="btn-ghost" id="lb-back-btn">Back</button>
-    </div>
-    <div id="my-rank-card" class="card hidden"></div>
-    <div class="card">
-      <table id="lb-table">
-        <thead><tr>
-          <th>#</th><th>Player</th><th>Balance</th><th>Matches</th><th>Avg/Match</th>
-          <th>Coord%</th><th>Streak</th><th>Best</th>
-        </tr></thead>
-        <tbody id="lb-tbody"></tbody>
-      </table>
-      <div id="lb-empty" class="hidden" style="text-align:center;padding:2rem;color:var(--muted)">No leaderboard data yet.</div>
-    </div>
-  </div>
-</div>
-
-<footer id="build-info">__BUILD_HASH__ &middot; __BUILD_DATE__</footer>
-
-<div id="notif"></div>
+<footer>
+  <a href="https://github.com/0xferit/schelling-game" target="_blank" rel="noopener">GitHub</a>
+</footer>
 
 <script>
-/* ═══════════════════════════════════════════════════════════════════
-   Schelling Game Client
-   Vanilla JS, single-file. Connects via REST + WebSocket.
-   ═══════════════════════════════════════════════════════════════════ */
-(function () {
-'use strict';
+/* ── Convergence Canvas ──────────────────── */
+(function() {
+  const canvas = document.getElementById('convergence');
+  const ctx = canvas.getContext('2d');
+  let w, h, particles, center, mouse;
+  const PARTICLE_COUNT = 80;
 
-// ── State ───────────────────────────────────────────────────────
-const S = {
-  view: 'auth',
-  walletAddress: null,
-  accountId: null,
-  displayName: null,
-  tokenBalance: 0,
-  autoRequeue: true,
-  // queue
-  inQueue: false,
-  queuedPlayers: [],
-  formingMatch: null,
-  // play
-  matchId: null,
-  players: [],
-  round: 0,
-  phase: null,       // 'commit' | 'reveal' | 'results' | null
-  question: null,
-  selectedOption: null,
-  salt: null,
-  commitHash: null,
-  committed: false,
-  revealed: false,
-  commitStatuses: [],
-  revealStatuses: [],
-  roundResult: null,
-  myRating: null,
-  playerStatuses: {},   // displayName -> 'connected'|'disconnected'|'forfeited'
-  // timers
-  timerEnd: 0,
-  timerDuration: 0,
-  timerInterval: null,
-  // summary
-  summary: null,
-  // leaderboard
-  previousView: 'queue',
-  // ws
-  ws: null,
-};
-
-// ── DOM refs ────────────────────────────────────────────────────
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
-
-// ── Notifications ───────────────────────────────────────────────
-function notify(msg, type = '') {
-  const el = document.createElement('div');
-  el.className = 'notif-item ' + type;
-  el.textContent = msg;
-  $('#notif').appendChild(el);
-  setTimeout(() => el.remove(), 4000);
-}
-
-// ── View switching ──────────────────────────────────────────────
-function showView(name) {
-  S.view = name;
-  $$('.view').forEach(v => v.classList.remove('active'));
-  $(`#${name}-view`).classList.add('active');
-
-  // header profile
-  if (S.displayName) {
-    $('#header-profile').classList.remove('hidden');
-    $('#header-name').textContent = S.displayName;
-    $('#header-balance').textContent = S.tokenBalance + ' tokens';
+  function resize() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    w = canvas.width = rect.width || window.innerWidth;
+    h = canvas.height = rect.height || window.innerHeight;
+    center = { x: w / 2, y: h / 2 };
   }
 
-  // nav visibility
-  $('#nav-queue').classList.toggle('hidden', name === 'auth');
-  // hide logout during active matches
-  $('#logout-btn').classList.toggle('hidden', name === 'play');
-}
-
-// ── REST helpers ────────────────────────────────────────────────
-async function api(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(path, opts);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(err.message || res.statusText);
+  function init() {
+    resize();
+    mouse = { x: center.x, y: center.y };
+    particles = [];
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3,
+        r: Math.random() * 1.5 + 0.5,
+        alpha: Math.random() * 0.4 + 0.1,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
   }
-  return res.json();
-}
 
-// ═══════════════════════════════════════════════════════════════
-//  AUTH VIEW
-// ═══════════════════════════════════════════════════════════════
-$('#connect-wallet-btn').addEventListener('click', async () => {
-  const status = $('#auth-status');
-  if (!window.ethereum) {
-    status.textContent = 'No Ethereum wallet detected. Please install one.';
-    return;
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    const focal = { x: center.x, y: center.y * 0.9 };
+    const t = Date.now() * 0.001;
+
+    for (const p of particles) {
+      // gentle pull toward focal point
+      const dx = focal.x - p.x;
+      const dy = focal.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const pull = 0.00015;
+      p.vx += dx * pull;
+      p.vy += dy * pull;
+
+      // slight orbital drift
+      p.vx += Math.sin(t + p.phase) * 0.003;
+      p.vy += Math.cos(t + p.phase) * 0.003;
+
+      // damping
+      p.vx *= 0.995;
+      p.vy *= 0.995;
+
+      p.x += p.vx;
+      p.y += p.vy;
+
+      // wrap
+      if (p.x < -20) p.x = w + 20;
+      if (p.x > w + 20) p.x = -20;
+      if (p.y < -20) p.y = h + 20;
+      if (p.y > h + 20) p.y = -20;
+
+      // draw
+      const glow = Math.sin(t * 0.5 + p.phase) * 0.15 + 0.85;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(201,168,76,${p.alpha * glow})`;
+      ctx.fill();
+
+      // draw lines to nearby particles
+      for (const q of particles) {
+        if (q === p) continue;
+        const ddx = q.x - p.x;
+        const ddy = q.y - p.y;
+        const d = Math.sqrt(ddx * ddx + ddy * ddy);
+        if (d < 100) {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(q.x, q.y);
+          ctx.strokeStyle = `rgba(201,168,76,${0.04 * (1 - d / 100)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+
+    requestAnimationFrame(draw);
   }
-  try {
-    status.textContent = 'Requesting wallet connection...';
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const signer = await provider.getSigner();
-    const address = await signer.getAddress();
-    S.walletAddress = address;
 
-    status.textContent = 'Requesting challenge...';
-    const challenge = await api('POST', '/api/auth/challenge', { walletAddress: address });
+  init();
+  draw();
+  window.addEventListener('resize', resize);
+})();
 
-    status.textContent = 'Please sign the message in your wallet...';
-    const signature = await signer.signMessage(challenge.message);
-
-    status.textContent = 'Verifying signature...';
-    const result = await api('POST', '/api/auth/verify', {
-      challengeId: challenge.challengeId,
-      walletAddress: address,
-      signature,
+/* ── Example option interaction ──────────── */
+(function() {
+  const opts = document.querySelectorAll('.example-opt');
+  opts.forEach(opt => {
+    opt.addEventListener('click', () => {
+      opts.forEach(o => o.style.outline = 'none');
+      opt.style.outline = '2px solid var(--accent)';
+      opt.style.outlineOffset = '2px';
     });
-
-    S.accountId = result.accountId;
-    S.tokenBalance = result.tokenBalance;
-
-    if (result.requiresDisplayName) {
-      status.textContent = 'Wallet verified. Please claim a display name.';
-      $('#name-section').classList.remove('hidden');
-      $('#connect-wallet-btn').classList.add('hidden');
-    } else {
-      S.displayName = result.displayName;
-      onAuthComplete();
-    }
-  } catch (err) {
-    status.textContent = 'Error: ' + err.message;
-  }
-});
-
-$('#claim-name-btn').addEventListener('click', async () => {
-  const name = $('#name-input').value.trim();
-  if (!/^[A-Za-z0-9_-]{1,20}$/.test(name)) {
-    $('#auth-status').textContent = 'Invalid name. Use 1-20 chars: A-Z, 0-9, _ or -';
-    return;
-  }
-  try {
-    $('#auth-status').textContent = 'Claiming name...';
-    await api('PATCH', '/api/me/profile', { displayName: name });
-    S.displayName = name;
-    onAuthComplete();
-  } catch (err) {
-    $('#auth-status').textContent = 'Error: ' + err.message;
-  }
-});
-
-function onAuthComplete() {
-  connectWebSocket();
-  showView('queue');
-}
-
-$('#logout-btn').addEventListener('click', async () => {
-  try { await api('POST', '/api/logout'); } catch (_) {}
-  if (S.ws) { S.ws.close(); S.ws = null; }
-  S.walletAddress = null;
-  S.accountId = null;
-  S.displayName = null;
-  S.tokenBalance = 0;
-  S.inQueue = false;
-  S.queuedPlayers = [];
-  S.matchId = null;
-  $('#header-profile').classList.add('hidden');
-  $('#auth-status').textContent = 'Connect your Ethereum wallet to sign in.';
-  showView('auth');
-});
-
-// ── Check existing session on load ──────────────────────────────
-async function checkSession() {
-  try {
-    const me = await api('GET', '/api/me');
-    S.accountId = me.accountId;
-    S.displayName = me.displayName;
-    S.tokenBalance = me.tokenBalance;
-    S.autoRequeue = me.autoRequeue;
-    if (S.displayName) {
-      onAuthComplete();
-    }
-  } catch (_) {
-    // not logged in
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  WEBSOCKET
-// ═══════════════════════════════════════════════════════════════
-function connectWebSocket() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  S.ws = new WebSocket(`${proto}//${location.host}/ws`);
-  S.ws.onopen = () => {};
-  S.ws.onclose = () => {
-    notify('Connection lost. Reconnecting...', 'warn');
-    setTimeout(connectWebSocket, 2000);
-  };
-  S.ws.onmessage = (evt) => {
-    const msg = JSON.parse(evt.data);
-    handleMessage(msg);
-  };
-}
-
-function wsSend(obj) {
-  if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-    S.ws.send(JSON.stringify(obj));
-  }
-}
-
-function handleMessage(msg) {
-  switch (msg.type) {
-    case 'queue_state': onQueueState(msg); break;
-    case 'game_started': onGameStarted(msg); break;
-    case 'round_start': onRoundStart(msg); break;
-    case 'commit_status': onCommitStatus(msg); break;
-    case 'phase_change': onPhaseChange(msg); break;
-    case 'reveal_status': onRevealStatus(msg); break;
-    case 'round_result': onRoundResult(msg); break;
-    case 'game_over': onGameOver(msg); break;
-    case 'player_disconnected': onPlayerDisconnected(msg); break;
-    case 'player_reconnected': onPlayerReconnected(msg); break;
-    case 'player_forfeited': onPlayerForfeited(msg); break;
-    case 'chat': onChat(msg); break;
-    case 'question_rating_tally': onQuestionRatingTally(msg); break;
-    case 'error': notify(msg.message, 'error'); break;
-    default: break;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  QUEUE VIEW
-// ═══════════════════════════════════════════════════════════════
-$('#join-queue-btn').addEventListener('click', () => {
-  wsSend({ type: 'join_queue' });
-  S.autoRequeue = true;
-  syncAutoRequeueUI();
-});
-
-$('#leave-queue-btn').addEventListener('click', () => {
-  wsSend({ type: 'leave_queue' });
-  S.autoRequeue = false;
-  syncAutoRequeueUI();
-});
-
-$('#auto-requeue-toggle').addEventListener('change', (e) => {
-  S.autoRequeue = e.target.checked;
-  // auto-requeue is session state; toggling while not queued is just a preference
-});
-
-function syncAutoRequeueUI() {
-  $('#auto-requeue-toggle').checked = S.autoRequeue;
-  $('#summary-auto-requeue').checked = S.autoRequeue;
-}
-
-function onQueueState(msg) {
-  S.inQueue = msg.status === 'queued';
-  S.queuedPlayers = msg.queuedPlayers || [];
-  S.formingMatch = msg.formingMatch || null;
-  if (msg.autoRequeue !== undefined) {
-    S.autoRequeue = msg.autoRequeue;
-    syncAutoRequeueUI();
-  }
-
-  // ensure we are on queue view if we aren't playing
-  if (S.view === 'auth' || S.view === 'summary') {
-    showView('queue');
-  }
-
-  renderQueue();
-}
-
-function renderQueue() {
-  $('#queue-count').textContent = S.queuedPlayers.length;
-
-  const list = $('#queue-players');
-  list.innerHTML = '';
-  S.queuedPlayers.forEach(name => {
-    const li = document.createElement('li');
-    li.textContent = name;
-    if (name === S.displayName) li.style.fontWeight = '700';
-    list.appendChild(li);
   });
-
-  // forming match
-  if (S.formingMatch) {
-    $('#forming-banner').classList.remove('hidden');
-    $('#forming-count').textContent = S.formingMatch.playerCount;
-    updateFormingTimer();
-  } else {
-    $('#forming-banner').classList.add('hidden');
-  }
-
-  // buttons
-  $('#join-queue-btn').classList.toggle('hidden', S.inQueue);
-  $('#leave-queue-btn').classList.toggle('hidden', !S.inQueue);
-}
-
-function updateFormingTimer() {
-  if (!S.formingMatch || !S.formingMatch.fillDeadlineMs) {
-    $('#forming-timer').textContent = '--';
-    return;
-  }
-  const remaining = Math.max(0, Math.ceil((S.formingMatch.fillDeadlineMs - Date.now()) / 1000));
-  $('#forming-timer').textContent = remaining;
-}
-
-// Update forming timer every second
-setInterval(updateFormingTimer, 1000);
-
-// ═══════════════════════════════════════════════════════════════
-//  PLAY VIEW
-// ═══════════════════════════════════════════════════════════════
-function onGameStarted(msg) {
-  S.matchId = msg.matchId;
-  S.players = msg.players;
-  S.round = 0;
-  S.phase = null;
-  S.playerStatuses = {};
-  S.players.forEach(p => { S.playerStatuses[p.displayName] = 'connected'; });
-
-  showView('play');
-  renderPlayers();
-  $('#round-result-banner').classList.add('hidden');
-  $('#question-text').textContent = 'Match started. Waiting for first game...';
-  $('#select-grid').innerHTML = '';
-  $('#commit-area').classList.add('hidden');
-  $('#reveal-area').classList.add('hidden');
-  clearChat();
-  notify('Match started with ' + S.players.length + ' players', 'success');
-}
-
-function onRoundStart(msg) {
-  S.round = msg.round;
-  S.phase = 'commit';
-  S.question = msg.question;
-  S.selectedOption = null;
-  S.salt = null;
-  S.commitHash = null;
-  S.committed = false;
-  S.revealed = false;
-  S.commitStatuses = [];
-  S.revealStatuses = [];
-  S.roundResult = null;
-
-  if (S.view !== 'play') showView('play');
-
-  // UI
-  $('#phase-label').textContent = `Game ${msg.round} / 10 : Commit Phase`;
-  $('#phase-timer-label').textContent = 'Commit';
-  $('#question-text').textContent = msg.question.text;
-  $('#round-result-banner').classList.add('hidden');
-
-  // Render options
-  renderOptions(msg.question.options, false);
-
-  // Show commit, hide reveal
-  $('#commit-area').classList.remove('hidden');
-  $('#commit-btn').disabled = true;
-  $('#commit-status').textContent = '';
-  $('#reveal-area').classList.add('hidden');
-
-  // Timer
-  startTimer(msg.commitDuration);
-
-  // Chat
-  enableChat(true);
-
-  // Reset player dots
-  renderPlayers();
-}
-
-function renderOptions(options, disabled) {
-  const grid = $('#select-grid');
-  grid.innerHTML = '';
-  options.forEach((opt, idx) => {
-    const btn = document.createElement('div');
-    btn.className = 'opt-btn' + (disabled ? ' disabled' : '');
-    btn.textContent = opt;
-    btn.dataset.idx = idx;
-    if (!disabled) {
-      btn.addEventListener('click', () => selectOption(idx));
-    }
-    grid.appendChild(btn);
-  });
-}
-
-function selectOption(idx) {
-  if (S.committed || S.phase !== 'commit') return;
-  S.selectedOption = idx;
-  $$('.opt-btn').forEach(b => b.classList.toggle('selected', parseInt(b.dataset.idx) === idx));
-  $('#commit-btn').disabled = false;
-}
-
-// ── Commit ───────────────────────────────────────────────────────
-$('#commit-btn').addEventListener('click', async () => {
-  if (S.selectedOption === null || S.committed) return;
-
-  // Generate salt
-  S.salt = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-    .map(b => b.toString(16).padStart(2, '0')).join('');
-
-  // Create hash
-  const preimage = `${S.selectedOption}:${S.salt}`;
-  const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(preimage));
-  S.commitHash = Array.from(new Uint8Array(hashBuf))
-    .map(b => b.toString(16).padStart(2, '0')).join('');
-
-  wsSend({ type: 'commit', hash: S.commitHash });
-  S.committed = true;
-
-  $('#commit-btn').disabled = true;
-  $('#commit-status').textContent = 'Committed. Waiting for others...';
-  $$('.opt-btn').forEach(b => b.classList.add('disabled'));
-});
-
-function onCommitStatus(msg) {
-  S.commitStatuses = msg.committed;
-  updatePlayerDots();
-}
-
-// ── Phase change to reveal ──────────────────────────────────────
-function onPhaseChange(msg) {
-  if (msg.phase === 'reveal') {
-    S.phase = 'reveal';
-    $('#phase-label').textContent = `Game ${S.round} / 10 : Reveal Phase`;
-    $('#phase-timer-label').textContent = 'Reveal';
-    $('#commit-area').classList.add('hidden');
-
-    if (S.committed && !S.revealed) {
-      // Auto-reveal: centralized server, no reason to hold back
-      wsSend({ type: 'reveal', optionIndex: S.selectedOption, salt: S.salt });
-      S.revealed = true;
-      $('#commit-area').classList.remove('hidden');
-      $('#commit-status').textContent = 'Revealed. Waiting for others...';
-    } else if (!S.committed) {
-      $('#reveal-area').classList.add('hidden');
-      $('#commit-status').textContent = 'You did not commit in time.';
-      $('#commit-area').classList.remove('hidden');
-    }
-
-    startTimer(msg.revealDuration);
-    enableChat(false);
-  }
-}
-
-// ── Reveal ───────────────────────────────────────────────────────
-$('#reveal-btn').addEventListener('click', () => {
-  if (S.revealed || S.selectedOption === null || !S.salt) return;
-  wsSend({ type: 'reveal', optionIndex: S.selectedOption, salt: S.salt });
-  S.revealed = true;
-  $('#reveal-btn').disabled = true;
-  $('#reveal-status').textContent = 'Revealed. Waiting for others...';
-});
-
-function onRevealStatus(msg) {
-  S.revealStatuses = msg.revealed;
-  updatePlayerDots();
-}
-
-// ── Round result ─────────────────────────────────────────────────
-function onRoundResult(msg) {
-  const r = msg.result;
-  S.roundResult = r;
-  S.phase = 'results';
-
-  $('#phase-label').textContent = `Game ${S.round} / 10 : Results`;
-  $('#phase-timer-label').textContent = 'Results';
-  $('#commit-area').classList.add('hidden');
-  $('#reveal-area').classList.add('hidden');
-
-  startTimer(20);
-
-  // Update local balance
-  const me = r.players.find(p => p.displayName === S.displayName);
-  if (me) {
-    S.tokenBalance = me.newBalance;
-    $('#header-balance').textContent = S.tokenBalance + ' tokens';
-  }
-
-  // Update player balances
-  r.players.forEach(rp => {
-    const sp = S.players.find(p => p.displayName === rp.displayName);
-    if (sp) sp.currentBalance = rp.newBalance;
-  });
-
-  renderRoundResult(r);
-  renderPlayers();
-}
-
-function renderRoundResult(r) {
-  const banner = $('#round-result-banner');
-  banner.classList.remove('hidden');
-  $('#result-round-num').textContent = r.roundNum;
-
-  // Reset rating row
-  S.myRating = null;
-  $('#rating-likes').textContent = '0';
-  $('#rating-dislikes').textContent = '0';
-  $('#rating-like').classList.remove('btn-primary');
-  $('#rating-dislike').classList.remove('btn-primary');
-  $('#rating-like').disabled = false;
-  $('#rating-dislike').disabled = false;
-  if (!r.voided) {
-    $('#rating-row').classList.remove('hidden');
-  } else {
-    $('#rating-row').classList.add('hidden');
-  }
-
-  // Void banner
-  if (r.voided) {
-    $('#void-banner').classList.remove('hidden');
-    $('#void-banner').textContent = 'Game voided: ' + (r.voidReason || 'all antes refunded');
-  } else {
-    $('#void-banner').classList.add('hidden');
-  }
-
-  // Result table
-  const tbody = $('#result-tbody');
-  tbody.innerHTML = '';
-  r.players.forEach(p => {
-    const tr = document.createElement('tr');
-    const optLabel = p.revealedOptionIndex !== null && p.revealedOptionIndex !== undefined && S.question
-      ? (S.question.options[p.revealedOptionIndex] || '?')
-      : '-';
-    const deltaClass = p.netDelta > 0 ? 'delta-pos' : (p.netDelta < 0 ? 'delta-neg' : 'delta-zero');
-    const deltaStr = p.netDelta > 0 ? '+' + p.netDelta : String(p.netDelta);
-
-    tr.innerHTML = `
-      <td>${esc(p.displayName)}</td>
-      <td>${esc(optLabel)}</td>
-      <td class="${p.wonRound ? 'won-yes' : 'won-no'}">${p.wonRound ? 'Yes' : 'No'}</td>
-      <td class="${p.earnsCoordinationCredit ? 'credit-yes' : ''}">${p.earnsCoordinationCredit ? 'Yes' : 'No'}</td>
-      <td class="${deltaClass}">${deltaStr}</td>
-      <td>${p.newBalance}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  // Note about solo wins
-  const note = $('#result-note');
-  if (!r.voided) {
-    const hasWinnerNoCredit = r.players.some(p => p.wonRound && !p.earnsCoordinationCredit);
-    if (hasWinnerNoCredit) {
-      note.textContent = 'Solo win: won the pot but no coordination credit earned (topCount=1). Does not extend streak.';
-    } else {
-      note.textContent = '';
-    }
-  } else {
-    note.textContent = '';
-  }
-}
-
-// ── Player status dots ──────────────────────────────────────────
-function updatePlayerDots() {
-  $$('.player-row .dot').forEach(dot => {
-    const name = dot.dataset.name;
-    if (!name) return;
-
-    // Check forfeited / disconnected first
-    if (S.playerStatuses[name] === 'forfeited') {
-      dot.className = 'dot forfeited';
-      return;
-    }
-    if (S.playerStatuses[name] === 'disconnected') {
-      dot.className = 'dot disconnected';
-      return;
-    }
-
-    // Commit/reveal status
-    const c = S.commitStatuses.find(s => s.displayName === name);
-    const r = S.revealStatuses.find(s => s.displayName === name);
-    if (r && r.hasRevealed) {
-      dot.className = 'dot revealed';
-    } else if (c && c.hasCommitted) {
-      dot.className = 'dot committed';
-    } else {
-      dot.className = 'dot';
-    }
-  });
-}
-
-function renderPlayers() {
-  const list = $('#players-list');
-  list.innerHTML = '';
-  S.players.forEach(p => {
-    const row = document.createElement('div');
-    row.className = 'player-row';
-    const bal = p.currentBalance !== undefined ? p.currentBalance : p.startingBalance;
-    const statusClass = S.playerStatuses[p.displayName] || '';
-    row.innerHTML = `
-      <div class="player-name">
-        <span class="dot ${statusClass}" data-name="${esc(p.displayName)}"></span>
-        <span>${esc(p.displayName)}</span>
-      </div>
-      <span class="balance-badge">${bal}</span>
-    `;
-    list.appendChild(row);
-  });
-  updatePlayerDots();
-}
-
-// ── Player events ───────────────────────────────────────────────
-function onPlayerDisconnected(msg) {
-  S.playerStatuses[msg.displayName] = 'disconnected';
-  notify(msg.displayName + ' disconnected (' + msg.graceSeconds + 's grace)', 'warn');
-  updatePlayerDots();
-}
-
-function onPlayerReconnected(msg) {
-  S.playerStatuses[msg.displayName] = 'connected';
-  notify(msg.displayName + ' reconnected', 'success');
-  updatePlayerDots();
-}
-
-function onPlayerForfeited(msg) {
-  S.playerStatuses[msg.displayName] = 'forfeited';
-  notify(msg.displayName + ' forfeited', 'error');
-  updatePlayerDots();
-}
-
-// ── Timer ────────────────────────────────────────────────────────
-function startTimer(seconds) {
-  clearInterval(S.timerInterval);
-  S.timerDuration = seconds;
-  S.timerEnd = Date.now() + seconds * 1000;
-  tickTimer();
-  S.timerInterval = setInterval(tickTimer, 250);
-}
-
-function tickTimer() {
-  const remaining = Math.max(0, (S.timerEnd - Date.now()) / 1000);
-  const pct = Math.max(0, remaining / S.timerDuration * 100);
-  const bar = $('#timer-bar');
-  const num = $('#timer-num');
-  bar.style.width = pct + '%';
-  num.textContent = Math.ceil(remaining);
-  if (remaining <= 5) {
-    bar.style.background = 'var(--red)';
-    num.classList.add('urgent');
-  } else {
-    bar.style.background = 'var(--accent)';
-    num.classList.remove('urgent');
-  }
-  if (remaining <= 0) clearInterval(S.timerInterval);
-}
-
-// ── Chat ─────────────────────────────────────────────────────────
-function enableChat(enabled) {
-  $('#chat-input').disabled = !enabled;
-  $('#chat-send').disabled = !enabled;
-}
-
-function clearChat() {
-  $('#chat-messages').innerHTML = '';
-}
-
-$('#chat-send').addEventListener('click', sendChat);
-$('#chat-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChat();
-});
-
-function sendChat() {
-  const input = $('#chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  wsSend({ type: 'chat', text });
-  input.value = '';
-}
-
-function onChat(msg) {
-  const container = $('#chat-messages');
-  const div = document.createElement('div');
-  div.className = 'chat-msg';
-  div.innerHTML = `<span class="from">${esc(msg.from)}:</span>${esc(msg.text)}`;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-}
-
-// ── Question rating ──────────────────────────────────────────────
-function sendRating(rating) {
-  if (S.myRating === rating) return; // already voted this
-  S.myRating = rating;
-  wsSend({ type: 'question_rating', rating });
-  // Optimistic highlight
-  $('#rating-like').classList.toggle('btn-primary', rating === 'like');
-  $('#rating-dislike').classList.toggle('btn-primary', rating === 'dislike');
-}
-
-function onQuestionRatingTally(msg) {
-  $('#rating-likes').textContent = msg.likes ?? 0;
-  $('#rating-dislikes').textContent = msg.dislikes ?? 0;
-}
-
-$('#rating-like').addEventListener('click', () => sendRating('like'));
-$('#rating-dislike').addEventListener('click', () => sendRating('dislike'));
-
-// ═══════════════════════════════════════════════════════════════
-//  GAME OVER / SUMMARY
-// ═══════════════════════════════════════════════════════════════
-function onGameOver(msg) {
-  S.summary = msg.summary;
-  S.matchId = null;
-  S.phase = null;
-  clearInterval(S.timerInterval);
-
-  // Update own balance from summary
-  const me = msg.summary.players.find(p => p.displayName === S.displayName);
-  if (me) {
-    S.tokenBalance = me.endingBalance;
-    $('#header-balance').textContent = S.tokenBalance + ' tokens';
-  }
-
-  showView('summary');
-  renderSummary(msg.summary);
-  syncAutoRequeueUI();
-}
-
-function renderSummary(summary) {
-  const tbody = $('#summary-tbody');
-  tbody.innerHTML = '';
-  summary.players.forEach(p => {
-    const tr = document.createElement('tr');
-    const deltaClass = p.netDelta > 0 ? 'delta-pos' : (p.netDelta < 0 ? 'delta-neg' : 'delta-zero');
-    const deltaStr = p.netDelta > 0 ? '+' + p.netDelta : String(p.netDelta);
-    tr.innerHTML = `
-      <td>${esc(p.displayName)}</td>
-      <td>${p.startingBalance}</td>
-      <td>${p.endingBalance}</td>
-      <td class="${deltaClass}">${deltaStr}</td>
-      <td>${p.result === 'forfeited' ? 'Forfeited' : 'Completed'}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-$('#requeue-btn').addEventListener('click', () => {
-  S.autoRequeue = true;
-  syncAutoRequeueUI();
-  wsSend({ type: 'join_queue' });
-  showView('queue');
-});
-
-$('#summary-auto-requeue').addEventListener('change', (e) => {
-  S.autoRequeue = e.target.checked;
-  if (!S.autoRequeue) {
-    wsSend({ type: 'leave_queue' });
-  }
-});
-
-$('#summary-lb-btn').addEventListener('click', () => {
-  S.previousView = 'summary';
-  loadLeaderboard();
-});
-
-// ═══════════════════════════════════════════════════════════════
-//  LEADERBOARD
-// ═══════════════════════════════════════════════════════════════
-$('#nav-leaderboard').addEventListener('click', () => {
-  S.previousView = S.view;
-  loadLeaderboard();
-});
-
-$('#lb-back-btn').addEventListener('click', () => {
-  showView(S.previousView || 'queue');
-});
-
-$('#nav-queue').addEventListener('click', () => {
-  showView('queue');
-});
-
-async function loadLeaderboard() {
-  showView('leaderboard');
-  try {
-    const [entries, myRank] = await Promise.all([
-      api('GET', '/api/leaderboard'),
-      api('GET', '/api/leaderboard/me').catch(() => null),
-    ]);
-
-    renderLeaderboard(entries, myRank);
-  } catch (err) {
-    notify('Failed to load leaderboard: ' + err.message, 'error');
-  }
-}
-
-function renderLeaderboard(entries, myRank) {
-  const tbody = $('#lb-tbody');
-  tbody.innerHTML = '';
-
-  if (!entries || entries.length === 0) {
-    $('#lb-empty').classList.remove('hidden');
-    return;
-  }
-  $('#lb-empty').classList.add('hidden');
-
-  entries.forEach(e => {
-    const tr = document.createElement('tr');
-    if (e.displayName === S.displayName) tr.className = 'me';
-    tr.innerHTML = `
-      <td>${e.rank}</td>
-      <td>${esc(e.displayName)}</td>
-      <td>${e.tokenBalance}</td>
-      <td>${e.gamesPlayed}</td>
-      <td>${e.avgNetTokensPerGame !== undefined ? e.avgNetTokensPerGame.toFixed(1) : '-'}</td>
-      <td>${e.coherentPct !== undefined ? e.coherentPct + '%' : '-'}</td>
-      <td>${e.currentStreak || 0}</td>
-      <td>${e.longestStreak || 0}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  // My rank card
-  const card = $('#my-rank-card');
-  if (myRank) {
-    card.classList.remove('hidden');
-    card.innerHTML = `
-      <div style="font-size:.9rem">
-        Your rank: <strong>#${myRank.rank}</strong>
-        | Balance: <strong>${myRank.tokenBalance}</strong>
-        | Coordination: <strong>${myRank.coherentPct || 0}%</strong>
-        | Streak: <strong>${myRank.currentStreak || 0}</strong> (best: ${myRank.longestStreak || 0})
-      </div>
-    `;
-  } else {
-    card.classList.add('hidden');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  UTILITIES
-// ═══════════════════════════════════════════════════════════════
-function esc(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
-// ── Boot ─────────────────────────────────────────────────────────
-checkSession();
-
 })();
 </script>
 </body>
