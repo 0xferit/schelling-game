@@ -1164,7 +1164,7 @@ checkSession();
 /* ── Deploy status indicator ─────────────── */
 (function() {
   var el = document.getElementById('deploy-status');
-  var labels = { success: 'deployed', in_progress: 'deploying', failure: 'deploy failed' };
+  var labels = { success: 'deployed', in_progress: 'deploying new version', failure: 'deploy failed' };
   fetch('https://api.github.com/repos/0xferit/schelling-game/actions/runs?per_page=1&branch=main')
     .then(function(r) { return r.json(); })
     .then(function(data) {
