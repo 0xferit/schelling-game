@@ -377,6 +377,12 @@ footer{
 footer span{font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}
 footer a{color:var(--muted);text-decoration:none}
 footer a:hover{color:var(--accent)}
+#deploy-status{display:flex;align-items:center;gap:.35rem}
+#deploy-status .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+#deploy-status .dot.success{background:#4caf50}
+#deploy-status .dot.in_progress{background:#ff9800;animation:pulse 1s infinite alternate}
+#deploy-status .dot.failure{background:#e53935}
+@keyframes pulse{to{opacity:.3}}
 
 /* ── RESPONSIVE ──────────────────────────── */
 @media(max-width:700px){
@@ -556,6 +562,7 @@ footer a:hover{color:var(--accent)}
 
 <footer>
   <span>__BUILD_HASH__ &middot; __BUILD_DATE__</span>
+  <span id="deploy-status"></span>
   <a href="https://github.com/0xferit/schelling-game" target="_blank" rel="noopener">GitHub</a>
 </footer>
 
@@ -727,6 +734,22 @@ footer a:hover{color:var(--accent)}
         .catch(function() {});
     });
   });
+})();
+
+/* ── Deploy status indicator ─────────────── */
+(function() {
+  var el = document.getElementById('deploy-status');
+  var labels = { success: 'deployed', in_progress: 'deploying', failure: 'deploy failed' };
+  fetch('https://api.github.com/repos/0xferit/schelling-game/actions/runs?per_page=1&branch=main')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.workflow_runs || !data.workflow_runs.length) return;
+      var run = data.workflow_runs[0];
+      var status = run.status === 'completed' ? run.conclusion : 'in_progress';
+      var text = labels[status] || status;
+      el.innerHTML = '<span class="dot ' + status + '"></span>' + text;
+    })
+    .catch(function() {});
 })();
 </script>
 </body>
