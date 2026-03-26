@@ -406,6 +406,7 @@ const S = {
 // ── DOM refs ────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
+const MIN_ESTABLISHED = 5; // must match backend MIN_ESTABLISHED_MATCHES
 
 // ── Browser wallet ───────────────────────────────────────────────
 const BROWSER_KEY = 'schelling_browser_secret';
@@ -1370,16 +1371,16 @@ function renderLeaderboard(entries, myRank) {
     if (e.displayName === S.displayName) cls.push('me');
     if (e.provisional) cls.push('provisional');
     tr.className = cls.join(' ');
-    const tip = e.provisional ? ' title="Provisional: fewer than 5 matches played"' : '';
+    const provTip = e.provisional ? ` title="Provisional: fewer than ${MIN_ESTABLISHED} matches played"` : '';
     tr.innerHTML = `
       <td>${e.rank}</td>
       <td>${esc(e.displayName)}</td>
       <td>${e.tokenBalance}</td>
       <td>${e.gamesPlayed}</td>
-      <td class="stat-metric"${tip}>${e.avgNetTokensPerGame !== undefined ? e.avgNetTokensPerGame.toFixed(1) : '-'}</td>
-      <td class="stat-metric"${tip}>${e.coherentPct !== undefined ? e.coherentPct + '%' : '-'}</td>
-      <td class="stat-metric"${tip}>${e.currentStreak || 0}</td>
-      <td class="stat-metric"${tip}>${e.longestStreak || 0}</td>
+      <td class="stat-metric"${provTip}>${e.avgNetTokensPerGame !== undefined ? e.avgNetTokensPerGame.toFixed(1) : '-'}</td>
+      <td class="stat-metric"${provTip}>${e.coherentPct !== undefined ? e.coherentPct + '%' : '-'}</td>
+      <td class="stat-metric"${provTip}>${e.currentStreak || 0}</td>
+      <td class="stat-metric"${provTip}>${e.longestStreak || 0}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -1388,7 +1389,7 @@ function renderLeaderboard(entries, myRank) {
   const card = $('#my-rank-card');
   if (myRank) {
     card.classList.remove('hidden');
-    const remaining = 5 - myRank.gamesPlayed;
+    const remaining = MIN_ESTABLISHED - myRank.gamesPlayed;
     const provNote = myRank.provisional
       ? `<div class="provisional-note">Stats are provisional until ${remaining} more match${remaining === 1 ? '' : 'es'}</div>`
       : '';

@@ -572,10 +572,10 @@ console.log('\n10. Coordination Credit Rules');
 }
 
 // ---------------------------------------------------------------------------
-// 8. Provisional leaderboard threshold
+// 11. Provisional leaderboard threshold
 // ---------------------------------------------------------------------------
 {
-  console.log('\n8. Provisional leaderboard threshold');
+  console.log('\n11. Provisional leaderboard threshold');
   const { MIN_ESTABLISHED_MATCHES } = await import('../src/domain/constants');
 
   assert(MIN_ESTABLISHED_MATCHES === 5, 'threshold is 5 matches');
