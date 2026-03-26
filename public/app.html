@@ -172,7 +172,7 @@ nav{display:flex;gap:.5rem}
     <div id="header-profile" class="hidden">
       <span class="name" id="header-name"></span>
       <span class="bal" id="header-balance"></span>
-      <button class="btn-ghost hidden" id="export-key-btn" title="Export seed phrase">Backup</button>
+      <button class="btn-ghost hidden" id="backup-seed-btn" title="Export seed phrase">Backup</button>
       <button class="btn-ghost" id="logout-btn" title="Log out">✕</button>
     </div>
     <nav>
@@ -339,9 +339,9 @@ nav{display:flex;gap:.5rem}
 </footer>
 
 <div id="notif"></div>
-<div id="seed-overlay" class="hidden">
+<div id="seed-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="seed-dialog-title">
   <div class="seed-card">
-    <h3 style="margin:0">Your Seed Phrase</h3>
+    <h3 id="seed-dialog-title" style="margin:0">Your Seed Phrase</h3>
     <p class="seed-warn">Write these words down and store them somewhere safe. Anyone with this phrase can access your account.</p>
     <div class="seed-phrase" id="seed-phrase-text"></div>
     <div style="display:flex;gap:.5rem">
@@ -467,7 +467,7 @@ function showView(name) {
     $('#header-profile').classList.remove('hidden');
     $('#header-name').textContent = S.displayName + (S.isGuestWallet ? ' (guest)' : '');
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
-    $('#export-key-btn').classList.toggle('hidden', !S.isGuestWallet);
+    $('#backup-seed-btn').classList.toggle('hidden', !S.isGuestWallet);
   }
 
   // nav visibility
@@ -606,7 +606,13 @@ $('#import-btn').addEventListener('click', async () => {
   }
 });
 
-$('#export-key-btn').addEventListener('click', () => {
+function closeSeedOverlay() {
+  $('#seed-overlay').classList.add('hidden');
+  $('#seed-phrase-text').textContent = '';
+  $('#backup-seed-btn').focus();
+}
+
+$('#backup-seed-btn').addEventListener('click', () => {
   const mnemonic = getGuestMnemonic();
   if (!mnemonic) {
     notify('No seed phrase available. This wallet was created with an older version.', 'warn');
@@ -614,6 +620,7 @@ $('#export-key-btn').addEventListener('click', () => {
   }
   $('#seed-phrase-text').textContent = mnemonic;
   $('#seed-overlay').classList.remove('hidden');
+  $('#close-seed-btn').focus();
 });
 
 $('#copy-seed-btn').addEventListener('click', () => {
@@ -628,9 +635,14 @@ $('#copy-seed-btn').addEventListener('click', () => {
   );
 });
 
-$('#close-seed-btn').addEventListener('click', () => {
-  $('#seed-overlay').classList.add('hidden');
-  $('#seed-phrase-text').textContent = '';
+$('#close-seed-btn').addEventListener('click', closeSeedOverlay);
+
+// Close overlay on Escape or backdrop click
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#seed-overlay').classList.contains('hidden')) closeSeedOverlay();
+});
+$('#seed-overlay').addEventListener('click', (e) => {
+  if (e.target === $('#seed-overlay')) closeSeedOverlay();
 });
 
 function onAuthComplete() {
