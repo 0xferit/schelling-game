@@ -1439,6 +1439,7 @@ function renderLeaderboard(entries, myRank) {
   tbody.innerHTML = '';
 
   if (!entries || entries.length === 0) {
+    $('#my-rank-card').classList.add('hidden');
     $('#lb-empty').classList.remove('hidden');
     return;
   }
