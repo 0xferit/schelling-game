@@ -945,13 +945,16 @@ function onRoundStart(msg) {
   const phaseLabel = msg.phase === 'reveal' ? 'Reveal Phase'
     : msg.phase === 'results' ? 'Results Phase' : 'Commit Phase';
   $('#phase-label').textContent = `Game ${msg.round} / 10 : ${phaseLabel}`;
-  $('#phase-timer-label').textContent = msg.phase === 'reveal' ? 'Reveal' : 'Commit';
+  const phaseTimerLabel = msg.phase === 'reveal' ? 'Reveal'
+    : msg.phase === 'commit' ? 'Commit' : '';
+  $('#phase-timer-label').textContent = phaseTimerLabel;
   $('#question-text').textContent = msg.question.text;
   $('#round-result-banner').classList.add('hidden');
 
-  // Disable options if server says we already committed
+  // Disable options if already committed or no longer in commit phase
   const alreadyCommitted = !!msg.yourCommitted;
-  renderOptions(msg.question.options, alreadyCommitted);
+  const optionsDisabled = alreadyCommitted || msg.phase !== 'commit';
+  renderOptions(msg.question.options, optionsDisabled);
   if (hasPreimage && S.selectedOption !== null) {
     // Re-highlight the previously selected option
     $$('.opt-btn').forEach(b =>
@@ -962,7 +965,9 @@ function onRoundStart(msg) {
   // Show commit area with appropriate status
   $('#commit-area').classList.remove('hidden');
   $('#commit-btn').disabled = true;
-  if (alreadyCommitted) {
+  if (msg.yourRevealed) {
+    $('#commit-status').textContent = 'Revealed. Waiting for others...';
+  } else if (alreadyCommitted) {
     $('#commit-status').textContent = hasPreimage
       ? 'Committed. Waiting for others...'
       : 'Committed, but reveal key was lost (page reload). Cannot reveal this round.';
