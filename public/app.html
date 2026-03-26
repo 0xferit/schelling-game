@@ -691,7 +691,7 @@ function onAuthComplete() {
 $('#logout-btn').addEventListener('click', async () => {
   intentionalClose = true;
   wsRetryCount = 0;
-  if (wsRetryTimer) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
+  if (wsRetryTimer !== null) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
   if (S.ws) { S.ws.close(); S.ws = null; }
   try { await api('POST', '/api/logout'); } catch (_) {}
   S.walletAddress = null;
