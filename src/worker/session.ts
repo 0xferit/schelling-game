@@ -1,70 +1,84 @@
-// Session token helpers (HMAC-signed, stateless)
+// Wallet-signature-based session: no server-side secret.
+// Cookie format: walletAddress:nonce:issuedAt:signature
+// The challenge message includes walletAddress, nonce, AND issuedAt,
+// so the signature covers all fields. Tampering with issuedAt invalidates
+// the signature.
 
-let sessionSecret: string | null = null;
+import { ethers } from 'ethers';
 
-export function setSessionSecret(secret: string): void {
-  sessionSecret = secret;
+const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CLOCK_SKEW_MS = 60 * 1000; // 60 seconds leeway for edge POP clock drift
+const MAX_COOKIE_LENGTH = 512; // wallet(42) + nonce(36) + issuedAt(~13) + sig(132) + colons(3) < 230
+const WALLET_RE = /^0x[0-9a-f]{40}$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const ETH_SIG_RE = /^0x[0-9a-f]{130}$/;
+
+export function buildChallengeMessage(
+  walletAddress: string,
+  nonce: string,
+  issuedAt: number,
+): string {
+  return (
+    'Sign this message to authenticate with Schelling Game.' +
+    `\n\nWallet: ${walletAddress}\nNonce: ${nonce}\nIssued: ${issuedAt}`
+  );
 }
 
-function getSecret(): string {
-  if (!sessionSecret) {
-    throw new Error(
-      'SESSION_SECRET not configured. Set it as a Wrangler secret.',
-    );
+export function createSessionCookie(
+  walletAddress: string,
+  nonce: string,
+  issuedAt: number,
+  signature: string,
+): string {
+  return `${walletAddress}:${nonce}:${issuedAt}:${signature}`;
+}
+
+export function verifySessionCookie(cookie: string | undefined): string | null {
+  if (!cookie || cookie.length > MAX_COOKIE_LENGTH) return null;
+
+  // Format: walletAddress:nonce:issuedAt:signature
+  // Split on first three colons; everything after the third is the signature.
+  const firstColon = cookie.indexOf(':');
+  if (firstColon === -1) return null;
+  const secondColon = cookie.indexOf(':', firstColon + 1);
+  if (secondColon === -1) return null;
+  const thirdColon = cookie.indexOf(':', secondColon + 1);
+  if (thirdColon === -1) return null;
+
+  const walletAddress = cookie.slice(0, firstColon);
+  const nonce = cookie.slice(firstColon + 1, secondColon);
+  const issuedAtStr = cookie.slice(secondColon + 1, thirdColon);
+  const signature = cookie.slice(thirdColon + 1);
+
+  // Strict format checks before touching crypto
+  if (!WALLET_RE.test(walletAddress)) return null;
+  if (!UUID_RE.test(nonce)) return null;
+  if (!ETH_SIG_RE.test(signature)) return null;
+
+  // Validate server-side expiry (single Date.now() call, with clock skew leeway)
+  const issuedAt = Number(issuedAtStr);
+  if (Number.isNaN(issuedAt)) return null;
+  // Reject non-canonical representations (e.g. "01711411200000", "1e12")
+  // so the cookie string matches exactly what buildChallengeMessage produces.
+  if (String(issuedAt) !== issuedAtStr) return null;
+  const now = Date.now();
+  if (issuedAt > now + CLOCK_SKEW_MS) return null;
+  if (now - issuedAt > SESSION_MAX_AGE_MS) return null;
+
+  // Reconstruct the message that was signed (includes issuedAt)
+  const message = buildChallengeMessage(walletAddress, nonce, issuedAt);
+
+  try {
+    const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+    if (recovered === walletAddress) {
+      return walletAddress;
+    }
+  } catch {
+    // Invalid signature
   }
-  return sessionSecret;
-}
 
-export async function createSessionToken(accountId: string): Promise<string> {
-  const payload = `${accountId}:${Date.now()}`;
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(getSecret()),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sigBuf = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    new TextEncoder().encode(payload),
-  );
-  const sig = [...new Uint8Array(sigBuf)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return `${payload}:${sig}`;
-}
-
-export async function verifySessionToken(
-  token: string | undefined,
-): Promise<string | null> {
-  if (!token) return null;
-  const parts = token.split(':');
-  if (parts.length < 3) return null;
-  const sig = parts.pop()!;
-  const payload = parts.join(':');
-
-  // Validate signature is non-empty even-length hex
-  if (!sig || sig.length % 2 !== 0 || !/^[0-9a-f]+$/.test(sig)) return null;
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(getSecret()),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify'],
-  );
-  const sigBuf = new Uint8Array(
-    (sig.match(/.{2}/g) ?? []).map((h) => parseInt(h, 16)),
-  );
-  const valid = await crypto.subtle.verify(
-    'HMAC',
-    key,
-    sigBuf,
-    new TextEncoder().encode(payload),
-  );
-  if (!valid) return null;
-  return parts[0] ?? null;
+  return null;
 }
 
 export function parseCookies(
@@ -79,9 +93,7 @@ export function parseCookies(
   return cookies;
 }
 
-export async function getAuthenticatedAccountId(
-  request: Request,
-): Promise<string | null> {
+export function getAuthenticatedAccountId(request: Request): string | null {
   const cookies = parseCookies(request.headers.get('Cookie'));
-  return verifySessionToken(cookies.session);
+  return verifySessionCookie(cookies.session);
 }

@@ -33,9 +33,8 @@ export function createChallenge(walletAddress: string): {
   const normalized: string = ethers.getAddress(walletAddress);
   const nonce: string = crypto.randomBytes(32).toString('hex');
   const challengeId: string = `ch_${crypto.randomBytes(16).toString('hex')}`;
-  const expiresAt: string = new Date(
-    Date.now() + CHALLENGE_TTL_MS,
-  ).toISOString();
+  const issuedAt: number = Date.now();
+  const expiresAt: string = new Date(issuedAt + CHALLENGE_TTL_MS).toISOString();
   const message: string = `Sign this message to authenticate with Schelling Game.\n\nWallet: ${normalized}\nNonce: ${nonce}\nExpires: ${expiresAt}`;
 
   db.createChallenge({
@@ -44,6 +43,7 @@ export function createChallenge(walletAddress: string): {
     message,
     nonce,
     expiresAt,
+    issuedAt,
   });
 
   return { challengeId, message, expiresAt };

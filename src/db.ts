@@ -59,6 +59,7 @@ function initSchema(): void {
       message        TEXT NOT NULL,
       nonce          TEXT NOT NULL,
       expires_at     TEXT NOT NULL,
+      issued_at      INTEGER NOT NULL,
       used           INTEGER DEFAULT 0
     );
 
@@ -112,6 +113,14 @@ function initSchema(): void {
       created_at    TEXT DEFAULT (datetime('now'))
     );
   `);
+
+  // Migrate existing local DBs that lack the issued_at column
+  const columns = db!.prepare("PRAGMA table_info('auth_challenges')").all() as {
+    name: string;
+  }[];
+  if (!columns.some((c) => c.name === 'issued_at')) {
+    db!.exec('ALTER TABLE auth_challenges ADD COLUMN issued_at INTEGER');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,13 +133,14 @@ function createChallenge({
   message,
   nonce,
   expiresAt,
+  issuedAt,
 }: CreateChallengeParams): void {
   getDb()
     .prepare(`
-    INSERT INTO auth_challenges (challenge_id, wallet_address, message, nonce, expires_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO auth_challenges (challenge_id, wallet_address, message, nonce, expires_at, issued_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `)
-    .run(challengeId, walletAddress, message, nonce, expiresAt);
+    .run(challengeId, walletAddress, message, nonce, expiresAt, issuedAt);
 }
 
 function getChallenge(challengeId: string): AuthChallengeRow | null {
