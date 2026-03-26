@@ -39,34 +39,10 @@ function escapeCsvField(value: unknown): string {
   return s;
 }
 
-let d1Migrated = false;
-
-async function ensureD1Migration(db: D1Database): Promise<void> {
-  if (d1Migrated) return;
-  try {
-    await db
-      .prepare('ALTER TABLE auth_challenges ADD COLUMN issued_at INTEGER')
-      .run();
-    d1Migrated = true;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (
-      msg.toLowerCase().includes('duplicate column') ||
-      msg.toLowerCase().includes('already exists')
-    ) {
-      d1Migrated = true;
-      return;
-    }
-    throw error;
-  }
-}
-
 export async function handleHttpRequest(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  await ensureD1Migration(env.DB);
-
   const url = new URL(request.url);
   const method = request.method;
 
@@ -175,10 +151,20 @@ export async function handleHttpRequest(
       nonce: string;
       message: string;
       expires_at: string;
-      issued_at: number;
+      issued_at: number | null;
     } | null;
 
     if (!challenge) return errorResponse('Invalid or expired challenge', 401);
+    if (challenge.issued_at == null) {
+      // Pre-migration challenge row; force client to restart auth
+      await env.DB.prepare('DELETE FROM auth_challenges WHERE challenge_id = ?')
+        .bind(challengeId)
+        .run();
+      return errorResponse(
+        'Challenge outdated. Please request a new one.',
+        401,
+      );
+    }
     if (new Date(challenge.expires_at) < new Date()) {
       await env.DB.prepare('DELETE FROM auth_challenges WHERE challenge_id = ?')
         .bind(challengeId)
