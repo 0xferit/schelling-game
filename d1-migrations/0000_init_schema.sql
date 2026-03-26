@@ -1,6 +1,6 @@
--- Full D1 schema for Schelling Game.
--- Mirrors src/db.ts:initSchema() plus the question_ratings table
--- used only in the Worker path (src/worker.ts).
+-- Base D1 schema for Schelling Game.
+-- Together with subsequent migrations, this mirrors src/db.ts:initSchema(),
+-- plus the question_ratings table used only in the Worker path (src/worker.ts).
 
 CREATE TABLE IF NOT EXISTS accounts (
   account_id           TEXT PRIMARY KEY,

@@ -11,10 +11,14 @@ function collectMessages(
 ): Promise<Array<Record<string, unknown>>> {
   return new Promise((resolve) => {
     const messages: Array<Record<string, unknown>> = [];
-    ws.addEventListener('message', (evt) => {
+    const handler = (evt: MessageEvent) => {
       messages.push(JSON.parse(evt.data as string));
-    });
-    setTimeout(() => resolve(messages), timeoutMs);
+    };
+    ws.addEventListener('message', handler);
+    setTimeout(() => {
+      ws.removeEventListener('message', handler);
+      resolve(messages);
+    }, timeoutMs);
   });
 }
 
@@ -25,18 +29,20 @@ function waitForMessage(
   timeoutMs = 3000,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Timed out waiting for "${type}"`)),
-      timeoutMs,
-    );
-    ws.addEventListener('message', function handler(evt) {
+    let handler!: (evt: MessageEvent) => void;
+    const timer = setTimeout(() => {
+      ws.removeEventListener('message', handler);
+      reject(new Error(`Timed out waiting for "${type}"`));
+    }, timeoutMs);
+    handler = (evt: MessageEvent) => {
       const msg = JSON.parse(evt.data as string);
       if (msg.type === type) {
         clearTimeout(timer);
         ws.removeEventListener('message', handler);
         resolve(msg);
       }
-    });
+    };
+    ws.addEventListener('message', handler);
   });
 }
 
