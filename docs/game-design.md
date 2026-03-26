@@ -32,7 +32,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 - Every match lasts `10` rounds unless it ends early under the rule in section 4.
 - Every round uses one `select` question from the canonical public question pool.
 - Questions are used without replacement inside a match.
-- Phase timings are fixed:
+- Phase timings are fixed (source of truth: `src/domain/constants.ts`):
   - commit: `60` seconds
   - reveal: `15` seconds
   - results: `20` seconds
