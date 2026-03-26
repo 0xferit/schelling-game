@@ -39,10 +39,26 @@ function escapeCsvField(value: unknown): string {
   return s;
 }
 
+let d1Migrated = false;
+
+async function ensureD1Migration(db: D1Database): Promise<void> {
+  if (d1Migrated) return;
+  try {
+    await db
+      .prepare('ALTER TABLE auth_challenges ADD COLUMN issued_at INTEGER')
+      .run();
+  } catch {
+    // Column already exists; ignore
+  }
+  d1Migrated = true;
+}
+
 export async function handleHttpRequest(
   request: Request,
   env: Env,
 ): Promise<Response> {
+  await ensureD1Migration(env.DB);
+
   const url = new URL(request.url);
   const method = request.method;
 
