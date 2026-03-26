@@ -111,7 +111,9 @@ export function checkpointMatch(
   sql: SqlStorage,
   match: CheckpointableMatch,
 ): void {
-  sql.exec('BEGIN');
+  // DO storage auto-coalesces writes within a single JS turn, so explicit
+  // transactions are unnecessary. Durable Objects forbid raw BEGIN/COMMIT
+  // statements; use the JS transactionSync() API if atomicity is needed.
   try {
     sql.exec(
       `DELETE FROM player_checkpoints WHERE match_id = ?`,
@@ -150,11 +152,7 @@ export function checkpointMatch(
         p.disconnectedAt,
       );
     }
-    sql.exec('COMMIT');
   } catch (err) {
-    try {
-      sql.exec('ROLLBACK');
-    } catch {}
     console.error('DO storage: checkpoint failed for', match.matchId, err);
   }
 }

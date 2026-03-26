@@ -27,3 +27,6 @@ jobs:
 
       - name: Tests
         run: npm test
+
+      - name: Worker tests
+        run: npm run test:worker

@@ -4,5 +4,5 @@
     "types": ["node"]
   },
   "include": ["server.ts", "src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["src/worker.ts", "src/worker/**/*.ts"]
+  "exclude": ["src/worker.ts", "src/worker/**/*.ts", "test/worker/**/*.ts"]
 }
