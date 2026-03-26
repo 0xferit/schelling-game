@@ -54,6 +54,13 @@ nav{display:flex;gap:.5rem}
 #name-section input{flex:1}
 .auth-divider{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.15em;padding:.25rem 0}
 .guest-note{font-size:.75rem;color:var(--muted);line-height:1.4}
+#import-section{display:flex;flex-direction:column;gap:.5rem}
+#import-section .row{display:flex;gap:.5rem}
+#import-section input{flex:1;font-size:.8rem}
+#seed-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200}
+#seed-overlay .seed-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;max-width:420px;width:90%;display:flex;flex-direction:column;gap:.75rem}
+#seed-overlay .seed-phrase{font-family:monospace;font-size:.85rem;line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;word-break:break-word;user-select:all;color:var(--text)}
+#seed-overlay .seed-warn{font-size:.75rem;color:var(--muted);line-height:1.4}
 /* Queue */
 #queue-view .card{max-width:520px;margin:0 auto}
 #queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
@@ -165,6 +172,7 @@ nav{display:flex;gap:.5rem}
     <div id="header-profile" class="hidden">
       <span class="name" id="header-name"></span>
       <span class="bal" id="header-balance"></span>
+      <button class="btn-ghost hidden" id="export-key-btn" title="Export seed phrase">Backup</button>
       <button class="btn-ghost" id="logout-btn" title="Log out">✕</button>
     </div>
     <nav>
@@ -182,6 +190,14 @@ nav{display:flex;gap:.5rem}
       <div class="auth-divider">or</div>
       <button class="btn-ghost" id="guest-wallet-btn">Play as Guest</button>
       <p class="guest-note">Your identity is stored in this browser. Clearing site data will reset it.</p>
+      <div id="import-section" class="hidden">
+        <label>Paste your seed phrase or private key</label>
+        <div class="row">
+          <input id="import-input" type="text" placeholder="e.g. abandon ability able ..." autocomplete="off"/>
+          <button class="btn-primary" id="import-btn">Import</button>
+        </div>
+      </div>
+      <button class="btn-ghost" id="show-import-btn">Import Existing Wallet</button>
       <div id="name-section" class="hidden">
         <label>Claim your display name (1-20 chars, A-Z 0-9 _ -)</label>
         <div class="row">
@@ -322,6 +338,17 @@ nav{display:flex;gap:.5rem}
 </footer>
 
 <div id="notif"></div>
+<div id="seed-overlay" class="hidden">
+  <div class="seed-card">
+    <h3 style="margin:0">Your Seed Phrase</h3>
+    <p class="seed-warn">Write these words down and store them somewhere safe. Anyone with this phrase can access your account.</p>
+    <div class="seed-phrase" id="seed-phrase-text"></div>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-primary" id="copy-seed-btn">Copy</button>
+      <button class="btn-ghost" id="close-seed-btn">Close</button>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════
@@ -377,19 +404,46 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ── Guest wallet ─────────────────────────────────────────────────
+const GUEST_KEY = 'schelling_guest_pk';
+
 function getOrCreateGuestWallet() {
   try {
-    const stored = localStorage.getItem('schelling_guest_pk');
+    const stored = localStorage.getItem(GUEST_KEY);
     if (stored) {
-      try { return new ethers.Wallet(stored); }
-      catch (_) { localStorage.removeItem('schelling_guest_pk'); }
+      try {
+        // Mnemonic (space-separated words) or raw private key (0x hex)
+        if (stored.includes(' ')) return ethers.Wallet.fromPhrase(stored);
+        return new ethers.Wallet(stored);
+      } catch (_) { localStorage.removeItem(GUEST_KEY); }
     }
     const wallet = ethers.Wallet.createRandom();
-    localStorage.setItem('schelling_guest_pk', wallet.privateKey);
+    localStorage.setItem(GUEST_KEY, wallet.mnemonic.phrase);
     return wallet;
   } catch (_) {
     throw new Error('Guest play requires browser storage to be enabled.');
   }
+}
+
+function importGuestWallet(input) {
+  const trimmed = input.trim();
+  try {
+    const wallet = trimmed.includes(' ')
+      ? ethers.Wallet.fromPhrase(trimmed)
+      : new ethers.Wallet(trimmed);
+    localStorage.setItem(GUEST_KEY, trimmed.includes(' ') ? trimmed : wallet.privateKey);
+    return wallet;
+  } catch (_) {
+    throw new Error('Invalid seed phrase or private key.');
+  }
+}
+
+function getGuestMnemonic() {
+  try {
+    const stored = localStorage.getItem(GUEST_KEY);
+    if (stored && stored.includes(' ')) return stored;
+    // Legacy private key: no mnemonic available
+    return null;
+  } catch (_) { return null; }
 }
 
 // ── Notifications ───────────────────────────────────────────────
@@ -412,6 +466,7 @@ function showView(name) {
     $('#header-profile').classList.remove('hidden');
     $('#header-name').textContent = S.displayName + (S.isGuestWallet ? ' (guest)' : '');
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
+    $('#export-key-btn').classList.toggle('hidden', !S.isGuestWallet);
   }
 
   // nav visibility
@@ -463,6 +518,8 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
     $('#guest-wallet-btn').classList.add('hidden');
     $('.auth-divider').classList.add('hidden');
     $('.guest-note').classList.add('hidden');
+    $('#show-import-btn').classList.add('hidden');
+    $('#import-section').classList.add('hidden');
   } else {
     S.displayName = result.displayName;
     onAuthComplete();
@@ -521,6 +578,50 @@ $('#claim-name-btn').addEventListener('click', async () => {
   }
 });
 
+$('#show-import-btn').addEventListener('click', () => {
+  $('#import-section').classList.toggle('hidden');
+});
+
+$('#import-btn').addEventListener('click', async () => {
+  const status = $('#auth-status');
+  const input = $('#import-input').value;
+  if (!input.trim()) { status.textContent = 'Please enter a seed phrase or private key.'; return; }
+  try {
+    status.textContent = 'Importing wallet...';
+    const wallet = importGuestWallet(input);
+    await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
+      signingMsg: 'Signing challenge...',
+      successMsg: 'Wallet imported.',
+      isGuest: true,
+    });
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+  }
+});
+
+$('#export-key-btn').addEventListener('click', () => {
+  const mnemonic = getGuestMnemonic();
+  if (!mnemonic) {
+    notify('No seed phrase available. This wallet was created with an older version.', 'warn');
+    return;
+  }
+  $('#seed-phrase-text').textContent = mnemonic;
+  $('#seed-overlay').classList.remove('hidden');
+});
+
+$('#copy-seed-btn').addEventListener('click', () => {
+  const text = $('#seed-phrase-text').textContent;
+  navigator.clipboard.writeText(text).then(
+    () => notify('Seed phrase copied to clipboard.', 'success'),
+    () => notify('Failed to copy. Please select and copy manually.', 'error')
+  );
+});
+
+$('#close-seed-btn').addEventListener('click', () => {
+  $('#seed-overlay').classList.add('hidden');
+  $('#seed-phrase-text').textContent = '';
+});
+
 function onAuthComplete() {
   connectWebSocket();
   showView('queue');
@@ -542,7 +643,10 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#guest-wallet-btn').classList.remove('hidden');
   $('.auth-divider').classList.remove('hidden');
   $('.guest-note').classList.remove('hidden');
+  $('#show-import-btn').classList.remove('hidden');
   $('#name-section').classList.add('hidden');
+  $('#import-section').classList.add('hidden');
+  $('#seed-overlay').classList.add('hidden');
   $('#auth-status').textContent = 'Sign in with your Ethereum wallet or play as a guest.';
   showView('auth');
 });
@@ -557,15 +661,17 @@ async function checkSession() {
     S.autoRequeue = me.autoRequeue;
     // Detect if this session belongs to a guest wallet
     try {
-      const storedPk = localStorage.getItem('schelling_guest_pk');
-      if (storedPk) {
-        const gw = new ethers.Wallet(storedPk);
+      const stored = localStorage.getItem(GUEST_KEY);
+      if (stored) {
+        const gw = stored.includes(' ')
+          ? ethers.Wallet.fromPhrase(stored)
+          : new ethers.Wallet(stored);
         if (gw.address.toLowerCase() === me.accountId.toLowerCase()) {
           S.isGuestWallet = true;
         }
       }
     } catch (_) {
-      try { localStorage.removeItem('schelling_guest_pk'); } catch (_e) {}
+      try { localStorage.removeItem(GUEST_KEY); } catch (_e) {}
     }
     if (S.displayName) {
       onAuthComplete();
