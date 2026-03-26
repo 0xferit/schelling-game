@@ -12,6 +12,7 @@ class_name = "GameRoom"
 binding = "DB"
 database_name = "schelling-game-db"
 database_id = "ccf25d5a-0c4e-4520-9e08-e3f2a02b78d1"
+migrations_dir = "d1-migrations"
 
 [assets]
 directory = "./public"

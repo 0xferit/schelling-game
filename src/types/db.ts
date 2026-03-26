@@ -29,6 +29,7 @@ export interface AuthChallengeRow {
   message: string;
   nonce: string;
   expires_at: string;
+  issued_at: number;
   used: number; // 0 | 1
 }
 
@@ -111,6 +112,7 @@ export interface CreateChallengeParams {
   message: string;
   nonce: string;
   expiresAt: string;
+  issuedAt: number;
 }
 
 export interface CreateMatchParams {
