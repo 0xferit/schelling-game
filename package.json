@@ -7,6 +7,7 @@
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "test": "tsx test/test.ts",
+    "test:worker": "vitest run --config vitest.config.worker.ts",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
@@ -35,11 +36,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.9",
+    "@cloudflare/vitest-pool-workers": "^0.13.4",
     "@cloudflare/workers-types": "^4.20260317.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
   }
 }
