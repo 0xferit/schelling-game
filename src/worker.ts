@@ -68,7 +68,7 @@ interface WorkerMatchState {
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
-  /** Transient cache of the last round_result payload for reconnect replay. Not checkpointed. */
+  /** Cached last round_result payload for reconnect replay during results phase. Checkpointed. */
   lastRoundResult: RoundResultMessage['result'] | null;
 }
 
@@ -759,9 +759,7 @@ export class GameRoom {
       }
     }
 
-    this._checkpointMatch(match);
-
-    // Cache round result for reconnect replay (transient; not checkpointed)
+    // Build round result payload for broadcast and reconnect replay
     const roundResultPayload: RoundResultMessage['result'] = {
       roundNum: match.currentRound,
       voided: result.voided,
@@ -787,6 +785,9 @@ export class GameRoom {
       })),
     };
     match.lastRoundResult = roundResultPayload;
+
+    // Checkpoint after setting lastRoundResult so it survives DO eviction
+    this._checkpointMatch(match);
 
     // Broadcast round_result
     this._broadcastToMatch(match, {
@@ -1434,7 +1435,7 @@ export class GameRoom {
         commitTimer: null,
         revealTimer: null,
         resultsTimer: null,
-        lastRoundResult: null,
+        lastRoundResult: rm.lastRoundResult,
       });
     }
   }
