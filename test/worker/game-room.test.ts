@@ -169,4 +169,61 @@ describe('GameRoom Durable Object', () => {
     p2.ws.close();
     p3.ws.close();
   });
+
+  it('reconnect after commit replays round_start with yourCommitted flag', {
+    timeout: 35_000,
+  }, async () => {
+    // Form a match with 3 players (wallet indices 3/4/8 to avoid collisions)
+    const p1 = await connectPlayer(3, 'Reconnector');
+    const p2 = await connectPlayer(4, 'Bystander1');
+    const p3 = await connectPlayer(8, 'Bystander2');
+
+    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+
+    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+
+    // Listen for round_start before awaiting game_started to avoid missing
+    // back-to-back messages from the server.
+    const p1RoundStart = waitForMessage(p1.ws, 'round_start', 28_000);
+
+    const [gs1] = await Promise.all([p1Started, p2Started, p3Started]);
+    const originalMatchId = gs1.matchId;
+    expect(originalMatchId).toBeTruthy();
+
+    const roundStart = await p1RoundStart;
+    expect(roundStart.phase).toBe('commit');
+
+    // Player 1 commits a hash.
+    // Set up listener before sending to avoid race with fast DO reply.
+    const fakeHash =
+      'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+    const commitStatus = waitForMessage(p1.ws, 'commit_status', 3000);
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: fakeHash }));
+    await commitStatus;
+
+    // Disconnect player 1
+    p1.ws.close();
+
+    // Reconnect the same wallet (same accountId).
+    // Register both listeners immediately after connectPlayer returns
+    // (before any await) so queued replay messages can't dispatch first.
+    const p1r = await connectPlayer(3, 'Reconnector');
+    const reconnectGameStartedP = waitForMessage(p1r.ws, 'game_started', 3000);
+    const reconnectRoundStartP = waitForMessage(p1r.ws, 'round_start', 3000);
+
+    const reconnectGameStarted = await reconnectGameStartedP;
+    expect(reconnectGameStarted.matchId).toBe(originalMatchId);
+
+    const reconnectRoundStart = await reconnectRoundStartP;
+    expect(reconnectRoundStart.yourCommitted).toBe(true);
+    expect(reconnectRoundStart.yourRevealed).toBe(false);
+
+    p1r.ws.close();
+    p2.ws.close();
+    p3.ws.close();
+  });
 });

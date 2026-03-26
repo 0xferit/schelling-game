@@ -1537,6 +1537,8 @@ export class GameRoom {
           match.phase === 'commit' ? commitRemaining : COMMIT_DURATION,
         roundAnte: ROUND_ANTE,
         phase: match.phase,
+        yourCommitted: player.committed,
+        yourRevealed: player.revealed,
       });
 
       if (match.phase === 'reveal' || match.phase === 'results') {

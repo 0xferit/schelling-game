@@ -39,7 +39,11 @@ export interface RoundStartMessage {
   question: Question;
   commitDuration: number;
   roundAnte: number;
-  phase: 'commit';
+  phase: 'commit' | 'reveal' | 'results';
+  /** Sent on reconnect: whether this player already committed this round */
+  yourCommitted?: boolean;
+  /** Sent on reconnect: whether this player already revealed this round */
+  yourRevealed?: boolean;
 }
 
 export interface PhaseChangeMessage {
