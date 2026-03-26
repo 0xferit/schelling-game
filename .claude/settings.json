@@ -10,7 +10,7 @@
           },
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; npx biome check --write \"$f\"; } 2>/dev/null || true"
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; npx @biomejs/biome check --write \"$f\"; } 2>/dev/null || true"
           }
         ]
       },

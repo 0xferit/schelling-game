@@ -443,7 +443,9 @@ function getPlayerRank(accountId: string): PlayerRankEntry | null {
     JOIN player_stats s ON a.account_id = s.account_id
     WHERE a.account_id = ?
   `)
-    .get(accountId) as Omit<PlayerRankEntry, 'provisional' | 'rank'> | undefined;
+    .get(accountId) as
+    | Omit<PlayerRankEntry, 'provisional' | 'rank'>
+    | undefined;
 
   if (!row) return null;
 
