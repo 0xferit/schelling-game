@@ -98,8 +98,15 @@ export function initCheckpointTables(sql: SqlStorage): void {
     sql.exec(
       'ALTER TABLE match_checkpoints ADD COLUMN last_round_result_json TEXT',
     );
-  } catch (_) {
-    // Column already exists; ignore.
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      /duplicate column|already exists/i.test(err.message || '')
+    ) {
+      // Column already exists; safe to ignore.
+    } else {
+      throw err;
+    }
   }
 
   sql.exec(`

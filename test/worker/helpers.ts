@@ -5,7 +5,7 @@ import {
 } from '../../src/worker/session';
 
 // Deterministic test wallets derived from sequential private keys.
-// Keys 1-12 give distinct addresses; key 0 is invalid for secp256k1.
+// 13 distinct keys (indices 0-12); key 0 is invalid for secp256k1.
 const TEST_KEYS = [
   '0x0000000000000000000000000000000000000000000000000000000000000001',
   '0x0000000000000000000000000000000000000000000000000000000000000002',
