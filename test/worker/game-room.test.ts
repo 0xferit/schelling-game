@@ -186,7 +186,9 @@ describe('GameRoom Durable Object', () => {
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
     p3.ws.send(JSON.stringify({ type: 'join_queue' }));
 
-    await Promise.all([p1Started, p2Started, p3Started]);
+    const [gs1] = await Promise.all([p1Started, p2Started, p3Started]);
+    const originalMatchId = gs1.matchId;
+    expect(originalMatchId).toBeTruthy();
 
     // Wait for round_start (commit phase)
     const roundStart = await waitForMessage(p1.ws, 'round_start', 3000);
@@ -213,7 +215,7 @@ describe('GameRoom Durable Object', () => {
       'game_started',
       3000,
     );
-    expect(reconnectGameStarted.matchId).toBeTruthy();
+    expect(reconnectGameStarted.matchId).toBe(originalMatchId);
 
     const reconnectRoundStart = await waitForMessage(
       p1r.ws,

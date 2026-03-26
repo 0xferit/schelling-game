@@ -962,24 +962,39 @@ function onRoundStart(msg) {
     );
   }
 
-  // Show commit area with appropriate status
-  $('#commit-area').classList.remove('hidden');
-  $('#commit-btn').disabled = true;
-  if (msg.yourRevealed) {
-    $('#commit-status').textContent = 'Revealed. Waiting for others...';
-  } else if (alreadyCommitted) {
-    $('#commit-status').textContent = hasPreimage
-      ? 'Committed. Waiting for others...'
-      : 'Committed, but reveal key was lost (page reload). Cannot reveal this round.';
+  // Only show commit controls during commit phase; for reveal/results the
+  // subsequent phase_change message drives the UI.
+  if (msg.phase === 'commit') {
+    $('#commit-area').classList.remove('hidden');
+    $('#commit-btn').disabled = true;
+    if (alreadyCommitted) {
+      $('#commit-status').textContent = hasPreimage
+        ? 'Committed. Waiting for others...'
+        : 'Committed, but reveal key was lost (page reload). Cannot reveal this round.';
+    } else {
+      $('#commit-status').textContent = '';
+    }
+    $('#reveal-area').classList.add('hidden');
   } else {
-    $('#commit-status').textContent = '';
+    // Reconnect during reveal/results: hide both; phase_change handles UI
+    $('#commit-area').classList.add('hidden');
+    $('#reveal-area').classList.add('hidden');
+    // For reconnect during reveal when already committed+revealed, show status
+    if (msg.yourRevealed) {
+      $('#commit-area').classList.remove('hidden');
+      $('#commit-status').textContent = 'Revealed. Waiting for others...';
+    } else if (alreadyCommitted) {
+      $('#commit-area').classList.remove('hidden');
+      $('#commit-status').textContent = hasPreimage
+        ? 'Committed. Waiting for reveal phase...'
+        : 'Committed, but reveal key was lost (page reload). Cannot reveal this round.';
+    }
   }
-  $('#reveal-area').classList.add('hidden');
 
   // Timer
   startTimer(msg.commitDuration);
 
-  // Chat disabled during commit to preserve independent judgment
+  // Chat disabled during active rounds to preserve independent judgment
   enableChat(false);
 
   // Reset player dots
