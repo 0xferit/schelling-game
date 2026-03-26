@@ -192,13 +192,13 @@ describe('GameRoom Durable Object', () => {
     const roundStart = await waitForMessage(p1.ws, 'round_start', 3000);
     expect(roundStart.phase).toBe('commit');
 
-    // Player 1 commits a hash
+    // Player 1 commits a hash.
+    // Set up listener before sending to avoid race with fast DO reply.
     const fakeHash =
       'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+    const commitStatus = waitForMessage(p1.ws, 'commit_status', 3000);
     p1.ws.send(JSON.stringify({ type: 'commit', hash: fakeHash }));
-
-    // Wait for commit_status confirming the commit was accepted
-    await waitForMessage(p1.ws, 'commit_status', 3000);
+    await commitStatus;
 
     // Disconnect player 1
     p1.ws.close();
