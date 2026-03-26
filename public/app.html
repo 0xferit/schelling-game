@@ -59,7 +59,7 @@ nav{display:flex;gap:.5rem}
 #import-section input{flex:1;font-size:.8rem}
 #seed-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200}
 #seed-overlay .seed-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;max-width:420px;width:90%;display:flex;flex-direction:column;gap:.75rem}
-#seed-overlay .seed-phrase{font-family:monospace;font-size:.85rem;line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;word-break:break-word;user-select:all;color:var(--text)}
+#seed-overlay .seed-phrase{font-family:monospace;font-size:.85rem;line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;word-break:break-word;color:var(--text);resize:none;width:100%;box-sizing:border-box}
 #seed-overlay .seed-warn{font-size:.75rem;color:var(--muted);line-height:1.4}
 /* Queue */
 #queue-view .card{max-width:520px;margin:0 auto}
@@ -191,7 +191,7 @@ nav{display:flex;gap:.5rem}
       <button class="btn-ghost" id="guest-wallet-btn">Play as Guest</button>
       <p class="guest-note">Your identity is stored in this browser. Clearing site data will reset it.</p>
       <div id="import-section" class="hidden">
-        <label>Paste a seed phrase or private key for a guest/browser-only wallet.</label>
+        <label for="import-input">Paste a seed phrase or private key for a guest/browser-only wallet.</label>
         <p class="guest-note">Do not paste your main wallet recovery phrase. The key is stored in this browser's local storage.</p>
         <div class="row">
           <input id="import-input" type="text" placeholder="e.g. abandon ability able ..." autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off"/>
@@ -343,7 +343,7 @@ nav{display:flex;gap:.5rem}
   <div class="seed-card">
     <h3 id="seed-dialog-title" style="margin:0">Your Seed Phrase</h3>
     <p class="seed-warn">Write these words down and store them somewhere safe. Anyone with this phrase can access your account.</p>
-    <div class="seed-phrase" id="seed-phrase-text"></div>
+    <textarea class="seed-phrase" id="seed-phrase-text" readonly rows="3"></textarea>
     <div style="display:flex;gap:.5rem">
       <button class="btn-primary" id="copy-seed-btn">Copy</button>
       <button class="btn-ghost" id="close-seed-btn">Close</button>
@@ -616,7 +616,7 @@ $('#import-btn').addEventListener('click', async () => {
 
 function closeSeedOverlay() {
   $('#seed-overlay').classList.add('hidden');
-  $('#seed-phrase-text').textContent = '';
+  $('#seed-phrase-text').value = '';
   $('#backup-seed-btn').focus();
 }
 
@@ -626,13 +626,13 @@ $('#backup-seed-btn').addEventListener('click', () => {
     notify('No seed phrase available. This wallet was created with an older version.', 'warn');
     return;
   }
-  $('#seed-phrase-text').textContent = mnemonic;
+  $('#seed-phrase-text').value = mnemonic;
   $('#seed-overlay').classList.remove('hidden');
   $('#close-seed-btn').focus();
 });
 
 $('#copy-seed-btn').addEventListener('click', () => {
-  const text = $('#seed-phrase-text').textContent;
+  const text = $('#seed-phrase-text').value;
   if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
     notify('Failed to copy. Please select and copy manually.', 'error');
     return;
@@ -686,7 +686,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#import-section').classList.add('hidden');
   $('#show-import-btn').setAttribute('aria-expanded', 'false');
   $('#seed-overlay').classList.add('hidden');
-  $('#seed-phrase-text').textContent = '';
+  $('#seed-phrase-text').value = '';
   $('#auth-status').textContent = 'Sign in with your Ethereum wallet or play as a guest.';
   showView('auth');
 });
