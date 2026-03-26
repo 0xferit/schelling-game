@@ -1,70 +1,53 @@
-// Session token helpers (HMAC-signed, stateless)
+// Wallet-signature-based session: no server-side secret.
+// Cookie contains walletAddress:nonce:signature. Verification
+// reconstructs the challenge message and recovers the signer.
 
-let sessionSecret: string | null = null;
+import { ethers } from 'ethers';
 
-export function setSessionSecret(secret: string): void {
-  sessionSecret = secret;
+const MESSAGE_PREFIX = 'Sign this message to authenticate with Schelling Game.';
+
+function buildChallengeMessage(walletAddress: string, nonce: string): string {
+  return `${MESSAGE_PREFIX}\n\nWallet: ${walletAddress}\nNonce: ${nonce}`;
 }
 
-function getSecret(): string {
-  if (!sessionSecret) {
-    throw new Error(
-      'SESSION_SECRET not configured. Set it as a Wrangler secret.',
-    );
+export function createSessionCookie(
+  walletAddress: string,
+  nonce: string,
+  signature: string,
+): string {
+  return `${walletAddress}:${nonce}:${signature}`;
+}
+
+export function verifySessionCookie(cookie: string | undefined): string | null {
+  if (!cookie) return null;
+
+  // Format: walletAddress:nonce:signature
+  // Signature is 0x-prefixed and contains colons-worth of hex, so split carefully.
+  // walletAddress is 42 chars (0x + 40 hex), nonce is a UUID (36 chars),
+  // signature is the rest.
+  const firstColon = cookie.indexOf(':');
+  if (firstColon === -1) return null;
+  const secondColon = cookie.indexOf(':', firstColon + 1);
+  if (secondColon === -1) return null;
+
+  const walletAddress = cookie.slice(0, firstColon);
+  const nonce = cookie.slice(firstColon + 1, secondColon);
+  const signature = cookie.slice(secondColon + 1);
+
+  if (!walletAddress || !nonce || !signature) return null;
+
+  const message = buildChallengeMessage(walletAddress, nonce);
+
+  try {
+    const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+    if (recovered === walletAddress.toLowerCase()) {
+      return walletAddress.toLowerCase();
+    }
+  } catch {
+    // Invalid signature format
   }
-  return sessionSecret;
-}
 
-export async function createSessionToken(accountId: string): Promise<string> {
-  const payload = `${accountId}:${Date.now()}`;
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(getSecret()),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sigBuf = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    new TextEncoder().encode(payload),
-  );
-  const sig = [...new Uint8Array(sigBuf)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return `${payload}:${sig}`;
-}
-
-export async function verifySessionToken(
-  token: string | undefined,
-): Promise<string | null> {
-  if (!token) return null;
-  const parts = token.split(':');
-  if (parts.length < 3) return null;
-  const sig = parts.pop()!;
-  const payload = parts.join(':');
-
-  // Validate signature is non-empty even-length hex
-  if (!sig || sig.length % 2 !== 0 || !/^[0-9a-f]+$/.test(sig)) return null;
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(getSecret()),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify'],
-  );
-  const sigBuf = new Uint8Array(
-    (sig.match(/.{2}/g) ?? []).map((h) => parseInt(h, 16)),
-  );
-  const valid = await crypto.subtle.verify(
-    'HMAC',
-    key,
-    sigBuf,
-    new TextEncoder().encode(payload),
-  );
-  if (!valid) return null;
-  return parts[0] ?? null;
+  return null;
 }
 
 export function parseCookies(
@@ -79,9 +62,9 @@ export function parseCookies(
   return cookies;
 }
 
-export async function getAuthenticatedAccountId(
-  request: Request,
-): Promise<string | null> {
+export function getAuthenticatedAccountId(request: Request): string | null {
   const cookies = parseCookies(request.headers.get('Cookie'));
-  return verifySessionToken(cookies.session);
+  return verifySessionCookie(cookies.session);
 }
+
+export { buildChallengeMessage, MESSAGE_PREFIX };

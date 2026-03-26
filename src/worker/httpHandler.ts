@@ -1,11 +1,11 @@
 import { ethers } from 'ethers';
 import type { Env } from '../types/worker-env';
 import {
-  createSessionToken,
+  createSessionCookie,
   getAuthenticatedAccountId,
+  MESSAGE_PREFIX,
   parseCookies,
-  setSessionSecret,
-  verifySessionToken,
+  verifySessionCookie,
 } from './session';
 
 const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
@@ -43,16 +43,13 @@ export async function handleHttpRequest(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  // Configure session secret from environment (required)
-  if (env.SESSION_SECRET) setSessionSecret(env.SESSION_SECRET);
-
   const url = new URL(request.url);
   const method = request.method;
 
   // ---- WebSocket upgrade: /ws ----
   if (url.pathname === '/ws') {
     const cookies = parseCookies(request.headers.get('Cookie'));
-    const accountId = await verifySessionToken(cookies.session);
+    const accountId = verifySessionCookie(cookies.session);
     if (!accountId) return new Response('Unauthorized', { status: 401 });
 
     const account = (await env.DB.prepare(
@@ -112,7 +109,7 @@ export async function handleHttpRequest(
     const challengeId = `ch_${crypto.randomUUID()}`;
     const nonce = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const message = `Sign this message to authenticate with Schelling Game.\n\nWallet: ${normalized}\nNonce: ${nonce}`;
+    const message = `${MESSAGE_PREFIX}\n\nWallet: ${normalized}\nNonce: ${nonce}`;
 
     await env.DB.prepare(
       'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
@@ -214,7 +211,7 @@ export async function handleHttpRequest(
       longest_streak: number;
     } | null;
 
-    const token = await createSessionToken(normalized);
+    const token = createSessionCookie(normalized, challenge.nonce, signature);
     const requiresDisplayName = !account!.display_name;
 
     return jsonResponse(
