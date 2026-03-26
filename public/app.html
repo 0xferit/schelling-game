@@ -736,6 +736,17 @@ async function checkSession() {
     }
     if (S.displayName) {
       onAuthComplete();
+    } else {
+      $('#auth-status').textContent = 'Welcome back! Please claim a display name.';
+      $('#name-section').classList.remove('hidden');
+      $('#connect-wallet-btn').classList.add('hidden');
+      $('#browser-wallet-btn').classList.add('hidden');
+      $('.auth-divider').classList.add('hidden');
+      $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
+      $('#show-import-btn').classList.add('hidden');
+      $('#import-section').classList.add('hidden');
+      $('#show-import-btn').setAttribute('aria-expanded', 'false');
+      $('#import-input').value = '';
     }
   } catch (_) {
     // not logged in; check if wallet is available
