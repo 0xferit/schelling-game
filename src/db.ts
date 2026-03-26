@@ -113,6 +113,14 @@ function initSchema(): void {
       created_at    TEXT DEFAULT (datetime('now'))
     );
   `);
+
+  // Migrate existing local DBs that lack the issued_at column
+  const columns = db!.prepare("PRAGMA table_info('auth_challenges')").all() as {
+    name: string;
+  }[];
+  if (!columns.some((c) => c.name === 'issued_at')) {
+    db!.exec('ALTER TABLE auth_challenges ADD COLUMN issued_at INTEGER');
+  }
 }
 
 // ---------------------------------------------------------------------------

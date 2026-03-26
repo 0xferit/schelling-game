@@ -59,6 +59,9 @@ export function verifySessionCookie(cookie: string | undefined): string | null {
   // Validate server-side expiry (single Date.now() call, with clock skew leeway)
   const issuedAt = Number(issuedAtStr);
   if (Number.isNaN(issuedAt)) return null;
+  // Reject non-canonical representations (e.g. "01711411200000", "1e12")
+  // so the cookie string matches exactly what buildChallengeMessage produces.
+  if (String(issuedAt) !== issuedAtStr) return null;
   const now = Date.now();
   if (issuedAt > now + CLOCK_SKEW_MS) return null;
   if (now - issuedAt > SESSION_MAX_AGE_MS) return null;
