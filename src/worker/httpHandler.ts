@@ -1,9 +1,9 @@
 import { ethers } from 'ethers';
 import type { Env } from '../types/worker-env';
 import {
+  buildChallengeMessage,
   createSessionCookie,
   getAuthenticatedAccountId,
-  MESSAGE_PREFIX,
   parseCookies,
   verifySessionCookie,
 } from './session';
@@ -109,7 +109,7 @@ export async function handleHttpRequest(
     const challengeId = `ch_${crypto.randomUUID()}`;
     const nonce = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const message = `${MESSAGE_PREFIX}\n\nWallet: ${normalized}\nNonce: ${nonce}`;
+    const message = buildChallengeMessage(normalized, nonce);
 
     await env.DB.prepare(
       'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
