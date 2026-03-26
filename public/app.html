@@ -53,7 +53,7 @@ nav{display:flex;gap:.5rem}
 #name-section .row{display:flex;gap:.5rem}
 #name-section input{flex:1}
 .auth-divider{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.15em;padding:.25rem 0}
-.guest-note{font-size:.75rem;color:var(--muted);line-height:1.4}
+.browser-wallet-note{font-size:.75rem;color:var(--muted);line-height:1.4}
 #import-section{display:flex;flex-direction:column;gap:.5rem}
 #import-section .row{display:flex;gap:.5rem}
 #import-section input{flex:1;font-size:.8rem}
@@ -184,20 +184,20 @@ nav{display:flex;gap:.5rem}
   <!-- ── AUTH ──────────────────────────────────────────────────── -->
   <div id="auth-view" class="view active">
     <div class="card">
-      <h2>Connect Wallet</h2>
-      <p id="auth-status">Sign in with your Ethereum wallet or play as a guest.</p>
-      <button class="btn-primary" id="connect-wallet-btn">Connect Ethereum Wallet</button>
-      <div class="auth-divider">or</div>
-      <button class="btn-ghost" id="guest-wallet-btn">Play as Guest</button>
-      <p class="guest-note">Your identity is stored in this browser. Clearing site data will reset it.</p>
+      <h2>Sign In</h2>
+      <p id="auth-status">Choose how to identify yourself.</p>
+      <button class="btn-primary" id="browser-wallet-btn">Quick Start</button>
+      <p class="browser-wallet-note">Creates a wallet in this browser. Clearing site data will erase it.</p>
       <div id="import-section" class="hidden">
-        <label for="import-input">Paste a seed phrase or private key for a guest/browser-only wallet.</label>
-        <p class="guest-note">Do not paste your main wallet recovery phrase. The key is stored in this browser's local storage.</p>
+        <label for="import-input">Paste a seed phrase or private key for a browser-only wallet.</label>
+        <p class="browser-wallet-note">Do not paste your main wallet recovery phrase. The key is stored in this browser's local storage.</p>
         <div class="row">
           <input id="import-input" type="text" placeholder="e.g. abandon ability able ..." autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off"/>
           <button class="btn-primary" id="import-btn">Import</button>
         </div>
       </div>
+      <div class="auth-divider">or</div>
+      <button class="btn-ghost" id="connect-wallet-btn">Connect External Wallet</button>
       <button class="btn-ghost" id="show-import-btn">Import Existing Wallet</button>
       <div id="name-section" class="hidden">
         <label>Claim your display name (1-20 chars, A-Z 0-9 _ -)</label>
@@ -362,7 +362,7 @@ nav{display:flex;gap:.5rem}
 // ── State ───────────────────────────────────────────────────────
 const S = {
   view: 'auth',
-  isGuestWallet: false,
+  isBrowserWallet: false,
   walletAddress: null,
   accountId: null,
   displayName: null,
@@ -404,18 +404,20 @@ const S = {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-// ── Guest wallet ─────────────────────────────────────────────────
-const GUEST_KEY = 'schelling_guest_secret';
-// Migrate from legacy key name on startup (v1 stored only private keys)
-(function migrateGuestKey() {
+// ── Browser wallet ───────────────────────────────────────────────
+const BROWSER_KEY = 'schelling_browser_secret';
+// Migrate from legacy key names on startup
+(function migrateBrowserKey() {
   try {
-    if (!localStorage.getItem(GUEST_KEY)) {
-      const legacy = localStorage.getItem('schelling_guest_pk');
+    if (!localStorage.getItem(BROWSER_KEY)) {
+      const legacy = localStorage.getItem('schelling_guest_secret')
+        || localStorage.getItem('schelling_guest_pk');
       if (legacy) {
-        localStorage.setItem(GUEST_KEY, legacy);
-        localStorage.removeItem('schelling_guest_pk');
+        localStorage.setItem(BROWSER_KEY, legacy);
       }
     }
+    localStorage.removeItem('schelling_guest_secret');
+    localStorage.removeItem('schelling_guest_pk');
   } catch (_) {}
 })();
 
@@ -425,22 +427,22 @@ function walletFromSecret(secret) {
   return /\s/.test(trimmed) ? ethers.Wallet.fromPhrase(trimmed) : new ethers.Wallet(trimmed);
 }
 
-function getOrCreateGuestWallet() {
+function getOrCreateBrowserWallet() {
   try {
-    const stored = localStorage.getItem(GUEST_KEY);
+    const stored = localStorage.getItem(BROWSER_KEY);
     if (stored) {
       try { return walletFromSecret(stored); }
-      catch (_) { localStorage.removeItem(GUEST_KEY); }
+      catch (_) { localStorage.removeItem(BROWSER_KEY); }
     }
     const wallet = ethers.Wallet.createRandom();
-    localStorage.setItem(GUEST_KEY, wallet.mnemonic.phrase);
+    localStorage.setItem(BROWSER_KEY, wallet.mnemonic.phrase);
     return wallet;
   } catch (_) {
-    throw new Error('Guest play requires browser storage to be enabled.');
+    throw new Error('Browser wallet requires storage to be enabled.');
   }
 }
 
-function parseGuestWallet(input) {
+function parseBrowserWallet(input) {
   try {
     const wallet = walletFromSecret(input);
     const trimmed = input.trim();
@@ -451,9 +453,9 @@ function parseGuestWallet(input) {
   }
 }
 
-function getGuestMnemonic() {
+function getBrowserMnemonic() {
   try {
-    const stored = localStorage.getItem(GUEST_KEY);
+    const stored = localStorage.getItem(BROWSER_KEY);
     if (!stored) return null;
     const trimmed = stored.trim();
     return /\s/.test(trimmed) ? trimmed : null;
@@ -478,9 +480,9 @@ function showView(name) {
   // header profile
   if (S.displayName) {
     $('#header-profile').classList.remove('hidden');
-    $('#header-name').textContent = S.displayName + (S.isGuestWallet ? ' (guest)' : '');
+    $('#header-name').textContent = S.displayName;
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
-    $('#backup-seed-btn').classList.toggle('hidden', !S.isGuestWallet);
+    $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
   }
 
   // nav visibility
@@ -504,7 +506,7 @@ async function api(method, path, body) {
 // ═══════════════════════════════════════════════════════════════
 //  AUTH VIEW
 // ═══════════════════════════════════════════════════════════════
-async function authenticateWithWallet(address, signFn, { signingMsg, successMsg, isGuest }) {
+async function authenticateWithWallet(address, signFn, { signingMsg, successMsg, isBrowserWallet }) {
   const status = $('#auth-status');
 
   status.textContent = 'Requesting challenge...';
@@ -523,15 +525,15 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
   S.walletAddress = address;
   S.accountId = result.accountId;
   S.tokenBalance = result.tokenBalance;
-  S.isGuestWallet = isGuest;
+  S.isBrowserWallet = isBrowserWallet;
 
   if (result.requiresDisplayName) {
     status.textContent = successMsg + ' Please claim a display name.';
     $('#name-section').classList.remove('hidden');
     $('#connect-wallet-btn').classList.add('hidden');
-    $('#guest-wallet-btn').classList.add('hidden');
+    $('#browser-wallet-btn').classList.add('hidden');
     $('.auth-divider').classList.add('hidden');
-    $$('.guest-note').forEach(el => el.classList.add('hidden'));
+    $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
     $('#show-import-btn').classList.add('hidden');
     $('#import-section').classList.add('hidden');
     $('#show-import-btn').setAttribute('aria-expanded', 'false');
@@ -545,7 +547,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
 $('#connect-wallet-btn').addEventListener('click', async () => {
   const status = $('#auth-status');
   if (!window.ethereum) {
-    status.innerHTML = 'No Ethereum wallet detected. <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">Find a wallet</a> to get started.';
+    status.innerHTML = 'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">install a wallet</a>.';
     return;
   }
   try {
@@ -555,23 +557,23 @@ $('#connect-wallet-btn').addEventListener('click', async () => {
     const address = await signer.getAddress();
     await authenticateWithWallet(address, (msg) => signer.signMessage(msg), {
       signingMsg: 'Please sign the message in your wallet...',
-      successMsg: 'Wallet verified.',
-      isGuest: false,
+      successMsg: 'Signed in.',
+      isBrowserWallet: false,
     });
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
   }
 });
 
-$('#guest-wallet-btn').addEventListener('click', async () => {
+$('#browser-wallet-btn').addEventListener('click', async () => {
   const status = $('#auth-status');
   try {
-    status.textContent = 'Creating browser wallet...';
-    const wallet = getOrCreateGuestWallet();
+    status.textContent = 'Setting up your wallet...';
+    const wallet = getOrCreateBrowserWallet();
     await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
-      signingMsg: 'Signing challenge...',
-      successMsg: 'Signed in with browser wallet.',
-      isGuest: true,
+      signingMsg: 'Signing in...',
+      successMsg: 'Signed in.',
+      isBrowserWallet: true,
     });
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
@@ -608,15 +610,15 @@ $('#import-btn').addEventListener('click', async () => {
   if (!input.trim()) { status.textContent = 'Please enter a seed phrase or private key.'; return; }
   try {
     status.textContent = 'Importing wallet...';
-    const { wallet, storageValue } = parseGuestWallet(input);
+    const { wallet, storageValue } = parseBrowserWallet(input);
     await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
       signingMsg: 'Signing challenge...',
       successMsg: 'Wallet imported.',
-      isGuest: true,
+      isBrowserWallet: true,
     });
-    // Persist only after auth succeeds to avoid overwriting an existing guest identity
+    // Persist only after auth succeeds to avoid overwriting an existing browser wallet
     try {
-      localStorage.setItem(GUEST_KEY, storageValue);
+      localStorage.setItem(BROWSER_KEY, storageValue);
     } catch (_) {
       notify('Wallet imported, but failed to save locally. You may need to re-import next time.', 'warn');
     }
@@ -636,7 +638,7 @@ function closeSeedOverlay() {
 }
 
 $('#backup-seed-btn').addEventListener('click', () => {
-  const mnemonic = getGuestMnemonic();
+  const mnemonic = getBrowserMnemonic();
   if (!mnemonic) {
     notify('No seed phrase available. This wallet was stored as a private key only (for example, imported via private key or created with an older version).', 'warn');
     return;
@@ -688,15 +690,15 @@ $('#logout-btn').addEventListener('click', async () => {
   S.accountId = null;
   S.displayName = null;
   S.tokenBalance = 0;
-  S.isGuestWallet = false;
+  S.isBrowserWallet = false;
   S.inQueue = false;
   S.queuedPlayers = [];
   S.matchId = null;
   $('#header-profile').classList.add('hidden');
   $('#connect-wallet-btn').classList.remove('hidden');
-  $('#guest-wallet-btn').classList.remove('hidden');
+  $('#browser-wallet-btn').classList.remove('hidden');
   $('.auth-divider').classList.remove('hidden');
-  $$('.guest-note').forEach(el => el.classList.remove('hidden'));
+  $$('.browser-wallet-note').forEach(el => el.classList.remove('hidden'));
   $('#show-import-btn').classList.remove('hidden');
   $('#name-section').classList.add('hidden');
   $('#import-section').classList.add('hidden');
@@ -704,7 +706,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#import-input').value = '';
   $('#seed-overlay').classList.add('hidden');
   $('#seed-phrase-text').value = '';
-  $('#auth-status').textContent = 'Sign in with your Ethereum wallet or play as a guest.';
+  $('#auth-status').textContent = 'Choose how to identify yourself.';
   showView('auth');
 });
 
@@ -716,17 +718,17 @@ async function checkSession() {
     S.displayName = me.displayName;
     S.tokenBalance = me.tokenBalance;
     S.autoRequeue = me.autoRequeue;
-    // Detect if this session belongs to a guest wallet
+    // Detect if this session belongs to a browser wallet
     try {
-      const stored = localStorage.getItem(GUEST_KEY);
+      const stored = localStorage.getItem(BROWSER_KEY);
       if (stored) {
         const gw = walletFromSecret(stored);
         if (gw.address.toLowerCase() === me.accountId.toLowerCase()) {
-          S.isGuestWallet = true;
+          S.isBrowserWallet = true;
         }
       }
     } catch (_) {
-      try { localStorage.removeItem(GUEST_KEY); } catch (_e) {}
+      try { localStorage.removeItem(BROWSER_KEY); } catch (_e) {}
     }
     if (S.displayName) {
       onAuthComplete();
@@ -734,7 +736,7 @@ async function checkSession() {
   } catch (_) {
     // not logged in; check if wallet is available
     if (!window.ethereum) {
-      $('#auth-status').innerHTML = 'No Ethereum wallet detected. <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">Find a wallet</a> to get started.';
+      $('#auth-status').innerHTML = 'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">install a wallet</a>.';
     }
   }
 }
