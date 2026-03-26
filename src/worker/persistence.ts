@@ -93,20 +93,14 @@ export function initCheckpointTables(sql: SqlStorage): void {
     )
   `);
   // Migrate existing tables that lack the last_round_result_json column.
-  // ALTER TABLE ADD COLUMN is a no-op error when the column already exists.
-  try {
+  const columns = [...sql.exec('PRAGMA table_info(match_checkpoints)')];
+  const hasLastRoundResult = columns.some(
+    (c) => (c as Record<string, unknown>).name === 'last_round_result_json',
+  );
+  if (!hasLastRoundResult) {
     sql.exec(
       'ALTER TABLE match_checkpoints ADD COLUMN last_round_result_json TEXT',
     );
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      /duplicate column|already exists/i.test(err.message || '')
-    ) {
-      // Column already exists; safe to ignore.
-    } else {
-      throw err;
-    }
   }
 
   sql.exec(`
