@@ -144,6 +144,9 @@ nav{display:flex;gap:.5rem}
 #lb-table tr:last-child td{border-bottom:none}
 #lb-table tr.me td{background:rgba(201,168,76,.08);color:var(--accent)}
 #my-rank-card{margin-bottom:.75rem;background:rgba(201,168,76,.08);border-color:var(--accent)}
+#lb-table tr.provisional td.stat-metric{color:var(--muted);opacity:.55}
+#lb-table tr.provisional.me td.stat-metric{color:var(--accent);opacity:.55}
+.provisional-note{font-size:.75rem;color:var(--muted);margin-top:.3rem}
 /* Notifications */
 #notif{position:fixed;top:1rem;right:1rem;display:flex;flex-direction:column;gap:.4rem;z-index:999;pointer-events:none}
 .notif-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem 1rem;font-size:.85rem;min-width:220px;animation:slideIn .2s ease;pointer-events:auto}
@@ -1363,16 +1366,20 @@ function renderLeaderboard(entries, myRank) {
 
   entries.forEach(e => {
     const tr = document.createElement('tr');
-    if (e.displayName === S.displayName) tr.className = 'me';
+    const cls = [];
+    if (e.displayName === S.displayName) cls.push('me');
+    if (e.provisional) cls.push('provisional');
+    tr.className = cls.join(' ');
+    const tip = e.provisional ? ' title="Provisional: fewer than 5 matches played"' : '';
     tr.innerHTML = `
       <td>${e.rank}</td>
       <td>${esc(e.displayName)}</td>
       <td>${e.tokenBalance}</td>
       <td>${e.gamesPlayed}</td>
-      <td>${e.avgNetTokensPerGame !== undefined ? e.avgNetTokensPerGame.toFixed(1) : '-'}</td>
-      <td>${e.coherentPct !== undefined ? e.coherentPct + '%' : '-'}</td>
-      <td>${e.currentStreak || 0}</td>
-      <td>${e.longestStreak || 0}</td>
+      <td class="stat-metric"${tip}>${e.avgNetTokensPerGame !== undefined ? e.avgNetTokensPerGame.toFixed(1) : '-'}</td>
+      <td class="stat-metric"${tip}>${e.coherentPct !== undefined ? e.coherentPct + '%' : '-'}</td>
+      <td class="stat-metric"${tip}>${e.currentStreak || 0}</td>
+      <td class="stat-metric"${tip}>${e.longestStreak || 0}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -1381,6 +1388,10 @@ function renderLeaderboard(entries, myRank) {
   const card = $('#my-rank-card');
   if (myRank) {
     card.classList.remove('hidden');
+    const remaining = 5 - myRank.gamesPlayed;
+    const provNote = myRank.provisional
+      ? `<div class="provisional-note">Stats are provisional until ${remaining} more match${remaining === 1 ? '' : 'es'}</div>`
+      : '';
     card.innerHTML = `
       <div style="font-size:.9rem">
         Your rank: <strong>#${myRank.rank}</strong>
@@ -1388,6 +1399,7 @@ function renderLeaderboard(entries, myRank) {
         | Coordination: <strong>${myRank.coherentPct || 0}%</strong>
         | Streak: <strong>${myRank.currentStreak || 0}</strong> (best: ${myRank.longestStreak || 0})
       </div>
+      ${provNote}
     `;
   } else {
     card.classList.add('hidden');

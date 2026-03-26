@@ -572,6 +572,22 @@ console.log('\n10. Coordination Credit Rules');
 }
 
 // ---------------------------------------------------------------------------
+// 8. Provisional leaderboard threshold
+// ---------------------------------------------------------------------------
+{
+  console.log('\n8. Provisional leaderboard threshold');
+  const { MIN_ESTABLISHED_MATCHES } = await import(
+    '../src/domain/constants'
+  );
+
+  assert(MIN_ESTABLISHED_MATCHES === 5, 'threshold is 5 matches');
+  assert(4 < MIN_ESTABLISHED_MATCHES, 'gamesPlayed=4 is provisional');
+  assert(!(5 < MIN_ESTABLISHED_MATCHES), 'gamesPlayed=5 is not provisional');
+  assert(!(10 < MIN_ESTABLISHED_MATCHES), 'gamesPlayed=10 is not provisional');
+  assert(0 < MIN_ESTABLISHED_MATCHES, 'gamesPlayed=0 is provisional');
+}
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 console.log(`\nResults: ${passed} passed, ${failed} failed`);

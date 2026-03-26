@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { MIN_ESTABLISHED_MATCHES } from '../domain/constants';
 import type { Env } from '../types/worker-env';
 import {
   buildChallengeMessage,
@@ -378,6 +379,7 @@ export async function handleHttpRequest(
           coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
           currentStreak: (r.current_streak as number) || 0,
           longestStreak: (r.longest_streak as number) || 0,
+          provisional: gp < MIN_ESTABLISHED_MATCHES,
         };
       },
     );
@@ -433,6 +435,7 @@ export async function handleHttpRequest(
       coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
       currentStreak: account.current_streak || 0,
       longestStreak: account.longest_streak || 0,
+      provisional: gp < MIN_ESTABLISHED_MATCHES,
     });
   }
 
