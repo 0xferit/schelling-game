@@ -125,13 +125,14 @@ function createChallenge({
   message,
   nonce,
   expiresAt,
+  issuedAt,
 }: CreateChallengeParams): void {
   getDb()
     .prepare(`
-    INSERT INTO auth_challenges (challenge_id, wallet_address, message, nonce, expires_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO auth_challenges (challenge_id, wallet_address, message, nonce, expires_at, issued_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `)
-    .run(challengeId, walletAddress, message, nonce, expiresAt);
+    .run(challengeId, walletAddress, message, nonce, expiresAt, issuedAt);
 }
 
 function getChallenge(challengeId: string): AuthChallengeRow | null {
