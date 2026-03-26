@@ -186,12 +186,15 @@ describe('GameRoom Durable Object', () => {
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
     p3.ws.send(JSON.stringify({ type: 'join_queue' }));
 
+    // Listen for round_start before awaiting game_started to avoid missing
+    // back-to-back messages from the server.
+    const p1RoundStart = waitForMessage(p1.ws, 'round_start', 28_000);
+
     const [gs1] = await Promise.all([p1Started, p2Started, p3Started]);
     const originalMatchId = gs1.matchId;
     expect(originalMatchId).toBeTruthy();
 
-    // Wait for round_start (commit phase)
-    const roundStart = await waitForMessage(p1.ws, 'round_start', 3000);
+    const roundStart = await p1RoundStart;
     expect(roundStart.phase).toBe('commit');
 
     // Player 1 commits a hash.
@@ -205,23 +208,17 @@ describe('GameRoom Durable Object', () => {
     // Disconnect player 1
     p1.ws.close();
 
-    // Reconnect the same wallet (same accountId)
+    // Reconnect the same wallet (same accountId).
+    // Register both listeners before connecting to avoid missing
+    // back-to-back game_started + round_start from the replay.
     const p1r = await connectPlayer(3, 'Reconnector');
+    const reconnectGameStartedP = waitForMessage(p1r.ws, 'game_started', 3000);
+    const reconnectRoundStartP = waitForMessage(p1r.ws, 'round_start', 3000);
 
-    // On reconnect, server replays game_started then round_start.
-    // The replayed round_start must include yourCommitted: true.
-    const reconnectGameStarted = await waitForMessage(
-      p1r.ws,
-      'game_started',
-      3000,
-    );
+    const reconnectGameStarted = await reconnectGameStartedP;
     expect(reconnectGameStarted.matchId).toBe(originalMatchId);
 
-    const reconnectRoundStart = await waitForMessage(
-      p1r.ws,
-      'round_start',
-      3000,
-    );
+    const reconnectRoundStart = await reconnectRoundStartP;
     expect(reconnectRoundStart.yourCommitted).toBe(true);
     expect(reconnectRoundStart.yourRevealed).toBe(false);
 

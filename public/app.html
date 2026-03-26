@@ -995,6 +995,12 @@ function onRoundStart(msg) {
   // phase_change, and results phase has no countdown.
   if (msg.phase === 'commit') {
     startTimer(msg.commitDuration);
+  } else {
+    // Clear any stale timer from a previous phase
+    clearInterval(S.timerInterval);
+    $('#timer-bar').style.width = '0%';
+    $('#timer-num').textContent = '';
+    $('#timer-num').classList.remove('urgent');
   }
 
   // Chat is disabled during commit/reveal to preserve independent judgment,
@@ -1066,6 +1072,10 @@ function onPhaseChange(msg) {
       // Auto-reveal: centralized server, no reason to hold back
       wsSend({ type: 'reveal', optionIndex: S.selectedOption, salt: S.salt });
       S.revealed = true;
+      $('#commit-area').classList.remove('hidden');
+      $('#commit-status').textContent = 'Revealed. Waiting for others...';
+    } else if (S.committed && S.revealed) {
+      // Already revealed before reconnect; restore status display
       $('#commit-area').classList.remove('hidden');
       $('#commit-status').textContent = 'Revealed. Waiting for others...';
     } else if (S.committed && !S.revealed) {
