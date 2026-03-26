@@ -169,4 +169,62 @@ describe('GameRoom Durable Object', () => {
     p2.ws.close();
     p3.ws.close();
   });
+
+  it('reconnect after commit replays round_start with yourCommitted flag', {
+    timeout: 35_000,
+  }, async () => {
+    // Form a match with 3 players (wallet indices 3/4/8 to avoid collisions)
+    const p1 = await connectPlayer(3, 'Reconnector');
+    const p2 = await connectPlayer(4, 'Bystander1');
+    const p3 = await connectPlayer(8, 'Bystander2');
+
+    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+
+    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+
+    await Promise.all([p1Started, p2Started, p3Started]);
+
+    // Wait for round_start (commit phase)
+    const roundStart = await waitForMessage(p1.ws, 'round_start', 3000);
+    expect(roundStart.phase).toBe('commit');
+
+    // Player 1 commits a hash
+    const fakeHash =
+      'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: fakeHash }));
+
+    // Wait for commit_status confirming the commit was accepted
+    await waitForMessage(p1.ws, 'commit_status', 3000);
+
+    // Disconnect player 1
+    p1.ws.close();
+
+    // Reconnect the same wallet (same accountId)
+    const p1r = await connectPlayer(3, 'Reconnector');
+
+    // On reconnect, server replays game_started then round_start.
+    // The replayed round_start must include yourCommitted: true.
+    const reconnectGameStarted = await waitForMessage(
+      p1r.ws,
+      'game_started',
+      3000,
+    );
+    expect(reconnectGameStarted.matchId).toBeTruthy();
+
+    const reconnectRoundStart = await waitForMessage(
+      p1r.ws,
+      'round_start',
+      3000,
+    );
+    expect(reconnectRoundStart.yourCommitted).toBe(true);
+    expect(reconnectRoundStart.yourRevealed).toBe(false);
+
+    p1r.ws.close();
+    p2.ws.close();
+    p3.ws.close();
+  });
 });

@@ -902,25 +902,37 @@ function onGameStarted(msg) {
 }
 
 function onRoundStart(msg) {
-  // On reconnect replay, the server tells us our commit/reveal status.
-  // Preserve local preimage (selectedOption, salt, commitHash) so reveal
-  // still works after a transient WebSocket reconnect.
-  const isReconnectReplay = msg.yourCommitted && S.round === msg.round
-    && S.matchId && S.selectedOption !== null && S.salt;
+  // Detect reconnect replay with recoverable preimage.
+  // Cannot rely on S.round here: onGameStarted() resets it to 0 before
+  // this handler runs during reconnect replay. Use question.id as a
+  // stable round identifier and verify we still hold the preimage.
+  const hasLocalPreimage = S.selectedOption !== null && !!S.salt;
+  const isSameRound = S.question && S.question.id === msg.question.id;
+  const hasPreimage = !!msg.yourCommitted && isSameRound && hasLocalPreimage;
 
   S.round = msg.round;
-  S.phase = 'commit';
+  S.phase = msg.phase;
   S.question = msg.question;
 
-  if (!isReconnectReplay) {
+  if (hasPreimage) {
+    // Reconnect with preimage intact: preserve selectedOption/salt/commitHash
+    S.committed = true;
+    S.revealed = !!msg.yourRevealed;
+  } else if (msg.yourCommitted) {
+    // Server says we committed but preimage is gone (page reload, etc.).
+    // Can't reveal, but reflect the server-authoritative committed state.
+    S.selectedOption = null;
+    S.salt = null;
+    S.commitHash = null;
+    S.committed = true;
+    S.revealed = !!msg.yourRevealed;
+  } else {
+    // Fresh round start (not a reconnect)
     S.selectedOption = null;
     S.salt = null;
     S.commitHash = null;
     S.committed = false;
     S.revealed = false;
-  } else {
-    S.committed = !!msg.yourCommitted;
-    S.revealed = !!msg.yourRevealed;
   }
 
   S.commitStatuses = [];
@@ -929,26 +941,34 @@ function onRoundStart(msg) {
 
   if (S.view !== 'play') showView('play');
 
-  // UI
-  $('#phase-label').textContent = `Game ${msg.round} / 10 : Commit Phase`;
-  $('#phase-timer-label').textContent = 'Commit';
+  // UI: use server-provided phase for labels
+  const phaseLabel = msg.phase === 'reveal' ? 'Reveal Phase'
+    : msg.phase === 'results' ? 'Results Phase' : 'Commit Phase';
+  $('#phase-label').textContent = `Game ${msg.round} / 10 : ${phaseLabel}`;
+  $('#phase-timer-label').textContent = msg.phase === 'reveal' ? 'Reveal' : 'Commit';
   $('#question-text').textContent = msg.question.text;
   $('#round-result-banner').classList.add('hidden');
 
-  // Render options; disable if already committed on reconnect
-  renderOptions(msg.question.options, !!isReconnectReplay);
-  if (isReconnectReplay && S.selectedOption !== null) {
+  // Disable options if server says we already committed
+  const alreadyCommitted = !!msg.yourCommitted;
+  renderOptions(msg.question.options, alreadyCommitted);
+  if (hasPreimage && S.selectedOption !== null) {
     // Re-highlight the previously selected option
     $$('.opt-btn').forEach(b =>
       b.classList.toggle('selected', parseInt(b.dataset.idx) === S.selectedOption)
     );
   }
 
-  // Show commit, hide reveal
+  // Show commit area with appropriate status
   $('#commit-area').classList.remove('hidden');
   $('#commit-btn').disabled = true;
-  $('#commit-status').textContent = isReconnectReplay
-    ? 'Committed. Waiting for others...' : '';
+  if (alreadyCommitted) {
+    $('#commit-status').textContent = hasPreimage
+      ? 'Committed. Waiting for others...'
+      : 'Committed, but reveal key was lost (page reload). Cannot reveal this round.';
+  } else {
+    $('#commit-status').textContent = '';
+  }
   $('#reveal-area').classList.add('hidden');
 
   // Timer
@@ -1018,12 +1038,16 @@ function onPhaseChange(msg) {
     $('#phase-timer-label').textContent = 'Reveal';
     $('#commit-area').classList.add('hidden');
 
-    if (S.committed && !S.revealed) {
+    if (S.committed && !S.revealed && S.selectedOption !== null && S.salt) {
       // Auto-reveal: centralized server, no reason to hold back
       wsSend({ type: 'reveal', optionIndex: S.selectedOption, salt: S.salt });
       S.revealed = true;
       $('#commit-area').classList.remove('hidden');
       $('#commit-status').textContent = 'Revealed. Waiting for others...';
+    } else if (S.committed && !S.revealed) {
+      // Committed but preimage lost (page reload after commit): can't reveal
+      $('#commit-area').classList.remove('hidden');
+      $('#commit-status').textContent = 'Committed, but reveal key was lost. Cannot reveal this round.';
     } else if (!S.committed) {
       $('#reveal-area').classList.add('hidden');
       $('#commit-status').textContent = 'You did not commit in time.';
