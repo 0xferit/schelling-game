@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
+import { MIN_ESTABLISHED_MATCHES } from './domain/constants';
 import type {
   AccountWithStats,
   AddMatchPlayerParams,
@@ -17,7 +18,6 @@ import type {
   VoteLogEntry,
   VoteLogRow,
 } from './types/db';
-import { MIN_ESTABLISHED_MATCHES } from './domain/constants';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH =
