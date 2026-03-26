@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "wrangler dev",
-    "dev": "wrangler dev",
+    "start": "npx wrangler dev",
+    "dev": "npx wrangler dev",
     "test": "tsx test/test.ts",
     "test:worker": "vitest run --config vitest.config.worker.ts",
     "lint": "biome check .",
