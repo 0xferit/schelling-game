@@ -98,6 +98,7 @@ export interface LeaderboardEntry {
   currentStreak: number;
   longestStreak: number;
   avgNetTokensPerGame: number;
+  provisional: boolean;
 }
 
 export interface PlayerRankEntry extends LeaderboardEntry {

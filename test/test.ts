@@ -5,6 +5,7 @@ import {
   validateSalt,
   verifyCommit,
 } from '../src/domain/commitReveal';
+import { MIN_ESTABLISHED_MATCHES } from '../src/domain/constants';
 import {
   getPublicPool,
   selectQuestionsForMatch,
@@ -569,6 +570,19 @@ console.log('\n10. Coordination Credit Rules');
     result.players.every((p) => !p.earnsCoordinationCredit),
     'Voided round: no coordination credit for anyone',
   );
+}
+
+// ---------------------------------------------------------------------------
+// 11. Provisional leaderboard threshold
+// ---------------------------------------------------------------------------
+{
+  console.log('\n11. Provisional leaderboard threshold');
+
+  assert(MIN_ESTABLISHED_MATCHES === 5, 'threshold is 5 matches');
+  assert(4 < MIN_ESTABLISHED_MATCHES, 'gamesPlayed=4 is provisional');
+  assert(!(5 < MIN_ESTABLISHED_MATCHES), 'gamesPlayed=5 is not provisional');
+  assert(!(10 < MIN_ESTABLISHED_MATCHES), 'gamesPlayed=10 is not provisional');
+  assert(0 < MIN_ESTABLISHED_MATCHES, 'gamesPlayed=0 is provisional');
 }
 
 // ---------------------------------------------------------------------------

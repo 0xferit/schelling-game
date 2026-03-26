@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
+import { MIN_ESTABLISHED_MATCHES } from './domain/constants';
 import type {
   AccountWithStats,
   AddMatchPlayerParams,
@@ -380,7 +381,7 @@ function updatePlayerStats(
 // ---------------------------------------------------------------------------
 
 function getLeaderboard(limit: number = 50): LeaderboardEntry[] {
-  return getDb()
+  const rows = getDb()
     .prepare(`
     SELECT
       ROW_NUMBER() OVER (
@@ -408,7 +409,11 @@ function getLeaderboard(limit: number = 50): LeaderboardEntry[] {
     ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC
     LIMIT ?
   `)
-    .all(limit) as LeaderboardEntry[];
+    .all(limit) as Omit<LeaderboardEntry, 'provisional'>[];
+  return rows.map((r) => ({
+    ...r,
+    provisional: r.gamesPlayed < MIN_ESTABLISHED_MATCHES,
+  }));
 }
 
 function getPlayerRank(accountId: string): PlayerRankEntry | null {
@@ -438,7 +443,9 @@ function getPlayerRank(accountId: string): PlayerRankEntry | null {
     JOIN player_stats s ON a.account_id = s.account_id
     WHERE a.account_id = ?
   `)
-    .get(accountId) as PlayerRankEntry | undefined;
+    .get(accountId) as
+    | Omit<PlayerRankEntry, 'provisional' | 'rank'>
+    | undefined;
 
   if (!row) return null;
 
@@ -465,7 +472,11 @@ function getPlayerRank(accountId: string): PlayerRankEntry | null {
       ) as { rank: number }
   ).rank;
 
-  return { ...row, rank };
+  return {
+    ...row,
+    rank,
+    provisional: row.gamesPlayed < MIN_ESTABLISHED_MATCHES,
+  };
 }
 
 // ---------------------------------------------------------------------------
