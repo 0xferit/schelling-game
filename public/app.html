@@ -191,7 +191,8 @@ nav{display:flex;gap:.5rem}
       <button class="btn-ghost" id="guest-wallet-btn">Play as Guest</button>
       <p class="guest-note">Your identity is stored in this browser. Clearing site data will reset it.</p>
       <div id="import-section" class="hidden">
-        <label>Paste your seed phrase or private key</label>
+        <label>Paste a seed phrase or private key for a guest/browser-only wallet.</label>
+        <p class="guest-note">Do not paste your main wallet recovery phrase. The key is stored in this browser's local storage.</p>
         <div class="row">
           <input id="import-input" type="text" placeholder="e.g. abandon ability able ..." autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off"/>
           <button class="btn-primary" id="import-btn">Import</button>
@@ -406,15 +407,18 @@ const $$ = (sel) => document.querySelectorAll(sel);
 // ── Guest wallet ─────────────────────────────────────────────────
 const GUEST_KEY = 'schelling_guest_pk';
 
+// Construct a wallet from a stored secret (mnemonic or private key)
+function walletFromSecret(secret) {
+  const trimmed = secret.trim();
+  return /\s/.test(trimmed) ? ethers.Wallet.fromPhrase(trimmed) : new ethers.Wallet(trimmed);
+}
+
 function getOrCreateGuestWallet() {
   try {
     const stored = localStorage.getItem(GUEST_KEY);
     if (stored) {
-      try {
-        // Mnemonic (whitespace-separated words) or raw private key (0x hex)
-        if (/\s/.test(stored)) return ethers.Wallet.fromPhrase(stored.trim());
-        return new ethers.Wallet(stored);
-      } catch (_) { localStorage.removeItem(GUEST_KEY); }
+      try { return walletFromSecret(stored); }
+      catch (_) { localStorage.removeItem(GUEST_KEY); }
     }
     const wallet = ethers.Wallet.createRandom();
     localStorage.setItem(GUEST_KEY, wallet.mnemonic.phrase);
@@ -425,13 +429,10 @@ function getOrCreateGuestWallet() {
 }
 
 function parseGuestWallet(input) {
-  const trimmed = input.trim();
   try {
-    const isMnemonic = /\s/.test(trimmed);
-    const wallet = isMnemonic
-      ? ethers.Wallet.fromPhrase(trimmed)
-      : new ethers.Wallet(trimmed);
-    const storageValue = isMnemonic ? wallet.mnemonic.phrase : wallet.privateKey;
+    const wallet = walletFromSecret(input);
+    const trimmed = input.trim();
+    const storageValue = /\s/.test(trimmed) ? wallet.mnemonic.phrase : wallet.privateKey;
     return { wallet, storageValue };
   } catch (_) {
     throw new Error('Invalid seed phrase or private key.');
@@ -442,7 +443,6 @@ function getGuestMnemonic() {
   try {
     const stored = localStorage.getItem(GUEST_KEY);
     if (stored && /\s/.test(stored)) return stored.trim();
-    // Legacy private key: no mnemonic available
     return null;
   } catch (_) { return null; }
 }
@@ -675,9 +675,7 @@ async function checkSession() {
     try {
       const stored = localStorage.getItem(GUEST_KEY);
       if (stored) {
-        const gw = /\s/.test(stored)
-          ? ethers.Wallet.fromPhrase(stored.trim())
-          : new ethers.Wallet(stored);
+        const gw = walletFromSecret(stored);
         if (gw.address.toLowerCase() === me.accountId.toLowerCase()) {
           S.isGuestWallet = true;
         }
