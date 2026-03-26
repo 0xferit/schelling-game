@@ -521,6 +521,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
     $$('.guest-note').forEach(el => el.classList.add('hidden'));
     $('#show-import-btn').classList.add('hidden');
     $('#import-section').classList.add('hidden');
+    $('#show-import-btn').setAttribute('aria-expanded', 'false');
   } else {
     S.displayName = result.displayName;
     onAuthComplete();
@@ -607,6 +608,7 @@ $('#import-btn').addEventListener('click', async () => {
     // Clear sensitive input from DOM
     $('#import-input').value = '';
     $('#import-section').classList.add('hidden');
+    $('#show-import-btn').setAttribute('aria-expanded', 'false');
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
   }
@@ -682,6 +684,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#show-import-btn').classList.remove('hidden');
   $('#name-section').classList.add('hidden');
   $('#import-section').classList.add('hidden');
+  $('#show-import-btn').setAttribute('aria-expanded', 'false');
   $('#seed-overlay').classList.add('hidden');
   $('#seed-phrase-text').textContent = '';
   $('#auth-status').textContent = 'Sign in with your Ethereum wallet or play as a guest.';
