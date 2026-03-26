@@ -518,7 +518,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
     $('#connect-wallet-btn').classList.add('hidden');
     $('#guest-wallet-btn').classList.add('hidden');
     $('.auth-divider').classList.add('hidden');
-    $('.guest-note').classList.add('hidden');
+    $$('.guest-note').forEach(el => el.classList.add('hidden'));
     $('#show-import-btn').classList.add('hidden');
     $('#import-section').classList.add('hidden');
   } else {
@@ -579,8 +579,11 @@ $('#claim-name-btn').addEventListener('click', async () => {
   }
 });
 
+$('#show-import-btn').setAttribute('aria-controls', 'import-section');
+$('#show-import-btn').setAttribute('aria-expanded', 'false');
 $('#show-import-btn').addEventListener('click', () => {
-  $('#import-section').classList.toggle('hidden');
+  const hidden = $('#import-section').classList.toggle('hidden');
+  $('#show-import-btn').setAttribute('aria-expanded', hidden ? 'false' : 'true');
 });
 
 $('#import-btn').addEventListener('click', async () => {
@@ -601,6 +604,9 @@ $('#import-btn').addEventListener('click', async () => {
     } catch (_) {
       notify('Wallet imported, but failed to save locally. You may need to re-import next time.', 'warn');
     }
+    // Clear sensitive input from DOM
+    $('#import-input').value = '';
+    $('#import-section').classList.add('hidden');
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
   }
@@ -672,7 +678,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#connect-wallet-btn').classList.remove('hidden');
   $('#guest-wallet-btn').classList.remove('hidden');
   $('.auth-divider').classList.remove('hidden');
-  $('.guest-note').classList.remove('hidden');
+  $$('.guest-note').forEach(el => el.classList.remove('hidden'));
   $('#show-import-btn').classList.remove('hidden');
   $('#name-section').classList.add('hidden');
   $('#import-section').classList.add('hidden');
