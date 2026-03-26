@@ -902,14 +902,27 @@ function onGameStarted(msg) {
 }
 
 function onRoundStart(msg) {
+  // On reconnect replay, the server tells us our commit/reveal status.
+  // Preserve local preimage (selectedOption, salt, commitHash) so reveal
+  // still works after a transient WebSocket reconnect.
+  const isReconnectReplay = msg.yourCommitted && S.round === msg.round
+    && S.matchId && S.selectedOption !== null && S.salt;
+
   S.round = msg.round;
   S.phase = 'commit';
   S.question = msg.question;
-  S.selectedOption = null;
-  S.salt = null;
-  S.commitHash = null;
-  S.committed = false;
-  S.revealed = false;
+
+  if (!isReconnectReplay) {
+    S.selectedOption = null;
+    S.salt = null;
+    S.commitHash = null;
+    S.committed = false;
+    S.revealed = false;
+  } else {
+    S.committed = !!msg.yourCommitted;
+    S.revealed = !!msg.yourRevealed;
+  }
+
   S.commitStatuses = [];
   S.revealStatuses = [];
   S.roundResult = null;
@@ -922,13 +935,20 @@ function onRoundStart(msg) {
   $('#question-text').textContent = msg.question.text;
   $('#round-result-banner').classList.add('hidden');
 
-  // Render options
-  renderOptions(msg.question.options, false);
+  // Render options; disable if already committed on reconnect
+  renderOptions(msg.question.options, !!isReconnectReplay);
+  if (isReconnectReplay && S.selectedOption !== null) {
+    // Re-highlight the previously selected option
+    $$('.opt-btn').forEach(b =>
+      b.classList.toggle('selected', parseInt(b.dataset.idx) === S.selectedOption)
+    );
+  }
 
   // Show commit, hide reveal
   $('#commit-area').classList.remove('hidden');
   $('#commit-btn').disabled = true;
-  $('#commit-status').textContent = '';
+  $('#commit-status').textContent = isReconnectReplay
+    ? 'Committed. Waiting for others...' : '';
   $('#reveal-area').classList.add('hidden');
 
   // Timer
