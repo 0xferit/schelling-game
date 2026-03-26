@@ -637,9 +637,16 @@ $('#copy-seed-btn').addEventListener('click', () => {
 
 $('#close-seed-btn').addEventListener('click', closeSeedOverlay);
 
-// Close overlay on Escape or backdrop click
+// Close overlay on Escape or backdrop click; trap focus inside dialog
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#seed-overlay').classList.contains('hidden')) closeSeedOverlay();
+  if ($('#seed-overlay').classList.contains('hidden')) return;
+  if (e.key === 'Escape') { closeSeedOverlay(); return; }
+  if (e.key === 'Tab') {
+    const focusable = $('#seed-overlay').querySelectorAll('button');
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
 });
 $('#seed-overlay').addEventListener('click', (e) => {
   if (e.target === $('#seed-overlay')) closeSeedOverlay();
