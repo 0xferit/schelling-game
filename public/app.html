@@ -424,14 +424,15 @@ function getOrCreateGuestWallet() {
   }
 }
 
-function importGuestWallet(input) {
+function parseGuestWallet(input) {
   const trimmed = input.trim();
   try {
-    const wallet = trimmed.includes(' ')
+    const isMnemonic = /\s/.test(trimmed);
+    const wallet = isMnemonic
       ? ethers.Wallet.fromPhrase(trimmed)
       : new ethers.Wallet(trimmed);
-    localStorage.setItem(GUEST_KEY, trimmed.includes(' ') ? trimmed : wallet.privateKey);
-    return wallet;
+    const storageValue = isMnemonic ? wallet.mnemonic.phrase : wallet.privateKey;
+    return { wallet, storageValue };
   } catch (_) {
     throw new Error('Invalid seed phrase or private key.');
   }
@@ -588,12 +589,14 @@ $('#import-btn').addEventListener('click', async () => {
   if (!input.trim()) { status.textContent = 'Please enter a seed phrase or private key.'; return; }
   try {
     status.textContent = 'Importing wallet...';
-    const wallet = importGuestWallet(input);
+    const { wallet, storageValue } = parseGuestWallet(input);
     await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
       signingMsg: 'Signing challenge...',
       successMsg: 'Wallet imported.',
       isGuest: true,
     });
+    // Persist only after auth succeeds to avoid overwriting an existing guest identity
+    localStorage.setItem(GUEST_KEY, storageValue);
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
   }
@@ -611,6 +614,10 @@ $('#export-key-btn').addEventListener('click', () => {
 
 $('#copy-seed-btn').addEventListener('click', () => {
   const text = $('#seed-phrase-text').textContent;
+  if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+    notify('Failed to copy. Please select and copy manually.', 'error');
+    return;
+  }
   navigator.clipboard.writeText(text).then(
     () => notify('Seed phrase copied to clipboard.', 'success'),
     () => notify('Failed to copy. Please select and copy manually.', 'error')
@@ -647,6 +654,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#name-section').classList.add('hidden');
   $('#import-section').classList.add('hidden');
   $('#seed-overlay').classList.add('hidden');
+  $('#seed-phrase-text').textContent = '';
   $('#auth-status').textContent = 'Sign in with your Ethereum wallet or play as a guest.';
   showView('auth');
 });
