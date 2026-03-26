@@ -1,29 +1,29 @@
 # Schelling Game
 
-Multiplayer coordination game where players independently pick the option they expect the most other players to pick. Answers are committed with a hash, revealed, and settled by exact-match plurality. Dual-mode deployment: Express for local dev, Cloudflare Workers + Durable Objects for production.
+Multiplayer coordination game where players independently pick the option they expect the most other players to pick. Answers are committed with a hash, revealed, and settled by exact-match plurality. Runs on Cloudflare Workers + Durable Objects + D1.
 
 ## Tech Stack
 
 - TypeScript 6 (strict mode), Node.js 24
-- Express 5 + ws (dev server), Cloudflare Workers + Durable Objects + D1 (production)
-- better-sqlite3 (local persistence), ethers.js (wallet auth via EIP-191)
+- Cloudflare Workers + Durable Objects + D1 (production and local dev via `wrangler dev`)
+- ethers.js (wallet auth via EIP-191)
 - Biome (formatter + linter)
 
 ## Getting Started
 
 ```sh
 npm ci
-npm run dev          # Express dev server on port 3000 (watch mode)
+npm run dev          # Wrangler dev server (local Workers runtime)
 npm test             # Unit tests (domain logic)
 npm run lint         # Biome check (lint + format)
 ```
 
 ## Type Checking
 
-Two TypeScript configs exist because the Node server and the Cloudflare Worker have different type environments:
+Two TypeScript configs exist because the domain tests run under Node and the Worker runs under workerd:
 
 ```sh
-npm run typecheck          # Node/Express code (tsconfig.json)
+npm run typecheck          # Domain code + tests (tsconfig.json)
 npm run typecheck:worker   # Worker code (tsconfig.worker.json)
 ```
 
@@ -44,25 +44,24 @@ Auto-fix: `npx biome check --write .`
 ```
 src/
   worker.ts              # Cloudflare Worker entry point (Durable Object: GameRoom)
-  auth.ts                # EIP-191 wallet signature verification
-  db.ts                  # SQLite abstraction (singleton, WAL mode)
-  gameManager.ts         # Match and round orchestration
-  matchmaking.ts         # Queue logic (match sizes: 3, 5, or 7)
+  worker/
+    httpHandler.ts       # HTTP route handler (auth, API endpoints)
+    session.ts           # EIP-191 wallet signature session management
+    persistence.ts       # DO checkpoint/restore for match state
   domain/
     commitReveal.ts      # SHA-256 commit-reveal crypto
+    constants.ts         # Shared constants (MIN_ESTABLISHED_MATCHES)
     questions.ts         # Question pool and selection
     settlement.ts        # Plurality settlement and payouts
   types/
     domain.ts            # Core game types
-    db.ts                # Database schema types
     messages.ts          # WebSocket protocol (ClientMessage / ServerMessage)
     worker-env.ts        # Cloudflare env bindings
-server.ts                # Express dev/staging server
 public/                  # Static frontend (vanilla JS + ethers.js)
 test/                    # Unit tests
 ```
 
-Two entry points: `server.ts` for dev (Express + ws + SQLite), `src/worker.ts` for production (Workers + Durable Objects + D1). Domain logic in `src/domain/` is shared between both.
+Single entry point: `src/worker.ts` for both production and local dev. Domain logic in `src/domain/` is runtime-agnostic.
 
 ## Game Rules
 

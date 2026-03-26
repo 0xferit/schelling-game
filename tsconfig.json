@@ -3,6 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["server.ts", "src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["src/worker.ts", "src/worker/**/*.ts", "test/worker/**/*.ts"]
+  "include": ["src/domain/**/*.ts", "src/types/domain.ts", "test/test.ts"]
 }
