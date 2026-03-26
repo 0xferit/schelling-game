@@ -413,30 +413,36 @@ export async function handleHttpRequest(
     const gp = account.games_played || 0;
     const rp = account.rounds_played || 0;
     const cr = account.coherent_rounds || 0;
+    const eligible =
+      !!account.leaderboard_eligible && account.display_name !== null;
 
-    const rankRow = (await env.DB.prepare(
-      'SELECT COUNT(*) as rank FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
-        'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL AND (' +
-        'a.token_balance > ? OR ' +
-        '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) > ?) OR ' +
-        '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) = ? AND a.display_name < ?)' +
-        ')',
-    )
-      .bind(
-        account.token_balance ?? 0,
-        account.token_balance ?? 0,
-        cr,
-        account.token_balance ?? 0,
-        cr,
-        account.display_name ?? '',
+    let rank: number | null = null;
+    if (eligible) {
+      const rankRow = (await env.DB.prepare(
+        'SELECT COUNT(*) as rank FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
+          'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL AND (' +
+          'a.token_balance > ? OR ' +
+          '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) > ?) OR ' +
+          '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) = ? AND a.display_name < ?)' +
+          ')',
       )
-      .first()) as { rank: number } | null;
+        .bind(
+          account.token_balance ?? 0,
+          account.token_balance ?? 0,
+          cr,
+          account.token_balance ?? 0,
+          cr,
+          account.display_name ?? '',
+        )
+        .first()) as { rank: number } | null;
+      rank = (rankRow?.rank ?? 0) + 1;
+    }
 
     return jsonResponse({
-      rank: (rankRow?.rank ?? 0) + 1,
+      rank,
       displayName: account.display_name,
       tokenBalance: account.token_balance ?? 0,
-      leaderboardEligible: !!account.leaderboard_eligible,
+      leaderboardEligible: eligible,
       gamesPlayed: gp,
       avgNetTokensPerGame:
         gp > 0

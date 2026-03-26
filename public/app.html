@@ -1466,7 +1466,7 @@ function renderLeaderboard(entries, myRank) {
 
   // My rank card
   const card = $('#my-rank-card');
-  if (myRank) {
+  if (myRank && myRank.rank != null && myRank.leaderboardEligible) {
     card.classList.remove('hidden');
     const remaining = MIN_ESTABLISHED - myRank.gamesPlayed;
     const provNote = myRank.provisional
