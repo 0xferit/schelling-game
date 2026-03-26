@@ -92,6 +92,16 @@ export function initCheckpointTables(sql: SqlStorage): void {
       created_at      INTEGER NOT NULL
     )
   `);
+  // Migrate existing tables that lack the last_round_result_json column.
+  // ALTER TABLE ADD COLUMN is a no-op error when the column already exists.
+  try {
+    sql.exec(
+      'ALTER TABLE match_checkpoints ADD COLUMN last_round_result_json TEXT',
+    );
+  } catch (_) {
+    // Column already exists; ignore.
+  }
+
   sql.exec(`
     CREATE TABLE IF NOT EXISTS player_checkpoints (
       match_id         TEXT NOT NULL,
