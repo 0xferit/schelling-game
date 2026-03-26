@@ -460,6 +460,8 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
     $('#name-section').classList.remove('hidden');
     $('#connect-wallet-btn').classList.add('hidden');
     $('#guest-wallet-btn').classList.add('hidden');
+    $('.auth-divider').classList.add('hidden');
+    $('.guest-note').classList.add('hidden');
   } else {
     S.displayName = result.displayName;
     onAuthComplete();
@@ -537,6 +539,8 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#header-profile').classList.add('hidden');
   $('#connect-wallet-btn').classList.remove('hidden');
   $('#guest-wallet-btn').classList.remove('hidden');
+  $('.auth-divider').classList.remove('hidden');
+  $('.guest-note').classList.remove('hidden');
   $('#name-section').classList.add('hidden');
   $('#auth-status').textContent = 'Sign in with your Ethereum wallet or play as a guest.';
   showView('auth');
@@ -551,15 +555,15 @@ async function checkSession() {
     S.tokenBalance = me.tokenBalance;
     S.autoRequeue = me.autoRequeue;
     // Detect if this session belongs to a guest wallet
-    const storedPk = localStorage.getItem('schelling_guest_pk');
-    if (storedPk) {
-      try {
+    try {
+      const storedPk = localStorage.getItem('schelling_guest_pk');
+      if (storedPk) {
         const gw = new ethers.Wallet(storedPk);
         if (gw.address.toLowerCase() === me.accountId.toLowerCase()) {
           S.isGuestWallet = true;
         }
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
     if (S.displayName) {
       onAuthComplete();
     }
