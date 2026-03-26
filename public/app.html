@@ -193,7 +193,7 @@ nav{display:flex;gap:.5rem}
       <div id="import-section" class="hidden">
         <label>Paste your seed phrase or private key</label>
         <div class="row">
-          <input id="import-input" type="text" placeholder="e.g. abandon ability able ..." autocomplete="off"/>
+          <input id="import-input" type="text" placeholder="e.g. abandon ability able ..." autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off"/>
           <button class="btn-primary" id="import-btn">Import</button>
         </div>
       </div>
@@ -411,8 +411,8 @@ function getOrCreateGuestWallet() {
     const stored = localStorage.getItem(GUEST_KEY);
     if (stored) {
       try {
-        // Mnemonic (space-separated words) or raw private key (0x hex)
-        if (stored.includes(' ')) return ethers.Wallet.fromPhrase(stored);
+        // Mnemonic (whitespace-separated words) or raw private key (0x hex)
+        if (/\s/.test(stored)) return ethers.Wallet.fromPhrase(stored.trim());
         return new ethers.Wallet(stored);
       } catch (_) { localStorage.removeItem(GUEST_KEY); }
     }
@@ -441,7 +441,7 @@ function parseGuestWallet(input) {
 function getGuestMnemonic() {
   try {
     const stored = localStorage.getItem(GUEST_KEY);
-    if (stored && stored.includes(' ')) return stored;
+    if (stored && /\s/.test(stored)) return stored.trim();
     // Legacy private key: no mnemonic available
     return null;
   } catch (_) { return null; }
@@ -596,7 +596,11 @@ $('#import-btn').addEventListener('click', async () => {
       isGuest: true,
     });
     // Persist only after auth succeeds to avoid overwriting an existing guest identity
-    localStorage.setItem(GUEST_KEY, storageValue);
+    try {
+      localStorage.setItem(GUEST_KEY, storageValue);
+    } catch (_) {
+      notify('Wallet imported, but failed to save locally. You may need to re-import next time.', 'warn');
+    }
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
   }
@@ -671,8 +675,8 @@ async function checkSession() {
     try {
       const stored = localStorage.getItem(GUEST_KEY);
       if (stored) {
-        const gw = stored.includes(' ')
-          ? ethers.Wallet.fromPhrase(stored)
+        const gw = /\s/.test(stored)
+          ? ethers.Wallet.fromPhrase(stored.trim())
           : new ethers.Wallet(stored);
         if (gw.address.toLowerCase() === me.accountId.toLowerCase()) {
           S.isGuestWallet = true;
