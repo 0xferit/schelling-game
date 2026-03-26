@@ -1119,7 +1119,7 @@ function onRoundResult(msg) {
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
 
-  startTimer(20);
+  startTimer(msg.resultsDuration);
 
   // Update local balance
   const me = r.players.find(p => p.displayName === S.displayName);

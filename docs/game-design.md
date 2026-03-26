@@ -33,9 +33,9 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 - Every round uses one `select` question from the canonical public question pool.
 - Questions are used without replacement inside a match.
 - Phase timings are fixed:
-  - commit: `30` seconds
+  - commit: `60` seconds
   - reveal: `15` seconds
-  - results: `12` seconds
+  - results: `20` seconds
 
 ## 4. Round Flow
 
