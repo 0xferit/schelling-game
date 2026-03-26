@@ -51,6 +51,8 @@ nav{display:flex;gap:.5rem}
 #name-section{display:flex;flex-direction:column;gap:.5rem}
 #name-section .row{display:flex;gap:.5rem}
 #name-section input{flex:1}
+.auth-divider{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.15em;padding:.25rem 0}
+.guest-note{font-size:.75rem;color:var(--muted);line-height:1.4}
 /* Queue */
 #queue-view .card{max-width:520px;margin:0 auto}
 #queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
@@ -176,6 +178,9 @@ nav{display:flex;gap:.5rem}
       <h2>Connect Wallet</h2>
       <p id="auth-status">Connect your Ethereum wallet to sign in.</p>
       <button class="btn-primary" id="connect-wallet-btn">Connect Ethereum Wallet</button>
+      <div class="auth-divider">or</div>
+      <button class="btn-ghost" id="guest-wallet-btn">Play as Guest</button>
+      <p class="guest-note">Your identity is stored in this browser. Clearing site data will reset it.</p>
       <div id="name-section" class="hidden">
         <label>Claim your display name (1-20 chars, A-Z 0-9 _ -)</label>
         <div class="row">
@@ -328,6 +333,7 @@ nav{display:flex;gap:.5rem}
 // ── State ───────────────────────────────────────────────────────
 const S = {
   view: 'auth',
+  isGuestWallet: false,
   walletAddress: null,
   accountId: null,
   displayName: null,
@@ -369,6 +375,18 @@ const S = {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// ── Guest wallet ─────────────────────────────────────────────────
+function getOrCreateGuestWallet() {
+  const stored = localStorage.getItem('schelling_guest_pk');
+  if (stored) {
+    try { return new ethers.Wallet(stored); }
+    catch (_) { localStorage.removeItem('schelling_guest_pk'); }
+  }
+  const wallet = ethers.Wallet.createRandom();
+  localStorage.setItem('schelling_guest_pk', wallet.privateKey);
+  return wallet;
+}
+
 // ── Notifications ───────────────────────────────────────────────
 function notify(msg, type = '') {
   const el = document.createElement('div');
@@ -387,7 +405,7 @@ function showView(name) {
   // header profile
   if (S.displayName) {
     $('#header-profile').classList.remove('hidden');
-    $('#header-name').textContent = S.displayName;
+    $('#header-name').textContent = S.displayName + (S.isGuestWallet ? ' (guest)' : '');
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
   }
 
@@ -445,6 +463,46 @@ $('#connect-wallet-btn').addEventListener('click', async () => {
       status.textContent = 'Wallet verified. Please claim a display name.';
       $('#name-section').classList.remove('hidden');
       $('#connect-wallet-btn').classList.add('hidden');
+      $('#guest-wallet-btn').classList.add('hidden');
+    } else {
+      S.displayName = result.displayName;
+      onAuthComplete();
+    }
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+  }
+});
+
+$('#guest-wallet-btn').addEventListener('click', async () => {
+  const status = $('#auth-status');
+  try {
+    status.textContent = 'Creating browser wallet...';
+    const wallet = getOrCreateGuestWallet();
+    const address = wallet.address;
+    S.walletAddress = address;
+    S.isGuestWallet = true;
+
+    status.textContent = 'Requesting challenge...';
+    const challenge = await api('POST', '/api/auth/challenge', { walletAddress: address });
+
+    status.textContent = 'Signing challenge...';
+    const signature = await wallet.signMessage(challenge.message);
+
+    status.textContent = 'Verifying signature...';
+    const result = await api('POST', '/api/auth/verify', {
+      challengeId: challenge.challengeId,
+      walletAddress: address,
+      signature,
+    });
+
+    S.accountId = result.accountId;
+    S.tokenBalance = result.tokenBalance;
+
+    if (result.requiresDisplayName) {
+      status.textContent = 'Signed in with browser wallet. Please claim a display name.';
+      $('#name-section').classList.remove('hidden');
+      $('#connect-wallet-btn').classList.add('hidden');
+      $('#guest-wallet-btn').classList.add('hidden');
     } else {
       S.displayName = result.displayName;
       onAuthComplete();
@@ -482,10 +540,14 @@ $('#logout-btn').addEventListener('click', async () => {
   S.accountId = null;
   S.displayName = null;
   S.tokenBalance = 0;
+  S.isGuestWallet = false;
   S.inQueue = false;
   S.queuedPlayers = [];
   S.matchId = null;
   $('#header-profile').classList.add('hidden');
+  $('#connect-wallet-btn').classList.remove('hidden');
+  $('#guest-wallet-btn').classList.remove('hidden');
+  $('#name-section').classList.add('hidden');
   $('#auth-status').textContent = 'Connect your Ethereum wallet to sign in.';
   showView('auth');
 });
@@ -498,6 +560,16 @@ async function checkSession() {
     S.displayName = me.displayName;
     S.tokenBalance = me.tokenBalance;
     S.autoRequeue = me.autoRequeue;
+    // Detect if this session belongs to a guest wallet
+    const storedPk = localStorage.getItem('schelling_guest_pk');
+    if (storedPk) {
+      try {
+        const gw = new ethers.Wallet(storedPk);
+        if (gw.address.toLowerCase() === me.accountId.toLowerCase()) {
+          S.isGuestWallet = true;
+        }
+      } catch (_) {}
+    }
     if (S.displayName) {
       onAuthComplete();
     }
