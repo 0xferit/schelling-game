@@ -354,7 +354,7 @@ export async function handleHttpRequest(
         's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
         'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL ' +
-        'ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC ' +
+        'ORDER BY a.token_balance DESC, COALESCE(s.coherent_rounds, 0) DESC, a.display_name ASC ' +
         'LIMIT 100',
     ).all();
 
