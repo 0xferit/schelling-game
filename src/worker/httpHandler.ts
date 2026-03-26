@@ -1,5 +1,9 @@
 import { ethers } from 'ethers';
-import { MIN_ESTABLISHED_MATCHES } from '../domain/constants';
+import {
+  COMMIT_DURATION,
+  MIN_ESTABLISHED_MATCHES,
+  REVEAL_DURATION,
+} from '../domain/constants';
 import type { Env } from '../types/worker-env';
 import {
   buildChallengeMessage,
@@ -551,6 +555,14 @@ export async function handleHttpRequest(
     return jsonResponse({
       accountId: accountId.toLowerCase(),
       leaderboardEligible: eligible,
+    });
+  }
+
+  // ---- GET /api/game-config ----
+  if (url.pathname === '/api/game-config' && method === 'GET') {
+    return jsonResponse({
+      commitDuration: COMMIT_DURATION,
+      revealDuration: REVEAL_DURATION,
     });
   }
 

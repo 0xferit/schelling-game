@@ -4,6 +4,11 @@ import {
   validateSalt,
   verifyCommit,
 } from './domain/commitReveal';
+import {
+  COMMIT_DURATION,
+  RESULTS_DURATION,
+  REVEAL_DURATION,
+} from './domain/constants';
 import { selectQuestionsForMatch } from './domain/questions';
 import { ROUND_ANTE, settleRound } from './domain/settlement';
 import type {
@@ -74,9 +79,6 @@ interface FormingMatchState {
 // Constants
 // ---------------------------------------------------------------------------
 const TOTAL_ROUNDS = 10;
-const COMMIT_DURATION = 60;
-const REVEAL_DURATION = 15;
-const RESULTS_DURATION = 20;
 const FILL_TIMER_MS = 20_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_CHAT_LENGTH = 300;
@@ -757,6 +759,7 @@ export class GameRoom {
     // Broadcast round_result
     this._broadcastToMatch(match, {
       type: 'round_result',
+      resultsDuration: RESULTS_DURATION,
       result: {
         roundNum: match.currentRound,
         voided: result.voided,
