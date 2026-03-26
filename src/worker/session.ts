@@ -1,23 +1,30 @@
 // Wallet-signature-based session: no server-side secret.
 // Cookie format: walletAddress:nonce:issuedAt:signature
-// Verification reconstructs the challenge message, recovers the signer,
-// and checks the issuedAt timestamp is within the allowed window.
+// The challenge message includes walletAddress, nonce, AND issuedAt,
+// so the signature covers all fields. Tampering with issuedAt invalidates
+// the signature.
 
 import { ethers } from 'ethers';
 
-const MESSAGE_PREFIX = 'Sign this message to authenticate with Schelling Game.';
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-function buildChallengeMessage(walletAddress: string, nonce: string): string {
-  return `${MESSAGE_PREFIX}\n\nWallet: ${walletAddress}\nNonce: ${nonce}`;
+export function buildChallengeMessage(
+  walletAddress: string,
+  nonce: string,
+  issuedAt: number,
+): string {
+  return (
+    'Sign this message to authenticate with Schelling Game.' +
+    `\n\nWallet: ${walletAddress}\nNonce: ${nonce}\nIssued: ${issuedAt}`
+  );
 }
 
 export function createSessionCookie(
   walletAddress: string,
   nonce: string,
+  issuedAt: number,
   signature: string,
 ): string {
-  const issuedAt = Date.now();
   return `${walletAddress}:${nonce}:${issuedAt}:${signature}`;
 }
 
@@ -43,9 +50,11 @@ export function verifySessionCookie(cookie: string | undefined): string | null {
   // Validate server-side expiry
   const issuedAt = Number(issuedAtStr);
   if (Number.isNaN(issuedAt)) return null;
+  if (issuedAt > Date.now()) return null; // reject future timestamps
   if (Date.now() - issuedAt > SESSION_MAX_AGE_MS) return null;
 
-  const message = buildChallengeMessage(walletAddress, nonce);
+  // Reconstruct the message that was signed (includes issuedAt)
+  const message = buildChallengeMessage(walletAddress, nonce, issuedAt);
 
   try {
     const recovered = ethers.verifyMessage(message, signature).toLowerCase();
@@ -75,5 +84,3 @@ export function getAuthenticatedAccountId(request: Request): string | null {
   const cookies = parseCookies(request.headers.get('Cookie'));
   return verifySessionCookie(cookies.session);
 }
-
-export { buildChallengeMessage, MESSAGE_PREFIX };

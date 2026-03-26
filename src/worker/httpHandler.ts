@@ -108,13 +108,14 @@ export async function handleHttpRequest(
     const normalized = walletAddress.toLowerCase();
     const challengeId = `ch_${crypto.randomUUID()}`;
     const nonce = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const message = buildChallengeMessage(normalized, nonce);
+    const issuedAt = Date.now();
+    const expiresAt = new Date(issuedAt + 5 * 60 * 1000).toISOString();
+    const message = buildChallengeMessage(normalized, nonce, issuedAt);
 
     await env.DB.prepare(
-      'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at, issued_at) VALUES (?, ?, ?, ?, ?, ?)',
     )
-      .bind(challengeId, normalized, nonce, message, expiresAt)
+      .bind(challengeId, normalized, nonce, message, expiresAt, issuedAt)
       .run();
 
     return jsonResponse({ challengeId, message, expiresAt });
@@ -150,6 +151,7 @@ export async function handleHttpRequest(
       nonce: string;
       message: string;
       expires_at: string;
+      issued_at: number;
     } | null;
 
     if (!challenge) return errorResponse('Invalid or expired challenge', 401);
@@ -211,7 +213,12 @@ export async function handleHttpRequest(
       longest_streak: number;
     } | null;
 
-    const token = createSessionCookie(normalized, challenge.nonce, signature);
+    const token = createSessionCookie(
+      normalized,
+      challenge.nonce,
+      challenge.issued_at,
+      signature,
+    );
     const requiresDisplayName = !account!.display_name;
 
     return jsonResponse(
