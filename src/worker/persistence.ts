@@ -252,8 +252,7 @@ export function restoreMatchesFromStorage(
           optionIndex: pr.option_index as number | null,
           salt: pr.salt as string | null,
           forfeited: !!(pr.forfeited as number),
-          disconnectedAt:
-            (pr.disconnected_at as number | null) ?? phaseEnteredAt,
+          disconnectedAt: (pr.disconnected_at as number | null) ?? Date.now(),
         });
       }
 
