@@ -585,6 +585,7 @@ $('#show-import-btn').setAttribute('aria-expanded', 'false');
 $('#show-import-btn').addEventListener('click', () => {
   const hidden = $('#import-section').classList.toggle('hidden');
   $('#show-import-btn').setAttribute('aria-expanded', hidden ? 'false' : 'true');
+  if (hidden) $('#import-input').value = '';
 });
 
 $('#import-btn').addEventListener('click', async () => {
@@ -650,7 +651,8 @@ document.addEventListener('keydown', (e) => {
   if ($('#seed-overlay').classList.contains('hidden')) return;
   if (e.key === 'Escape') { closeSeedOverlay(); return; }
   if (e.key === 'Tab') {
-    const focusable = $('#seed-overlay').querySelectorAll('button');
+    const focusable = $('#seed-overlay').querySelectorAll('button, textarea, input, select, [tabindex]:not([tabindex="-1"])');
+    if (!focusable.length) return;
     const first = focusable[0], last = focusable[focusable.length - 1];
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
