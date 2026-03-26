@@ -7,6 +7,12 @@
 import { ethers } from 'ethers';
 
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CLOCK_SKEW_MS = 60 * 1000; // 60 seconds leeway for edge POP clock drift
+const MAX_COOKIE_LENGTH = 512; // wallet(42) + nonce(36) + issuedAt(~13) + sig(132) + colons(3) < 230
+const WALLET_RE = /^0x[0-9a-f]{40}$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const ETH_SIG_RE = /^0x[0-9a-f]{130}$/;
 
 export function buildChallengeMessage(
   walletAddress: string,
@@ -29,7 +35,7 @@ export function createSessionCookie(
 }
 
 export function verifySessionCookie(cookie: string | undefined): string | null {
-  if (!cookie) return null;
+  if (!cookie || cookie.length > MAX_COOKIE_LENGTH) return null;
 
   // Format: walletAddress:nonce:issuedAt:signature
   // Split on first three colons; everything after the third is the signature.
@@ -45,24 +51,28 @@ export function verifySessionCookie(cookie: string | undefined): string | null {
   const issuedAtStr = cookie.slice(secondColon + 1, thirdColon);
   const signature = cookie.slice(thirdColon + 1);
 
-  if (!walletAddress || !nonce || !issuedAtStr || !signature) return null;
+  // Strict format checks before touching crypto
+  if (!WALLET_RE.test(walletAddress)) return null;
+  if (!UUID_RE.test(nonce)) return null;
+  if (!ETH_SIG_RE.test(signature)) return null;
 
-  // Validate server-side expiry
+  // Validate server-side expiry (single Date.now() call, with clock skew leeway)
   const issuedAt = Number(issuedAtStr);
   if (Number.isNaN(issuedAt)) return null;
-  if (issuedAt > Date.now()) return null; // reject future timestamps
-  if (Date.now() - issuedAt > SESSION_MAX_AGE_MS) return null;
+  const now = Date.now();
+  if (issuedAt > now + CLOCK_SKEW_MS) return null;
+  if (now - issuedAt > SESSION_MAX_AGE_MS) return null;
 
   // Reconstruct the message that was signed (includes issuedAt)
   const message = buildChallengeMessage(walletAddress, nonce, issuedAt);
 
   try {
     const recovered = ethers.verifyMessage(message, signature).toLowerCase();
-    if (recovered === walletAddress.toLowerCase()) {
-      return walletAddress.toLowerCase();
+    if (recovered === walletAddress) {
+      return walletAddress;
     }
   } catch {
-    // Invalid signature format
+    // Invalid signature
   }
 
   return null;

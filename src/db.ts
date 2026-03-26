@@ -59,7 +59,7 @@ function initSchema(): void {
       message        TEXT NOT NULL,
       nonce          TEXT NOT NULL,
       expires_at     TEXT NOT NULL,
-      issued_at      INTEGER,
+      issued_at      INTEGER NOT NULL,
       used           INTEGER DEFAULT 0
     );
 
