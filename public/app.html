@@ -624,7 +624,7 @@ function closeSeedOverlay() {
 $('#backup-seed-btn').addEventListener('click', () => {
   const mnemonic = getGuestMnemonic();
   if (!mnemonic) {
-    notify('No seed phrase available. This wallet was created with an older version.', 'warn');
+    notify('No seed phrase available. This wallet was stored as a private key only (for example, imported via private key or created with an older version).', 'warn');
     return;
   }
   $('#seed-phrase-text').value = mnemonic;
@@ -687,6 +687,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#name-section').classList.add('hidden');
   $('#import-section').classList.add('hidden');
   $('#show-import-btn').setAttribute('aria-expanded', 'false');
+  $('#import-input').value = '';
   $('#seed-overlay').classList.add('hidden');
   $('#seed-phrase-text').value = '';
   $('#auth-status').textContent = 'Sign in with your Ethereum wallet or play as a guest.';
