@@ -690,6 +690,7 @@ function onAuthComplete() {
 
 $('#logout-btn').addEventListener('click', async () => {
   intentionalClose = true;
+  wsRetryCount = 0;
   if (wsRetryTimer) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
   if (S.ws) { S.ws.close(); S.ws = null; }
   try { await api('POST', '/api/logout'); } catch (_) {}
@@ -759,10 +760,11 @@ let intentionalClose = false;
 let wsRetryTimer = null;
 
 function connectWebSocket() {
+  wsRetryTimer = null;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   S.ws = new WebSocket(`${proto}//${location.host}/ws`);
   const thisWs = S.ws;
-  S.ws.onopen = () => { wsRetryCount = 0; };
+  S.ws.onopen = () => { wsRetryCount = 0; wsRetryTimer = null; };
   S.ws.onclose = () => {
     if (intentionalClose || thisWs !== S.ws) return;
     if (wsRetryCount >= WS_MAX_RETRIES) {
