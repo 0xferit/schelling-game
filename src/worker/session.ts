@@ -1,17 +1,25 @@
 // Session token helpers (HMAC-signed, stateless)
 
-const FALLBACK_SECRET = 'schelling-game-session-v1';
-let sessionSecret = FALLBACK_SECRET;
+let sessionSecret: string | null = null;
 
 export function setSessionSecret(secret: string): void {
   sessionSecret = secret;
+}
+
+function getSecret(): string {
+  if (!sessionSecret) {
+    throw new Error(
+      'SESSION_SECRET not configured. Set it as a Wrangler secret.',
+    );
+  }
+  return sessionSecret;
 }
 
 export async function createSessionToken(accountId: string): Promise<string> {
   const payload = `${accountId}:${Date.now()}`;
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(sessionSecret),
+    new TextEncoder().encode(getSecret()),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
@@ -41,7 +49,7 @@ export async function verifySessionToken(
 
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(sessionSecret),
+    new TextEncoder().encode(getSecret()),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign', 'verify'],

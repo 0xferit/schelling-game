@@ -9,5 +9,5 @@ export interface Env {
   DB: D1Database;
   GAME_ROOM: DurableObjectNamespace;
   ADMIN_KEY?: string;
-  SESSION_SECRET?: string;
+  SESSION_SECRET: string;
 }

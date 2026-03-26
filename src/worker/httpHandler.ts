@@ -43,7 +43,7 @@ export async function handleHttpRequest(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  // Configure session secret from environment if available
+  // Configure session secret from environment (required)
   if (env.SESSION_SECRET) setSessionSecret(env.SESSION_SECRET);
 
   const url = new URL(request.url);
