@@ -414,7 +414,7 @@ export async function handleHttpRequest(
     const rp = account.rounds_played || 0;
     const cr = account.coherent_rounds || 0;
     const eligible =
-      !!account.leaderboard_eligible && account.display_name !== null;
+      account.leaderboard_eligible === 1 && account.display_name !== null;
 
     let rank: number | null = null;
     if (eligible) {

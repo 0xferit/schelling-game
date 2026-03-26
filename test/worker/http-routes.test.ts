@@ -179,6 +179,23 @@ describe('HTTP routes', () => {
     expect(data.leaderboardEligible).toBe(false);
   });
 
+  it('GET /api/leaderboard/me returns numeric rank for eligible account', async () => {
+    const wallet = createTestWallet(6);
+    const { accountId, cookie } = await createTestSession(wallet);
+    await seedAccount(env.DB, accountId, 'EligiblePlayer', 200);
+
+    const resp = await get('/api/leaderboard/me', {
+      Cookie: `session=${cookie}`,
+    });
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as {
+      rank: number | null;
+      leaderboardEligible: boolean;
+    };
+    expect(typeof data.rank).toBe('number');
+    expect(data.leaderboardEligible).toBe(true);
+  });
+
   it('POST /api/example-vote + GET /api/example-tally round-trips', async () => {
     const voteResp = await post('/api/example-vote', { optionIndex: 8 });
     expect(voteResp.status).toBe(200);
