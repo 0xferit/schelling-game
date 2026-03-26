@@ -47,7 +47,7 @@ For each round:
 4. The round enters reveal when either all non-forfeited players have committed or the commit timer expires.
 5. During reveal, each committed non-forfeited player reveals the exact option index and salt used in the commitment.
 6. The round finalizes when either all committed non-forfeited players have revealed or the reveal timer expires.
-7. The round is settled and the results phase runs for `12` seconds.
+7. The round is settled and the results phase runs for `20` seconds.
 8. The next round starts unless the match has ended.
 
 The match ends after `10` rounds, or earlier only if no non-forfeited player remains able to reveal in future rounds.
