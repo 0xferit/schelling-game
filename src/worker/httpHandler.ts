@@ -47,10 +47,18 @@ async function ensureD1Migration(db: D1Database): Promise<void> {
     await db
       .prepare('ALTER TABLE auth_challenges ADD COLUMN issued_at INTEGER')
       .run();
-  } catch {
-    // Column already exists; ignore
+    d1Migrated = true;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (
+      msg.toLowerCase().includes('duplicate column') ||
+      msg.toLowerCase().includes('already exists')
+    ) {
+      d1Migrated = true;
+      return;
+    }
+    throw error;
   }
-  d1Migrated = true;
 }
 
 export async function handleHttpRequest(
