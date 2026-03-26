@@ -30,6 +30,11 @@ function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
 }
 
+function cookieAttrs(request: Request): string {
+  const secure = new URL(request.url).protocol === 'https:';
+  return `Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+}
+
 function escapeCsvField(value: unknown): string {
   if (value === null || value === undefined) return '';
   const s = String(value);
@@ -93,8 +98,7 @@ export async function handleHttpRequest(
   // ---- POST /api/logout ----
   if (url.pathname === '/api/logout' && method === 'POST') {
     return jsonResponse({ ok: true }, 200, {
-      'Set-Cookie':
-        'session=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0',
+      'Set-Cookie': `session=; ${cookieAttrs(request)}; Max-Age=0`,
     });
   }
 
@@ -246,7 +250,7 @@ export async function handleHttpRequest(
       },
       200,
       {
-        'Set-Cookie': `session=${token}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=86400`,
+        'Set-Cookie': `session=${token}; ${cookieAttrs(request)}; Max-Age=86400`,
       },
     );
   }

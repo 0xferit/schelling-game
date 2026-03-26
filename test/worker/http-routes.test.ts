@@ -2,10 +2,13 @@ import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { createTestSession, createTestWallet, seedAccount } from './helpers';
 
-const BASE = 'https://test.local';
+const HTTPS_BASE = 'https://test.local';
+const HTTP_BASE = 'http://test.local';
 
 function get(path: string, headers: Record<string, string> = {}) {
-  return exports.default.fetch(new Request(`${BASE}${path}`, { headers }));
+  return exports.default.fetch(
+    new Request(`${HTTPS_BASE}${path}`, { headers }),
+  );
 }
 
 function post(
@@ -14,7 +17,22 @@ function post(
   headers: Record<string, string> = {},
 ) {
   return exports.default.fetch(
-    new Request(`${BASE}${path}`, {
+    new Request(`${HTTPS_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+function postWithBase(
+  base: string,
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  return exports.default.fetch(
+    new Request(`${base}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
@@ -28,7 +46,7 @@ function patch(
   headers: Record<string, string> = {},
 ) {
   return exports.default.fetch(
-    new Request(`${BASE}${path}`, {
+    new Request(`${HTTPS_BASE}${path}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
@@ -152,5 +170,65 @@ describe('HTTP routes', () => {
     const entry = tally.votes.find((v) => v.optionIndex === 8);
     expect(entry).toBeDefined();
     expect(entry!.count).toBeGreaterThanOrEqual(1);
+  });
+
+  // ---- Cookie Secure attribute regression tests (issue #83) ----
+
+  it('/api/auth/verify over HTTPS sets Secure cookie attribute', async () => {
+    const wallet = createTestWallet(4);
+    const challengeResp = await postWithBase(
+      HTTPS_BASE,
+      '/api/auth/challenge',
+      {
+        walletAddress: wallet.address,
+      },
+    );
+    const { challengeId, message } = (await challengeResp.json()) as {
+      challengeId: string;
+      message: string;
+    };
+    const signature = await wallet.signMessage(message);
+    const verifyResp = await postWithBase(HTTPS_BASE, '/api/auth/verify', {
+      challengeId,
+      walletAddress: wallet.address,
+      signature,
+    });
+    expect(verifyResp.status).toBe(200);
+    const setCookie = verifyResp.headers.get('Set-Cookie')!;
+    expect(setCookie).toContain('Secure');
+  });
+
+  it('/api/auth/verify over HTTP omits Secure cookie attribute', async () => {
+    const wallet = createTestWallet(5);
+    const challengeResp = await postWithBase(HTTP_BASE, '/api/auth/challenge', {
+      walletAddress: wallet.address,
+    });
+    const { challengeId, message } = (await challengeResp.json()) as {
+      challengeId: string;
+      message: string;
+    };
+    const signature = await wallet.signMessage(message);
+    const verifyResp = await postWithBase(HTTP_BASE, '/api/auth/verify', {
+      challengeId,
+      walletAddress: wallet.address,
+      signature,
+    });
+    expect(verifyResp.status).toBe(200);
+    const setCookie = verifyResp.headers.get('Set-Cookie')!;
+    expect(setCookie).not.toContain('Secure');
+  });
+
+  it('/api/logout over HTTPS sets Secure cookie attribute', async () => {
+    const resp = await postWithBase(HTTPS_BASE, '/api/logout', {});
+    expect(resp.status).toBe(200);
+    const setCookie = resp.headers.get('Set-Cookie')!;
+    expect(setCookie).toContain('Secure');
+  });
+
+  it('/api/logout over HTTP omits Secure cookie attribute', async () => {
+    const resp = await postWithBase(HTTP_BASE, '/api/logout', {});
+    expect(resp.status).toBe(200);
+    const setCookie = resp.headers.get('Set-Cookie')!;
+    expect(setCookie).not.toContain('Secure');
   });
 });
