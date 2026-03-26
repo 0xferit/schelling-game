@@ -442,8 +442,9 @@ function parseGuestWallet(input) {
 function getGuestMnemonic() {
   try {
     const stored = localStorage.getItem(GUEST_KEY);
-    if (stored && /\s/.test(stored)) return stored.trim();
-    return null;
+    if (!stored) return null;
+    const trimmed = stored.trim();
+    return /\s/.test(trimmed) ? trimmed : null;
   } catch (_) { return null; }
 }
 
@@ -522,6 +523,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
     $('#show-import-btn').classList.add('hidden');
     $('#import-section').classList.add('hidden');
     $('#show-import-btn').setAttribute('aria-expanded', 'false');
+    $('#import-input').value = '';
   } else {
     S.displayName = result.displayName;
     onAuthComplete();
