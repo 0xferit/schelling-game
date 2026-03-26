@@ -354,7 +354,7 @@ export async function handleHttpRequest(
         's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
         'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL ' +
-        'ORDER BY a.token_balance DESC, s.coherent_rounds DESC, a.display_name ASC ' +
+        'ORDER BY a.token_balance DESC, COALESCE(s.coherent_rounds, 0) DESC, a.display_name ASC ' +
         'LIMIT 100',
     ).all();
 
@@ -410,15 +410,27 @@ export async function handleHttpRequest(
     } | null;
     if (!account) return errorResponse('Account not found', 404);
 
-    const rankRow = (await env.DB.prepare(
-      'SELECT COUNT(*) as rank FROM accounts WHERE leaderboard_eligible = 1 AND token_balance > ? AND display_name IS NOT NULL',
-    )
-      .bind(account.token_balance ?? 0)
-      .first()) as { rank: number } | null;
-
     const gp = account.games_played || 0;
     const rp = account.rounds_played || 0;
     const cr = account.coherent_rounds || 0;
+
+    const rankRow = (await env.DB.prepare(
+      'SELECT COUNT(*) as rank FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
+        'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL AND (' +
+        'a.token_balance > ? OR ' +
+        '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) > ?) OR ' +
+        '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) = ? AND a.display_name < ?)' +
+        ')',
+    )
+      .bind(
+        account.token_balance ?? 0,
+        account.token_balance ?? 0,
+        cr,
+        account.token_balance ?? 0,
+        cr,
+        account.display_name ?? '',
+      )
+      .first()) as { rank: number } | null;
 
     return jsonResponse({
       rank: (rankRow?.rank ?? 0) + 1,
