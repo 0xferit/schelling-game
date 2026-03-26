@@ -4,6 +4,7 @@ import {
   createSessionToken,
   getAuthenticatedAccountId,
   parseCookies,
+  setSessionSecret,
   verifySessionToken,
 } from './session';
 
@@ -24,10 +25,27 @@ function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
 }
 
+function escapeCsvField(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (
+    s.includes(',') ||
+    s.includes('"') ||
+    s.includes('\n') ||
+    s.includes('\r')
+  ) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
 export async function handleHttpRequest(
   request: Request,
   env: Env,
 ): Promise<Response> {
+  // Configure session secret from environment if available
+  if (env.SESSION_SECRET) setSessionSecret(env.SESSION_SECRET);
+
   const url = new URL(request.url);
   const method = request.method;
 
@@ -470,13 +488,7 @@ export async function handleHttpRequest(
     ];
     const header = columns.join(',');
     const rows = (results || []).map((r: Record<string, unknown>) =>
-      columns
-        .map((c) => {
-          const v = r[c];
-          if (v === null || v === undefined) return '';
-          return String(v).includes(',') ? `"${String(v)}"` : String(v);
-        })
-        .join(','),
+      columns.map((c) => escapeCsvField(r[c])).join(','),
     );
     const csv = [header, ...rows].join('\n');
     return new Response(csv, {

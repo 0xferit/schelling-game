@@ -1,12 +1,17 @@
 // Session token helpers (HMAC-signed, stateless)
 
-const SESSION_SECRET = 'schelling-game-session-v1'; // in production, use env.SESSION_SECRET
+const FALLBACK_SECRET = 'schelling-game-session-v1';
+let sessionSecret = FALLBACK_SECRET;
+
+export function setSessionSecret(secret: string): void {
+  sessionSecret = secret;
+}
 
 export async function createSessionToken(accountId: string): Promise<string> {
   const payload = `${accountId}:${Date.now()}`;
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(SESSION_SECRET),
+    new TextEncoder().encode(sessionSecret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
@@ -30,15 +35,19 @@ export async function verifySessionToken(
   if (parts.length < 3) return null;
   const sig = parts.pop()!;
   const payload = parts.join(':');
+
+  // Validate signature is non-empty even-length hex
+  if (!sig || sig.length % 2 !== 0 || !/^[0-9a-f]+$/.test(sig)) return null;
+
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(SESSION_SECRET),
+    new TextEncoder().encode(sessionSecret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign', 'verify'],
   );
   const sigBuf = new Uint8Array(
-    sig.match(/.{2}/g)!.map((h) => parseInt(h, 16)),
+    (sig.match(/.{2}/g) ?? []).map((h) => parseInt(h, 16)),
   );
   const valid = await crypto.subtle.verify(
     'HMAC',
