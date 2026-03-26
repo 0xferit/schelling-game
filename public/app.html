@@ -992,7 +992,8 @@ function onRoundStart(msg) {
   }
 
   // Timer: only start during commit phase; reveal timer is driven by
-  // phase_change, and results phase has no countdown.
+  // phase_change. Results phase timer is started by onRoundResult (which
+  // is not replayed on reconnect), so clear stale timer state here.
   if (msg.phase === 'commit') {
     startTimer(msg.commitDuration);
   } else {

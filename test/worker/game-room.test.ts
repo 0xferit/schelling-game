@@ -209,8 +209,8 @@ describe('GameRoom Durable Object', () => {
     p1.ws.close();
 
     // Reconnect the same wallet (same accountId).
-    // Register both listeners before connecting to avoid missing
-    // back-to-back game_started + round_start from the replay.
+    // Register both listeners immediately after connectPlayer returns
+    // (before any await) so queued replay messages can't dispatch first.
     const p1r = await connectPlayer(3, 'Reconnector');
     const reconnectGameStartedP = waitForMessage(p1r.ws, 'game_started', 3000);
     const reconnectRoundStartP = waitForMessage(p1r.ws, 'round_start', 3000);
