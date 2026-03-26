@@ -689,7 +689,7 @@ function onAuthComplete() {
 
 $('#logout-btn').addEventListener('click', async () => {
   try { await api('POST', '/api/logout'); } catch (_) {}
-  if (S.ws) { S.ws.close(); S.ws = null; }
+  if (S.ws) { intentionalClose = true; S.ws.close(); S.ws = null; }
   S.walletAddress = null;
   S.accountId = null;
   S.displayName = null;
@@ -752,12 +752,15 @@ const WS_MAX_RETRIES = 10;
 const WS_BASE_DELAY = 1000;
 const WS_MAX_DELAY = 30000;
 let wsRetryCount = 0;
+let intentionalClose = false;
 
 function connectWebSocket() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  intentionalClose = false;
   S.ws = new WebSocket(`${proto}//${location.host}/ws`);
   S.ws.onopen = () => { wsRetryCount = 0; };
   S.ws.onclose = () => {
+    if (intentionalClose) return;
     if (wsRetryCount >= WS_MAX_RETRIES) {
       notify('Connection lost. Please refresh the page.', 'error');
       return;
