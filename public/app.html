@@ -405,7 +405,19 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ── Guest wallet ─────────────────────────────────────────────────
-const GUEST_KEY = 'schelling_guest_pk';
+const GUEST_KEY = 'schelling_guest_secret';
+// Migrate from legacy key name on startup (v1 stored only private keys)
+(function migrateGuestKey() {
+  try {
+    if (!localStorage.getItem(GUEST_KEY)) {
+      const legacy = localStorage.getItem('schelling_guest_pk');
+      if (legacy) {
+        localStorage.setItem(GUEST_KEY, legacy);
+        localStorage.removeItem('schelling_guest_pk');
+      }
+    }
+  } catch (_) {}
+})();
 
 // Construct a wallet from a stored secret (mnemonic or private key)
 function walletFromSecret(secret) {
