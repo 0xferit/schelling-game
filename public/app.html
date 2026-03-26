@@ -563,7 +563,9 @@ async function checkSession() {
           S.isGuestWallet = true;
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      try { localStorage.removeItem('schelling_guest_pk'); } catch (_e) {}
+    }
     if (S.displayName) {
       onAuthComplete();
     }
