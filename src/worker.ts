@@ -17,6 +17,7 @@ import type {
   Question,
   RoundResult,
 } from './types/domain';
+import type { RoundResultMessage } from './types/messages';
 import type { Env } from './types/worker-env';
 import { handleHttpRequest } from './worker/httpHandler';
 import type { PlayerActionFields } from './worker/persistence';
@@ -67,6 +68,8 @@ interface WorkerMatchState {
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
+  /** Transient cache of the last round_result payload for reconnect replay. Not checkpointed. */
+  lastRoundResult: RoundResultMessage['result'] | null;
 }
 
 interface FormingMatchState {
@@ -532,6 +535,7 @@ export class GameRoom {
       commitTimer: null,
       revealTimer: null,
       resultsTimer: null,
+      lastRoundResult: null,
     };
     this.activeMatches.set(matchId, match);
 
@@ -575,6 +579,7 @@ export class GameRoom {
     match.phase = 'commit';
     match.currentRound++;
     match.phaseEnteredAt = Date.now();
+    match.lastRoundResult = null;
     const question = match.questions[match.currentRound - 1]!;
 
     // Reset per-round player state
@@ -756,30 +761,38 @@ export class GameRoom {
 
     this._checkpointMatch(match);
 
+    // Cache round result for reconnect replay (transient; not checkpointed)
+    const roundResultPayload: RoundResultMessage['result'] = {
+      roundNum: match.currentRound,
+      voided: result.voided,
+      voidReason: result.voidReason,
+      playerCount: result.playerCount,
+      pot: result.pot,
+      validRevealCount: result.validRevealCount,
+      topCount: result.topCount,
+      winningOptionIndexes: result.winningOptionIndexes,
+      winnerCount: result.winnerCount,
+      payoutPerWinner: result.payoutPerWinner,
+      players: result.players.map((pr) => ({
+        accountId: pr.accountId,
+        displayName: pr.displayName,
+        revealedOptionIndex: pr.revealedOptionIndex,
+        revealedOptionLabel: pr.revealedOptionLabel,
+        wonRound: pr.wonRound,
+        earnsCoordinationCredit: pr.earnsCoordinationCredit,
+        antePaid: pr.antePaid,
+        roundPayout: pr.roundPayout,
+        netDelta: pr.netDelta,
+        newBalance: (pr as PlayerResultWithBalance).newBalance,
+      })),
+    };
+    match.lastRoundResult = roundResultPayload;
+
     // Broadcast round_result
     this._broadcastToMatch(match, {
       type: 'round_result',
       resultsDuration: RESULTS_DURATION,
-      result: {
-        roundNum: match.currentRound,
-        voided: result.voided,
-        voidReason: result.voidReason,
-        playerCount: result.playerCount,
-        pot: result.pot,
-        winningOptionIndexes: result.winningOptionIndexes,
-        winnerCount: result.winnerCount,
-        payoutPerWinner: result.payoutPerWinner,
-        players: result.players.map((pr) => ({
-          displayName: pr.displayName,
-          revealedOptionIndex: pr.revealedOptionIndex,
-          wonRound: pr.wonRound,
-          earnsCoordinationCredit: pr.earnsCoordinationCredit,
-          antePaid: pr.antePaid,
-          roundPayout: pr.roundPayout,
-          netDelta: pr.netDelta,
-          newBalance: (pr as PlayerResultWithBalance).newBalance,
-        })),
-      },
+      result: roundResultPayload,
     });
 
     // Check early termination: no non-forfeited players remain
@@ -799,6 +812,7 @@ export class GameRoom {
   }
 
   async _endMatch(match: WorkerMatchState): Promise<void> {
+    match.lastRoundResult = null;
     if (match.resultsTimer) {
       clearTimeout(match.resultsTimer);
       match.resultsTimer = null;
@@ -1420,6 +1434,7 @@ export class GameRoom {
         commitTimer: null,
         revealTimer: null,
         resultsTimer: null,
+        lastRoundResult: null,
       });
     }
   }
@@ -1570,6 +1585,15 @@ export class GameRoom {
             displayName: p.displayName,
             hasRevealed: p.revealed,
           })),
+        });
+      }
+
+      // Replay cached round result so the reconnecting client renders the results screen
+      if (match.phase === 'results' && match.lastRoundResult) {
+        this._sendTo(accountId, {
+          type: 'round_result',
+          resultsDuration: RESULTS_DURATION,
+          result: match.lastRoundResult,
         });
       }
     }
