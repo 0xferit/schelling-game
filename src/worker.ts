@@ -1556,6 +1556,10 @@ export class GameRoom {
         0,
         Math.ceil((REVEAL_DURATION * 1000 - elapsed) / 1000),
       );
+      const resultsRemaining = Math.max(
+        0,
+        Math.ceil((RESULTS_DURATION * 1000 - elapsed) / 1000),
+      );
 
       this._sendTo(accountId, {
         type: 'round_start',
@@ -1606,7 +1610,7 @@ export class GameRoom {
       if (match.phase === 'results' && match.lastRoundResult) {
         this._sendTo(accountId, {
           type: 'round_result',
-          resultsDuration: RESULTS_DURATION,
+          resultsDuration: resultsRemaining,
           result: match.lastRoundResult,
         });
       }
