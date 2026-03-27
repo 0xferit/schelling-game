@@ -86,6 +86,12 @@ console.log('\n1. Commit-Reveal Verification');
     validateSalt('abcdef0123456789'.repeat(3)),
     'Valid salt (48 hex chars) accepted',
   );
+  assert(validateSalt('a'.repeat(128)), 'Salt at max length (128) accepted');
+  assert(!validateSalt('a'.repeat(129)), 'Salt just over max (129) rejected');
+  assert(
+    !validateSalt('a'.repeat(10000)),
+    'Very long salt (10000 chars) rejected',
+  );
 }
 
 {

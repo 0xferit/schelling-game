@@ -1048,7 +1048,7 @@ export class GameRoom {
     if (!validateSalt(salt)) {
       return this._sendTo(accountId, {
         type: 'error',
-        message: 'Salt must be a hex string of at least 32 characters',
+        message: 'Salt must be a hex string between 32 and 128 characters',
       });
     }
 
