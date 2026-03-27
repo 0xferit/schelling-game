@@ -470,24 +470,43 @@ function notify(msg, type = '') {
   setTimeout(() => el.remove(), 4000);
 }
 
-// ── View switching ──────────────────────────────────────────────
-function showView(name) {
-  S.view = name;
-  $$('.view').forEach(v => v.classList.remove('active'));
-  $(`#${name}-view`).classList.add('active');
-
-  // header profile: show whenever authenticated (accountId set), even before display name is claimed
+// ── Header profile ──────────────────────────────────────────────
+function updateHeaderProfile() {
   if (S.accountId) {
     $('#header-profile').classList.remove('hidden');
     $('#header-name').textContent = S.displayName || S.accountId.slice(0, 6) + '…';
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
     $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
   }
+}
+
+// ── View switching ──────────────────────────────────────────────
+function showView(name) {
+  S.view = name;
+  $$('.view').forEach(v => v.classList.remove('active'));
+  $(`#${name}-view`).classList.add('active');
+
+  updateHeaderProfile();
 
   // nav visibility
   $('#nav-queue').classList.toggle('hidden', name === 'auth');
   // hide logout during active matches
   $('#logout-btn').classList.toggle('hidden', name === 'play');
+}
+
+// ── Name-claim UI (shared by authenticateWithWallet + checkSession) ──
+function showNameClaim(statusText) {
+  updateHeaderProfile();
+  $('#auth-status').textContent = statusText;
+  $('#name-section').classList.remove('hidden');
+  $('#connect-wallet-btn').classList.add('hidden');
+  $('#browser-wallet-btn').classList.add('hidden');
+  $('.auth-divider').classList.add('hidden');
+  $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
+  $('#show-import-btn').classList.add('hidden');
+  $('#import-section').classList.add('hidden');
+  $('#show-import-btn').setAttribute('aria-expanded', 'false');
+  $('#import-input').value = '';
 }
 
 // ── REST helpers ────────────────────────────────────────────────
@@ -527,16 +546,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
   S.isBrowserWallet = isBrowserWallet;
 
   if (result.requiresDisplayName) {
-    status.textContent = successMsg + ' Please claim a display name.';
-    $('#name-section').classList.remove('hidden');
-    $('#connect-wallet-btn').classList.add('hidden');
-    $('#browser-wallet-btn').classList.add('hidden');
-    $('.auth-divider').classList.add('hidden');
-    $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
-    $('#show-import-btn').classList.add('hidden');
-    $('#import-section').classList.add('hidden');
-    $('#show-import-btn').setAttribute('aria-expanded', 'false');
-    $('#import-input').value = '';
+    showNameClaim(successMsg + ' Please claim a display name.');
   } else {
     S.displayName = result.displayName;
     onAuthComplete();
@@ -743,16 +753,7 @@ async function checkSession() {
     if (S.displayName) {
       onAuthComplete();
     } else {
-      $('#auth-status').textContent = 'Welcome back! Please claim a display name.';
-      $('#name-section').classList.remove('hidden');
-      $('#connect-wallet-btn').classList.add('hidden');
-      $('#browser-wallet-btn').classList.add('hidden');
-      $('.auth-divider').classList.add('hidden');
-      $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
-      $('#show-import-btn').classList.add('hidden');
-      $('#import-section').classList.add('hidden');
-      $('#show-import-btn').setAttribute('aria-expanded', 'false');
-      $('#import-input').value = '';
+      showNameClaim('Welcome back! Please claim a display name.');
     }
   } catch (_) {
     // not logged in; check if wallet is available
