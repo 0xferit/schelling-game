@@ -239,10 +239,10 @@ describe('GameRoom Durable Object', () => {
   it('reconnect replays player_disconnected for peers in grace period', {
     timeout: 35_000,
   }, async () => {
-    // Use wallet indices 13/14/15 to avoid collisions with other tests.
-    const p1 = await connectPlayer(13, 'ReconP1');
-    const p2 = await connectPlayer(14, 'ReconP2');
-    const p3 = await connectPlayer(15, 'ReconP3');
+    // Use wallet indices 19/20/21 to avoid collisions with other tests.
+    const p1 = await connectPlayer(19, 'ReconP1');
+    const p2 = await connectPlayer(20, 'ReconP2');
+    const p3 = await connectPlayer(21, 'ReconP3');
 
     const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
     const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
@@ -268,7 +268,7 @@ describe('GameRoom Durable Object', () => {
     // a synthetic player_disconnected for player 2.
     p1.ws.close();
 
-    const p1r = await connectPlayer(13, 'ReconP1');
+    const p1r = await connectPlayer(19, 'ReconP1');
     const reconnectGameStarted = waitForMessage(p1r.ws, 'game_started', 3000);
     const reconnectDisconnected = waitForMessage(
       p1r.ws,
