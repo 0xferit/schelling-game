@@ -3,6 +3,7 @@
 // so they can be called from the GameRoom class without coupling.
 
 import type { Question } from '../types/domain';
+import type { RoundResultMessage } from '../types/messages';
 
 // Matches the WorkerMatchState interface in worker.ts but only the
 // serializable fields needed for checkpointing.
@@ -14,6 +15,7 @@ export interface CheckpointableMatch {
   questions: Question[];
   phaseEnteredAt: number;
   lastSettledRound: number;
+  lastRoundResult: RoundResultMessage['result'] | null;
   players: Map<
     string,
     {
@@ -54,6 +56,7 @@ export interface RestoredMatch {
   questions: Question[];
   phaseEnteredAt: number;
   lastSettledRound: number;
+  lastRoundResult: RoundResultMessage['result'] | null;
   players: Map<string, RestoredPlayer>;
 }
 
@@ -85,9 +88,21 @@ export function initCheckpointTables(sql: SqlStorage): void {
       questions_json  TEXT NOT NULL,
       phase_entered_at INTEGER NOT NULL,
       last_settled_round INTEGER NOT NULL DEFAULT 0,
+      last_round_result_json TEXT,
       created_at      INTEGER NOT NULL
     )
   `);
+  // Migrate existing tables that lack the last_round_result_json column.
+  const columns = [...sql.exec('PRAGMA table_info(match_checkpoints)')];
+  const hasLastRoundResult = columns.some(
+    (c) => (c as Record<string, unknown>).name === 'last_round_result_json',
+  );
+  if (!hasLastRoundResult) {
+    sql.exec(
+      'ALTER TABLE match_checkpoints ADD COLUMN last_round_result_json TEXT',
+    );
+  }
+
   sql.exec(`
     CREATE TABLE IF NOT EXISTS player_checkpoints (
       match_id         TEXT NOT NULL,
@@ -121,8 +136,8 @@ export function checkpointMatch(
     );
     sql.exec(
       `INSERT OR REPLACE INTO match_checkpoints
-        (match_id, phase, current_round, total_rounds, questions_json, phase_entered_at, last_settled_round, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        (match_id, phase, current_round, total_rounds, questions_json, phase_entered_at, last_settled_round, last_round_result_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       match.matchId,
       match.phase,
       match.currentRound,
@@ -130,6 +145,7 @@ export function checkpointMatch(
       JSON.stringify(match.questions),
       match.phaseEnteredAt,
       match.lastSettledRound,
+      match.lastRoundResult ? JSON.stringify(match.lastRoundResult) : null,
       Date.now(),
     );
     for (const p of match.players.values()) {
@@ -256,6 +272,8 @@ export function restoreMatchesFromStorage(
         });
       }
 
+      const lastRoundResultRaw = row.last_round_result_json as string | null;
+
       restored.push({
         matchId: row.match_id as string,
         players,
@@ -265,6 +283,9 @@ export function restoreMatchesFromStorage(
         phase: row.phase as string,
         phaseEnteredAt,
         lastSettledRound: row.last_settled_round as number,
+        lastRoundResult: lastRoundResultRaw
+          ? JSON.parse(lastRoundResultRaw)
+          : null,
       });
     } catch (err) {
       console.error('DO storage: failed to restore match', row.match_id, err);
