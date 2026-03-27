@@ -1684,8 +1684,12 @@ export class GameRoom {
         ...tally,
         yourRating,
       });
-    } catch {
-      // Best-effort: rating replay is non-critical
+    } catch (err) {
+      console.warn(
+        'Failed to replay question rating tally',
+        { matchId, questionId, accountId },
+        err,
+      );
     }
   }
 }

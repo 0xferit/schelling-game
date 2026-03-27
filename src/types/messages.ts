@@ -107,6 +107,7 @@ export interface ChatMessage {
 
 export interface QuestionRatingTallyMessage {
   type: 'question_rating_tally';
+  questionId: number;
   likes: number;
   dislikes: number;
   /** Present on reconnect replay: the reconnecting player's own rating for this question. */
