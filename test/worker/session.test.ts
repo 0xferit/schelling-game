@@ -29,7 +29,7 @@ describe('session cookies', () => {
     );
   });
 
-  it('verifySessionCookie accepts lowercase and uppercase signature hex', async () => {
+  it('createSessionCookie produces identical output for upper and lowercase signatures', async () => {
     const wallet = createTestWallet(1);
     const issuedAt = Date.now();
     const accountId = wallet.address.toLowerCase();
@@ -52,6 +52,19 @@ describe('session cookies', () => {
 
     expect(upperCookie).toBe(lowerCookie);
     expect(verifySessionCookie(lowerCookie)).toBe(accountId);
-    expect(verifySessionCookie(upperCookie)).toBe(accountId);
+  });
+
+  it('verifySessionCookie rejects a manually-constructed cookie with uppercase signature hex', async () => {
+    const wallet = createTestWallet(2);
+    const issuedAt = Date.now();
+    const accountId = wallet.address.toLowerCase();
+    const message = buildChallengeMessage(accountId, NONCE, issuedAt);
+    const signature = await wallet.signMessage(message);
+    const upperSignature = `0x${signature.slice(2).toUpperCase()}`;
+
+    // Bypass createSessionCookie to craft a cookie with uppercase signature
+    const manualUpperCookie = `${accountId}:${NONCE}:${issuedAt}:${upperSignature}`;
+
+    expect(verifySessionCookie(manualUpperCookie)).toBeNull();
   });
 });
