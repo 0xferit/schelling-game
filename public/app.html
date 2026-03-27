@@ -156,12 +156,6 @@ nav{display:flex;gap:.5rem}
 @keyframes slideIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
 .mt1{margin-top:.5rem}.mt2{margin-top:1rem}
 #build-info{text-align:center;padding:2rem 1rem 1rem;font-size:.7rem;color:#444;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;display:flex;justify-content:center;align-items:center;gap:1rem}
-#deploy-status{display:flex;align-items:center;gap:.35rem}
-#deploy-status .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-#deploy-status .dot.success{background:#4caf50}
-#deploy-status .dot.in_progress{background:#ff9800;animation:dsPulse 1s infinite alternate}
-#deploy-status .dot.failure{background:#e53935}
-@keyframes dsPulse{to{opacity:.3}}
 /* ── Atmosphere ────────────────────────────────────────────────── */
 #app::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 30%,rgba(201,168,76,.03) 0%,transparent 70%);pointer-events:none;z-index:-1}
 .view.active{animation:viewIn .4s ease forwards}
@@ -1500,38 +1494,8 @@ checkSession();
 
 })();
 
-/* ── Deploy status indicator ─────────────── */
-(function() {
-  var el = document.getElementById('deploy-status');
-  var labels = { success: 'deployed', in_progress: 'deploying new version', failure: 'deploy failed' };
-  var pending = false;
-  var timer = null;
-
-  function schedule() {
-    clearInterval(timer);
-    timer = setInterval(check, pending ? 15000 : 90000);
-  }
-
-  function check() {
-    fetch('https://api.github.com/repos/0xferit/schelling-game/actions/runs?per_page=1&branch=main')
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (!data.workflow_runs || !data.workflow_runs.length) return;
-        var run = data.workflow_runs[0];
-        var status = run.status === 'completed' ? run.conclusion : 'in_progress';
-        var text = labels[status] || status;
-        el.innerHTML = '<span class="dot ' + status + '"></span>' + text;
-        if ((status === 'in_progress') !== pending) {
-          pending = status === 'in_progress';
-          schedule();
-        }
-      })
-      .catch(function() {});
-  }
-
-  check();
-  schedule();
-})();
 </script>
+<link rel="stylesheet" href="/shared-deploy.css"/>
+<script src="/shared-deploy.js"></script>
 </body>
 </html>
