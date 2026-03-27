@@ -19,8 +19,9 @@
 }
 html{scrollbar-color:rgba(201,168,76,.25) transparent;scrollbar-width:thin}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.7;font-weight:300;-webkit-font-smoothing:antialiased}
-button{cursor:pointer;border:none;border-radius:var(--radius);padding:.5rem 1.1rem;font-size:.8rem;font-family:var(--sans);font-weight:600;text-transform:uppercase;letter-spacing:.1em;transition:all .2s}
-button:active{transform:scale(.97)}
+button,.button-link{cursor:pointer;border:none;border-radius:var(--radius);padding:.5rem 1.1rem;font-size:.8rem;font-family:var(--sans);font-weight:600;text-transform:uppercase;letter-spacing:.1em;transition:all .2s}
+.button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+button:active,.button-link:active{transform:scale(.97)}
 button:disabled{opacity:.4;cursor:default;transform:none}
 .btn-primary{background:var(--accent);color:var(--bg)}.btn-primary:hover:not(:disabled){background:var(--accent2);transform:translateY(-1px)}
 .btn-danger{background:var(--red);color:#fff}
@@ -179,8 +180,9 @@ nav{display:flex;gap:.5rem}
       <button class="btn-ghost" id="logout-btn" title="Log out">✕</button>
     </div>
     <nav>
+      <a class="button-link btn-ghost" id="nav-feedback" href="https://github.com/0xferit/schelling-game/issues/new?template=feedback.md&labels=feedback&title=%5BFeedback%5D%3A%20" target="_blank" rel="noopener noreferrer">Feedback</a>
       <button class="btn-ghost" id="nav-leaderboard">Leaderboard</button>
-      <button class="btn-ghost" id="nav-queue" class="hidden">Queue</button>
+      <button class="btn-ghost hidden" id="nav-queue">Queue</button>
     </nav>
   </header>
 

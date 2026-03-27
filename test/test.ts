@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   createCommitHash,
   validateHash,
@@ -613,6 +614,43 @@ console.log('\n10. Coordination Credit Rules');
   assert(!(5 < MIN_ESTABLISHED_MATCHES), 'gamesPlayed=5 is not provisional');
   assert(!(10 < MIN_ESTABLISHED_MATCHES), 'gamesPlayed=10 is not provisional');
   assert(0 < MIN_ESTABLISHED_MATCHES, 'gamesPlayed=0 is provisional');
+}
+
+// ---------------------------------------------------------------------------
+// 12. Feedback entry points
+// ---------------------------------------------------------------------------
+{
+  console.log('\n12. Feedback entry points');
+
+  const landingHtml = readFileSync(
+    new URL('../public/index.html', import.meta.url),
+    'utf8',
+  );
+  const appHtml = readFileSync(
+    new URL('../public/app.html', import.meta.url),
+    'utf8',
+  );
+  const feedbackTemplate = readFileSync(
+    new URL('../.github/ISSUE_TEMPLATE/feedback.md', import.meta.url),
+    'utf8',
+  );
+
+  assert(
+    landingHtml.includes('issues/new?template=feedback.md'),
+    'Landing page exposes the feedback issue link',
+  );
+  assert(
+    appHtml.includes('issues/new?template=feedback.md'),
+    'App shell exposes the feedback issue link',
+  );
+  assert(
+    feedbackTemplate.includes('name: Feedback'),
+    'Feedback issue template is present',
+  );
+  assert(
+    feedbackTemplate.includes('- feedback'),
+    'Feedback issue template defaults the feedback label',
+  );
 }
 
 // ---------------------------------------------------------------------------
