@@ -1,4 +1,4 @@
-import type { Question } from './domain';
+import type { Question, RoundResultWithBalances } from './domain';
 
 // ── Client → Server ──────────────────────────────────────────────
 
@@ -64,30 +64,7 @@ export interface RevealStatusMessage {
 
 export interface RoundResultMessage {
   type: 'round_result';
-  result: {
-    roundNum: number;
-    voided: boolean;
-    voidReason: string | null;
-    playerCount: number;
-    pot: number;
-    validRevealCount: number;
-    topCount: number;
-    winningOptionIndexes: number[];
-    winnerCount: number;
-    payoutPerWinner: number;
-    players: {
-      accountId: string;
-      displayName: string;
-      revealedOptionIndex: number | null;
-      revealedOptionLabel: string | null;
-      wonRound: boolean;
-      earnsCoordinationCredit: boolean;
-      antePaid: number;
-      roundPayout: number;
-      netDelta: number;
-      newBalance: number;
-    }[];
-  };
+  result: RoundResultWithBalances;
 }
 
 export interface GameOverMessage {
