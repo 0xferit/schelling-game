@@ -72,6 +72,31 @@ async function connectPlayer(
   return { ws, accountId };
 }
 
+/**
+ * Reconnect an already-seeded player via WebSocket without touching D1.
+ * Use this instead of connectPlayer when the account already exists and its
+ * token_balance must not be reset (e.g. after settlement has altered it).
+ */
+async function reconnectPlayer(
+  walletIndex: number,
+): Promise<{ ws: WebSocket; accountId: string }> {
+  const wallet = createTestWallet(walletIndex);
+  const { accountId, cookie } = await createTestSession(wallet);
+
+  const resp = await exports.default.fetch(
+    new Request(`${BASE}/ws`, {
+      headers: {
+        Upgrade: 'websocket',
+        Cookie: `session=${cookie}`,
+      },
+    }),
+  );
+  expect(resp.status).toBe(101);
+  const ws = resp.webSocket!;
+  ws.accept();
+  return { ws, accountId };
+}
+
 /** Connect N players, join queue, and await game_started for all. */
 async function formMatch(
   wallets: [index: number, name: string][],
@@ -218,9 +243,9 @@ describe('GameRoom Durable Object', () => {
     p1.ws.close();
 
     // Reconnect the same wallet (same accountId).
-    // Register both listeners immediately after connectPlayer returns
+    // Register both listeners immediately after reconnectPlayer returns
     // (before any await) so queued replay messages can't dispatch first.
-    const p1r = await connectPlayer(3, 'Reconnector');
+    const p1r = await reconnectPlayer(3);
     const reconnectGameStartedP = waitForMessage(p1r.ws, 'game_started', 3000);
     const reconnectRoundStartP = waitForMessage(p1r.ws, 'round_start', 3000);
 
@@ -297,7 +322,7 @@ describe('GameRoom Durable Object', () => {
     // Disconnect player 1 and reconnect during results phase
     p1.ws.close();
 
-    const p1r = await connectPlayer(10, 'ResultP1', 1000);
+    const p1r = await reconnectPlayer(10);
     const reconnectResult = waitForMessage(p1r.ws, 'round_result', 5000);
 
     const replayedResult = await reconnectResult;
@@ -522,7 +547,7 @@ describe('GameRoom Durable Object', () => {
     // Disconnect player 1 and reconnect during round 2 commit phase
     p1.ws.close();
 
-    const p1r = await connectPlayer(19, 'BalP1', STARTING_BALANCE);
+    const p1r = await reconnectPlayer(19);
     const reconnectGameStarted = waitForMessage(p1r.ws, 'game_started', 5000);
 
     const gsMsg = await reconnectGameStarted;
