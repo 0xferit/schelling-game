@@ -17,11 +17,12 @@ export function verifyCommit(
 }
 
 // Validate salt: must be hex string, 32–128 chars (128–512 bits)
+const MIN_SALT_LENGTH = 32;
 const MAX_SALT_LENGTH = 128;
 
 export function validateSalt(salt: unknown): salt is string {
   if (typeof salt !== 'string') return false;
-  if (salt.length < 32) return false;
+  if (salt.length < MIN_SALT_LENGTH) return false;
   if (salt.length > MAX_SALT_LENGTH) return false;
   return /^[0-9a-f]+$/i.test(salt);
 }
