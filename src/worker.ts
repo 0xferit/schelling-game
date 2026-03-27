@@ -1560,12 +1560,11 @@ export class GameRoom {
         yourRevealed: player.revealed,
       });
 
-      if (match.phase === 'reveal' || match.phase === 'results') {
+      if (match.phase === 'reveal') {
         this._sendTo(accountId, {
           type: 'phase_change',
-          phase: match.phase === 'results' ? 'results' : 'reveal',
-          revealDuration:
-            match.phase === 'reveal' ? revealRemaining : REVEAL_DURATION,
+          phase: 'reveal',
+          revealDuration: revealRemaining,
         });
       }
 
