@@ -461,27 +461,19 @@ export async function handleHttpRequest(
   const subtle = crypto.subtle as unknown as {
     timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean;
   };
-  const timingSafeEqual = (a: string, b: string): boolean => {
+  const timingSafeEqual = async (a: string, b: string): Promise<boolean> => {
     const enc = new TextEncoder();
-    const bufA = enc.encode(a);
-    const bufB = enc.encode(b);
-    if (bufA.byteLength !== bufB.byteLength) {
-      subtle.timingSafeEqual(
-        bufA.buffer as ArrayBuffer,
-        bufA.buffer as ArrayBuffer,
-      );
-      return false;
-    }
-    return subtle.timingSafeEqual(
-      bufA.buffer as ArrayBuffer,
-      bufB.buffer as ArrayBuffer,
-    );
+    const [digestA, digestB] = await Promise.all([
+      crypto.subtle.digest('SHA-256', enc.encode(a)),
+      crypto.subtle.digest('SHA-256', enc.encode(b)),
+    ]);
+    return subtle.timingSafeEqual(digestA, digestB);
   };
 
   const requireAdmin = async (): Promise<Response | null> => {
     if (!env.ADMIN_KEY) return errorResponse('ADMIN_KEY not configured', 503);
     const auth = request.headers.get('Authorization') ?? '';
-    if (!timingSafeEqual(auth, `Bearer ${env.ADMIN_KEY}`)) {
+    if (!(await timingSafeEqual(auth, `Bearer ${env.ADMIN_KEY}`))) {
       await new Promise((r) => setTimeout(r, 1000));
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
