@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src/domain/**/*.ts", "src/types/domain.ts", "test/test.ts"]
+  "include": ["src/domain/**/*.ts", "src/types/domain.ts", "test/domain/**/*.ts"]
 }
