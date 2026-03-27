@@ -73,9 +73,10 @@ async function connectPlayer(
 }
 
 /**
- * Reconnect an already-seeded player via WebSocket without touching D1.
- * Use this instead of connectPlayer when the account already exists and its
- * token_balance must not be reset (e.g. after settlement has altered it).
+ * Reconnect an already-seeded player via WebSocket without reseeding or
+ * updating the account row in D1. Use this instead of connectPlayer when the
+ * account already exists and its token_balance must not be reset (e.g. after
+ * settlement has altered it).
  */
 async function reconnectPlayer(
   walletIndex: number,
