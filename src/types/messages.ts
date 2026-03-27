@@ -30,7 +30,11 @@ export interface GameStartedMessage {
   type: 'game_started';
   matchId: string;
   roundCount: number;
-  players: { displayName: string; startingBalance: number }[];
+  players: {
+    displayName: string;
+    startingBalance: number;
+    currentBalance?: number;
+  }[];
 }
 
 export interface RoundStartMessage {

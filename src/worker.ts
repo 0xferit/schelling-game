@@ -1533,6 +1533,7 @@ export class GameRoom {
     const playersInfo = [...match.players.values()].map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
+      currentBalance: p.currentBalance,
     }));
     this._sendTo(accountId, {
       type: 'game_started',

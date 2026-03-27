@@ -461,4 +461,95 @@ describe('GameRoom Durable Object', () => {
     p2.ws.close();
     p3.ws.close();
   });
+
+  it('reconnect after settled round replays game_started with currentBalance', {
+    timeout: 60_000,
+  }, async () => {
+    // Use wallet indices 19/20/21 to avoid collisions with other tests.
+    // Give players a balance so settlement can deduct ante.
+    const STARTING_BALANCE = 1000;
+    const p1 = await connectPlayer(19, 'BalP1', STARTING_BALANCE);
+    const p2 = await connectPlayer(20, 'BalP2', STARTING_BALANCE);
+    const p3 = await connectPlayer(21, 'BalP3', STARTING_BALANCE);
+
+    // Listen for game_started and round_start before joining queue
+    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+
+    const p1Round1 = waitForMessage(p1.ws, 'round_start', 28_000);
+    const p2Round1 = waitForMessage(p2.ws, 'round_start', 28_000);
+    const p3Round1 = waitForMessage(p3.ws, 'round_start', 28_000);
+
+    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+
+    await Promise.all([p1Started, p2Started, p3Started]);
+    await Promise.all([p1Round1, p2Round1, p3Round1]);
+
+    // Round 1: p1 and p2 pick option 0, p3 picks option 1.
+    // This creates winners (p1, p2) and a loser (p3) so balances change.
+    const salt1 = 'a'.repeat(64);
+    const salt2 = 'b'.repeat(64);
+    const salt3 = 'c'.repeat(64);
+    const hash1 = createCommitHash(0, salt1);
+    const hash2 = createCommitHash(0, salt2);
+    const hash3 = createCommitHash(1, salt3);
+
+    const p1PhaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
+
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: hash1 }));
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: hash2 }));
+    p3.ws.send(JSON.stringify({ type: 'commit', hash: hash3 }));
+
+    await p1PhaseChange;
+
+    // All reveal
+    const p1Result = waitForMessage(p1.ws, 'round_result', 5000);
+
+    p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt1 }));
+    p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt2 }));
+    p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 1, salt: salt3 }));
+
+    const roundResult = await p1Result;
+    expect(roundResult.type).toBe('round_result');
+
+    // Wait for round 2 to start (auto-advances after RESULTS_DURATION)
+    const p1Round2 = waitForMessage(p1.ws, 'round_start', 25_000);
+    await p1Round2;
+
+    // Disconnect player 1 and reconnect during round 2 commit phase
+    p1.ws.close();
+
+    const p1r = await connectPlayer(19, 'BalP1', STARTING_BALANCE);
+    const reconnectGameStarted = waitForMessage(p1r.ws, 'game_started', 5000);
+
+    const gsMsg = await reconnectGameStarted;
+    expect(gsMsg.type).toBe('game_started');
+
+    // Verify that currentBalance is present and differs from startingBalance
+    // for at least one player (settlement changed balances in round 1).
+    const players = gsMsg.players as Array<{
+      displayName: string;
+      startingBalance: number;
+      currentBalance?: number;
+    }>;
+    const hasChangedBalance = players.some(
+      (p) =>
+        p.currentBalance !== undefined &&
+        p.currentBalance !== p.startingBalance,
+    );
+    expect(hasChangedBalance).toBe(true);
+
+    // All players should have currentBalance set
+    for (const p of players) {
+      expect(p.currentBalance).toBeDefined();
+      expect(typeof p.currentBalance).toBe('number');
+    }
+
+    p1r.ws.close();
+    p2.ws.close();
+    p3.ws.close();
+  });
 });
