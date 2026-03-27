@@ -1,5 +1,8 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import type { Env } from '../../src/types/worker-env';
+import { handleHttpRequest } from '../../src/worker/httpHandler';
+import { buildChallengeMessage } from '../../src/worker/session';
 import { createTestSession, createTestWallet, seedAccount } from './helpers';
 
 const HTTPS_BASE = 'https://test.local';
@@ -62,6 +65,101 @@ describe('HTTP routes', () => {
     expect(data).toEqual([]);
   });
 
+  it('GET /api/landing-stats returns recent activity and streak aggregates', async () => {
+    const accountA = 'landing-stats-a';
+    const accountB = 'landing-stats-b';
+    const accountC = 'landing-stats-c';
+
+    await seedAccount(env.DB, accountA, 'Alice');
+    await seedAccount(env.DB, accountB, 'Bob');
+    await seedAccount(env.DB, accountC, 'Carol');
+
+    const recent = new Date().toISOString();
+    const stale = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO matches (match_id, started_at, ended_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
+      ).bind('match-recent', recent, recent, 10, 3, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO matches (match_id, started_at, ended_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
+      ).bind('match-stale', stale, stale, 10, 2, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+      ).bind('match-recent', accountA, 'Alice', 0, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+      ).bind('match-recent', accountB, 'Bob', 0, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+      ).bind('match-stale', accountC, 'Carol', 0, 'completed'),
+      env.DB.prepare(
+        'UPDATE player_stats SET longest_streak = ? WHERE account_id = ?',
+      ).bind(8, accountB),
+    ]);
+
+    const resp = await get('/api/landing-stats');
+    expect(resp.status).toBe(200);
+
+    const data = (await resp.json()) as {
+      playersLast24h: number;
+      completedMatches: number;
+      longestStreak: number;
+    };
+    expect(data.playersLast24h).toBe(2);
+    expect(data.completedMatches).toBe(2);
+    expect(data.longestStreak).toBe(8);
+    expect(resp.headers.get('Cache-Control')).toBe(
+      'public, max-age=60, s-maxage=60',
+    );
+  });
+
+  it('POST /api/auth/challenge falls back when auth_challenges lacks issued_at', async () => {
+    const queries: string[] = [];
+    const fallbackDb = {
+      prepare(sql: string) {
+        queries.push(sql);
+        return {
+          bind: (..._params: unknown[]) => ({
+            run: async () => {
+              if (sql.includes('issued_at')) {
+                throw new Error(
+                  'table auth_challenges has no column named issued_at',
+                );
+              }
+              return {};
+            },
+          }),
+        };
+      },
+    } as unknown as D1Database;
+
+    const resp = await handleHttpRequest(
+      new Request(`${HTTPS_BASE}/api/auth/challenge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: '0x1234567890123456789012345678901234567890',
+        }),
+      }),
+      {
+        DB: fallbackDb,
+        GAME_ROOM: {} as DurableObjectNamespace,
+      } as Env,
+    );
+
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as { message: string };
+    expect(data.message).toContain('Issued:');
+    expect(queries.some((q) => q.includes('issued_at'))).toBe(true);
+    expect(
+      queries.some(
+        (q) =>
+          q.includes('INSERT INTO auth_challenges') && !q.includes('issued_at'),
+      ),
+    ).toBe(true);
+  });
+
   it('POST /api/auth/challenge returns challengeId and message', async () => {
     const wallet = createTestWallet();
     const resp = await post('/api/auth/challenge', {
@@ -108,6 +206,46 @@ describe('HTTP routes', () => {
       requiresDisplayName: boolean;
     };
     expect(body.accountId).toBe(normalized);
+    expect(body.requiresDisplayName).toBe(true);
+  });
+
+  it('POST /api/auth/verify accepts legacy challenges with NULL issued_at', async () => {
+    const wallet = createTestWallet(7);
+    const challengeId = 'ch_legacy_issued_at';
+    const nonce = crypto.randomUUID();
+    const issuedAt = Date.now();
+    const message = buildChallengeMessage(
+      wallet.address.toLowerCase(),
+      nonce,
+      issuedAt,
+    );
+    const expiresAt = new Date(issuedAt + 5 * 60 * 1000).toISOString();
+
+    await env.DB.prepare(
+      'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
+    )
+      .bind(
+        challengeId,
+        wallet.address.toLowerCase(),
+        nonce,
+        message,
+        expiresAt,
+      )
+      .run();
+
+    const signature = await wallet.signMessage(message);
+    const verifyResp = await post('/api/auth/verify', {
+      challengeId,
+      walletAddress: wallet.address,
+      signature,
+    });
+
+    expect(verifyResp.status).toBe(200);
+    const body = (await verifyResp.json()) as {
+      accountId: string;
+      requiresDisplayName: boolean;
+    };
+    expect(body.accountId).toBe(wallet.address.toLowerCase());
     expect(body.requiresDisplayName).toBe(true);
   });
 
@@ -288,5 +426,68 @@ describe('HTTP routes', () => {
     expect(resp.status).toBe(200);
     const setCookie = resp.headers.get('Set-Cookie')!;
     expect(setCookie).not.toContain('Secure');
+  });
+
+  // ---- Admin auth tests (timingSafeEqual fix) ----
+
+  const ADMIN_KEY = 'test-admin-secret-key';
+  const adminEnv = {
+    DB: env.DB,
+    GAME_ROOM: {} as DurableObjectNamespace,
+    ADMIN_KEY,
+  } satisfies Env;
+
+  function adminGet(path: string, headers: Record<string, string> = {}) {
+    return handleHttpRequest(
+      new Request(`${HTTPS_BASE}${path}`, { headers }),
+      adminEnv,
+    );
+  }
+
+  it('admin route with valid Bearer token succeeds', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: `Bearer ${ADMIN_KEY}`,
+    });
+    expect(resp.status).toBe(200);
+  });
+
+  it('admin route with wrong key (same length) returns 401', async () => {
+    const wrongKey = 'x'.repeat(ADMIN_KEY.length);
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: `Bearer ${wrongKey}`,
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route with shorter key returns 401', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: 'Bearer short',
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route with longer key returns 401', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: `Bearer ${ADMIN_KEY}-extra-long-suffix`,
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route with empty Authorization header returns 401', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: '',
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route without ADMIN_KEY configured returns 503', async () => {
+    const resp = await handleHttpRequest(
+      new Request(`${HTTPS_BASE}/api/export/votes.csv`),
+      {
+        DB: env.DB,
+        GAME_ROOM: {} as DurableObjectNamespace,
+      } as Env,
+    );
+    expect(resp.status).toBe(503);
   });
 });

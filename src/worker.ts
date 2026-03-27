@@ -8,9 +8,10 @@ import {
   COMMIT_DURATION,
   RESULTS_DURATION,
   REVEAL_DURATION,
+  ROUND_ANTE,
 } from './domain/constants';
 import { selectQuestionsForMatch } from './domain/questions';
-import { ROUND_ANTE, settleRound } from './domain/settlement';
+import { settleRound } from './domain/settlement';
 import type {
   PlayerResultWithBalance,
   PlayerSettlementInput,
@@ -67,10 +68,18 @@ interface FormingMatchState {
 const TOTAL_ROUNDS = 10;
 const FILL_TIMER_MS = 20_000;
 const GRACE_DURATION_MS = 15_000;
-const MAX_CHAT_LENGTH = 300;
-const MAX_MATCH_SIZE = 7;
+const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+function buildAllowedMatchSizes(availablePlayers: number): number[] {
+  const sizes: number[] = [];
+  const maxAllowed = Math.min(availablePlayers, MAX_MATCH_SIZE);
+  for (let size = MIN_MATCH_SIZE; size <= maxAllowed; size += 2) {
+    sizes.push(size);
+  }
+  return sizes;
+}
 
 // ---------------------------------------------------------------------------
 // Worker main handler (delegates to httpHandler module)
@@ -234,6 +243,17 @@ export class GameRoom {
       }
     }
 
+    // Clean up the stale index entry so the player can re-queue, but only if
+    // the match is actually gone or the player is no longer an active
+    // participant in it.
+    if (existingMatchId) {
+      const match = this.activeMatches.get(existingMatchId);
+      const playerState = match?.players.get(accountId);
+      if (!match || !playerState || playerState.forfeited) {
+        this.playerMatchIndex.delete(accountId);
+      }
+    }
+
     // Close previous connection if any (not a match reconnect)
     if (existingConn) {
       try {
@@ -305,8 +325,6 @@ export class GameRoom {
         return this._handleCommit(accountId, msg);
       case 'reveal':
         return this._handleReveal(accountId, msg);
-      case 'chat':
-        return this._handleChat(accountId, msg);
       case 'question_rating':
         return this._handleQuestionRating(accountId, msg);
       default:
@@ -410,7 +428,7 @@ export class GameRoom {
     // No forming match: need at least 3 in queue to begin
     if (this.waitingQueue.length < MIN_MATCH_SIZE) return;
 
-    // Reserve first 3 (or up to 7)
+    // Reserve up to MAX_MATCH_SIZE players from the queue
     const reserveCount = Math.min(this.waitingQueue.length, MAX_MATCH_SIZE);
     const reserved = this.waitingQueue.splice(0, reserveCount);
 
@@ -534,8 +552,14 @@ export class GameRoom {
     try {
       const createStmts: D1PreparedStatement[] = [
         this.env.DB.prepare(
-          'INSERT INTO matches (match_id, started_at, round_count, status) VALUES (?, ?, ?, ?)',
-        ).bind(matchId, new Date().toISOString(), TOTAL_ROUNDS, 'active'),
+          'INSERT INTO matches (match_id, started_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?)',
+        ).bind(
+          matchId,
+          new Date().toISOString(),
+          TOTAL_ROUNDS,
+          playersMap.size,
+          'active',
+        ),
       ];
       for (const [acctId, p] of playersMap) {
         createStmts.push(
@@ -883,7 +907,9 @@ export class GameRoom {
     // Clean up match (checkpoint already deleted at top of _endMatch)
     this.activeMatches.delete(match.matchId);
     for (const accountId of matchPlayerIds) {
-      this.playerMatchIndex.delete(accountId);
+      if (this.playerMatchIndex.get(accountId) === match.matchId) {
+        this.playerMatchIndex.delete(accountId);
+      }
     }
 
     // Auto-requeue non-forfeited players with autoRequeue enabled
@@ -913,7 +939,7 @@ export class GameRoom {
   }
 
   // -------------------------------------------------------------------------
-  // Commit / Reveal / Chat handlers
+  // Commit / Reveal handlers
   // -------------------------------------------------------------------------
 
   _handleCommit(
@@ -1036,7 +1062,7 @@ export class GameRoom {
     if (!validateSalt(salt)) {
       return this._sendTo(accountId, {
         type: 'error',
-        message: 'Salt must be a hex string of at least 32 characters',
+        message: 'Salt must be a hex string between 32 and 128 characters',
       });
     }
 
@@ -1068,37 +1094,6 @@ export class GameRoom {
         `finalize round ${match.currentRound} for ${match.matchId}`,
       );
     }
-  }
-
-  _handleChat(
-    accountId: string,
-    msg: { type: string; [key: string]: unknown },
-  ): void {
-    const matchId = this.playerMatchIndex.get(accountId);
-    if (!matchId) return;
-    const match = this.activeMatches.get(matchId);
-    if (!match) return;
-    if (match.phase !== 'results') {
-      return this._sendTo(accountId, {
-        type: 'error',
-        message: 'Chat only allowed during results phase',
-      });
-    }
-    const player = match.players.get(accountId);
-    if (!player || player.forfeited) return;
-
-    const text = String(msg.text || '')
-      .trim()
-      .slice(0, MAX_CHAT_LENGTH);
-    if (!text) return;
-
-    const messageId = crypto.randomUUID();
-    this._broadcastToMatch(match, {
-      type: 'chat',
-      from: player.displayName,
-      text,
-      messageId,
-    });
   }
 
   async _handleQuestionRating(
@@ -1174,12 +1169,14 @@ export class GameRoom {
     // In a match: start grace timer
     const match = this.activeMatches.get(matchId);
     if (!match) {
+      this.playerMatchIndex.delete(accountId);
       this.connections.delete(accountId);
       return;
     }
 
     const player = match.players.get(accountId);
     if (!player || player.forfeited) {
+      this.playerMatchIndex.delete(accountId);
       this.connections.delete(accountId);
       return;
     }
@@ -1342,9 +1339,8 @@ export class GameRoom {
       formingMatch = {
         playerCount: this.formingMatch.players.length,
         players: fmPlayers,
-        allowedSizes: [3, 5, 7].filter(
-          (s) =>
-            s <= this.formingMatch!.players.length + this.waitingQueue.length,
+        allowedSizes: buildAllowedMatchSizes(
+          this.formingMatch.players.length + this.waitingQueue.length,
         ),
         fillDeadlineMs: this.formingMatch.fillDeadlineMs,
       };
@@ -1533,6 +1529,7 @@ export class GameRoom {
     const playersInfo = [...match.players.values()].map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
+      currentBalance: p.currentBalance,
     }));
     this._sendTo(accountId, {
       type: 'game_started',
@@ -1540,6 +1537,29 @@ export class GameRoom {
       roundCount: match.totalRounds,
       players: playersInfo,
     });
+
+    // Replay peer disconnected/forfeited status so the client renders badges
+    for (const peer of match.players.values()) {
+      if (peer.accountId === accountId) continue;
+      if (peer.forfeited) {
+        this._sendTo(accountId, {
+          type: 'player_forfeited',
+          displayName: peer.displayName,
+          autoLosesRemainingRounds: true,
+        });
+      } else if (peer.disconnectedAt !== null) {
+        const elapsedMs = Date.now() - peer.disconnectedAt;
+        const remainingGraceSeconds = Math.max(
+          0,
+          Math.ceil((GRACE_DURATION_MS - elapsedMs) / 1000),
+        );
+        this._sendTo(accountId, {
+          type: 'player_disconnected',
+          displayName: peer.displayName,
+          graceSeconds: remainingGraceSeconds,
+        });
+      }
+    }
 
     // Send current round info with remaining time (not full duration)
     if (
@@ -1555,6 +1575,10 @@ export class GameRoom {
       const revealRemaining = Math.max(
         0,
         Math.ceil((REVEAL_DURATION * 1000 - elapsed) / 1000),
+      );
+      const resultsRemaining = Math.max(
+        0,
+        Math.ceil((RESULTS_DURATION * 1000 - elapsed) / 1000),
       );
 
       this._sendTo(accountId, {
@@ -1606,10 +1630,86 @@ export class GameRoom {
       if (match.phase === 'results' && match.lastRoundResult) {
         this._sendTo(accountId, {
           type: 'round_result',
-          resultsDuration: RESULTS_DURATION,
+          resultsDuration: resultsRemaining,
           result: match.lastRoundResult,
         });
+
+        // Replay question rating tally and the player's own rating (async D1 query)
+        const questionId = match.questions[match.currentRound - 1]?.id;
+        if (questionId) {
+          this._waitUntil(
+            this._replayRatingTally(
+              match.matchId,
+              questionId,
+              match.currentRound,
+              accountId,
+            ),
+            'replay rating tally on reconnect',
+          );
+        }
       }
+    }
+  }
+
+  async _replayRatingTally(
+    matchId: string,
+    questionId: number,
+    roundAtDispatch: number,
+    accountId: string,
+  ): Promise<void> {
+    try {
+      const [tallyRows, playerRow] = await Promise.all([
+        this.env.DB.prepare(
+          `SELECT rating, COUNT(*) as cnt FROM question_ratings
+           WHERE question_id = ? AND match_id = ?
+           GROUP BY rating`,
+        )
+          .bind(questionId, matchId)
+          .all(),
+        this.env.DB.prepare(
+          `SELECT rating FROM question_ratings
+           WHERE question_id = ? AND account_id = ? AND match_id = ?`,
+        )
+          .bind(questionId, accountId, matchId)
+          .first<{ rating: string }>(),
+      ]);
+
+      // Guard: if the match advanced past the round we queried for, discard
+      const match = this.activeMatches.get(matchId);
+      if (
+        !match ||
+        match.phase !== 'results' ||
+        match.currentRound !== roundAtDispatch
+      ) {
+        return;
+      }
+
+      const tally = { likes: 0, dislikes: 0 };
+      for (const r of tallyRows.results as Array<{
+        rating: string;
+        cnt: number;
+      }>) {
+        if (r.rating === 'like') tally.likes = r.cnt;
+        else if (r.rating === 'dislike') tally.dislikes = r.cnt;
+      }
+
+      const yourRating =
+        playerRow?.rating === 'like' || playerRow?.rating === 'dislike'
+          ? playerRow.rating
+          : null;
+
+      this._sendTo(accountId, {
+        type: 'question_rating_tally',
+        questionId,
+        ...tally,
+        yourRating,
+      });
+    } catch (err) {
+      console.warn(
+        'Failed to replay question rating tally',
+        { matchId, questionId, accountId },
+        err,
+      );
     }
   }
 }

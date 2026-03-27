@@ -7,7 +7,6 @@ export type ClientMessage =
   | { type: 'leave_queue' }
   | { type: 'commit'; hash: string }
   | { type: 'reveal'; optionIndex: number; salt: string }
-  | { type: 'chat'; text: string }
   | { type: 'question_rating'; rating: 'like' | 'dislike' };
 
 // ── Server → Client ──────────────────────────────────────────────
@@ -30,7 +29,11 @@ export interface GameStartedMessage {
   type: 'game_started';
   matchId: string;
   roundCount: number;
-  players: { displayName: string; startingBalance: number }[];
+  players: {
+    displayName: string;
+    startingBalance: number;
+    currentBalance?: number;
+  }[];
 }
 
 export interface RoundStartMessage {
@@ -98,17 +101,13 @@ export interface PlayerReconnectedMessage {
   displayName: string;
 }
 
-export interface ChatMessage {
-  type: 'chat';
-  from: string;
-  text: string;
-  messageId: string;
-}
-
 export interface QuestionRatingTallyMessage {
   type: 'question_rating_tally';
+  questionId: number;
   likes: number;
   dislikes: number;
+  /** Present on reconnect replay: the reconnecting player's own rating for this question. */
+  yourRating?: 'like' | 'dislike' | null;
 }
 
 export interface ErrorMessage {
@@ -128,6 +127,5 @@ export type ServerMessage =
   | PlayerDisconnectedMessage
   | PlayerForfeitedMessage
   | PlayerReconnectedMessage
-  | ChatMessage
   | QuestionRatingTallyMessage
   | ErrorMessage;

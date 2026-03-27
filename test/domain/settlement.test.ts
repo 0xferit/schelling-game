@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_ESTABLISHED_MATCHES } from '../../src/domain/constants';
-import { ROUND_ANTE, settleRound } from '../../src/domain/settlement';
+import {
+  MIN_ESTABLISHED_MATCHES,
+  ROUND_ANTE,
+} from '../../src/domain/constants';
+import { settleRound } from '../../src/domain/settlement';
 import type { PlayerSettlementInput, Question } from '../../src/types/domain';
 
 const question: Question = {

@@ -39,6 +39,17 @@ describe('validateSalt', () => {
       expected: true,
       label: '48 hex chars',
     },
+    { input: 'a'.repeat(128), expected: true, label: 'at max length (128)' },
+    {
+      input: 'a'.repeat(129),
+      expected: false,
+      label: 'just over max (129)',
+    },
+    {
+      input: 'a'.repeat(10000),
+      expected: false,
+      label: 'very long (10000 chars)',
+    },
   ])('$label → $expected', ({ input, expected }) => {
     expect(validateSalt(input)).toBe(expected);
   });

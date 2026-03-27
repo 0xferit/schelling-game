@@ -160,6 +160,52 @@ describe('GameRoom async task tracking', () => {
     await waitUntil.mock.calls[0]![0];
   });
 
+  it('returns the newest reserved player when fill closes on an even count', async () => {
+    const { room, waitUntil } = createRoom();
+    const startMatch = vi
+      .spyOn(room, '_startMatch')
+      .mockResolvedValue(undefined);
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.formingMatch = {
+      players: Array.from({ length: 10 }, (_, i) => `acct-${i + 1}`),
+      timer: null,
+      fillDeadlineMs: null,
+    };
+
+    room._startFormingMatch();
+
+    expect(startMatch).toHaveBeenCalledTimes(1);
+    expect(startMatch.mock.calls[0]![0]).toEqual(
+      Array.from({ length: 9 }, (_, i) => `acct-${i + 1}`),
+    );
+    expect(room.waitingQueue).toEqual(['acct-10']);
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await waitUntil.mock.calls[0]![0];
+  });
+
+  it('caps immediately formed public matches at 21 players', () => {
+    const { room } = createRoom();
+    const startFormingMatch = vi
+      .spyOn(room, '_startFormingMatch')
+      .mockImplementation(() => {});
+
+    room.waitingQueue = Array.from({ length: 25 }, (_, i) => `acct-${i + 1}`);
+
+    room._tryFormMatch();
+
+    expect(startFormingMatch).toHaveBeenCalledTimes(1);
+    expect(room.formingMatch?.players).toEqual(
+      Array.from({ length: 21 }, (_, i) => `acct-${i + 1}`),
+    );
+    expect(room.waitingQueue).toEqual([
+      'acct-22',
+      'acct-23',
+      'acct-24',
+      'acct-25',
+    ]);
+  });
+
   it('tracks match end after results with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);
