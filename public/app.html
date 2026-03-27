@@ -683,13 +683,17 @@ $('#seed-overlay').addEventListener('click', (e) => {
 });
 
 function onAuthComplete() {
+  intentionalClose = false;
   connectWebSocket();
   showView('queue');
 }
 
 $('#logout-btn').addEventListener('click', async () => {
-  try { await api('POST', '/api/logout'); } catch (_) {}
+  intentionalClose = true;
+  wsRetryCount = 0;
+  if (wsRetryTimer !== null) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
   if (S.ws) { S.ws.close(); S.ws = null; }
+  try { await api('POST', '/api/logout'); } catch (_) {}
   S.walletAddress = null;
   S.accountId = null;
   S.displayName = null;
@@ -763,12 +767,17 @@ const WS_MAX_RETRIES = 10;
 const WS_BASE_DELAY = 1000;
 const WS_MAX_DELAY = 30000;
 let wsRetryCount = 0;
+let intentionalClose = false;
+let wsRetryTimer = null;
 
 function connectWebSocket() {
+  wsRetryTimer = null;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   S.ws = new WebSocket(`${proto}//${location.host}/ws`);
-  S.ws.onopen = () => { wsRetryCount = 0; };
+  const thisWs = S.ws;
+  S.ws.onopen = () => { wsRetryCount = 0; wsRetryTimer = null; };
   S.ws.onclose = () => {
+    if (intentionalClose || thisWs !== S.ws) return;
     if (wsRetryCount >= WS_MAX_RETRIES) {
       notify('Connection lost. Please refresh the page.', 'error');
       return;
@@ -776,7 +785,7 @@ function connectWebSocket() {
     const delay = Math.min(WS_BASE_DELAY * Math.pow(2, wsRetryCount), WS_MAX_DELAY);
     wsRetryCount++;
     notify('Connection lost. Reconnecting (' + wsRetryCount + '/' + WS_MAX_RETRIES + ')...', 'warn');
-    setTimeout(connectWebSocket, delay);
+    wsRetryTimer = setTimeout(connectWebSocket, delay);
   };
   S.ws.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
