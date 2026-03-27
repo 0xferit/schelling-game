@@ -2,10 +2,13 @@ import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { createTestSession, createTestWallet, seedAccount } from './helpers';
 
-const BASE = 'https://test.local';
+const HTTPS_BASE = 'https://test.local';
+const HTTP_BASE = 'http://test.local';
 
 function get(path: string, headers: Record<string, string> = {}) {
-  return exports.default.fetch(new Request(`${BASE}${path}`, { headers }));
+  return exports.default.fetch(
+    new Request(`${HTTPS_BASE}${path}`, { headers }),
+  );
 }
 
 function post(
@@ -14,7 +17,22 @@ function post(
   headers: Record<string, string> = {},
 ) {
   return exports.default.fetch(
-    new Request(`${BASE}${path}`, {
+    new Request(`${HTTPS_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+function postWithBase(
+  base: string,
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  return exports.default.fetch(
+    new Request(`${base}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
@@ -28,7 +46,7 @@ function patch(
   headers: Record<string, string> = {},
 ) {
   return exports.default.fetch(
-    new Request(`${BASE}${path}`, {
+    new Request(`${HTTPS_BASE}${path}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
@@ -138,6 +156,64 @@ describe('HTTP routes', () => {
     expect(row?.display_name).toBe('NewName');
   });
 
+  it('GET /api/leaderboard/me returns rank: null for account with no display name', async () => {
+    const wallet = createTestWallet(4);
+    const { accountId, cookie } = await createTestSession(wallet);
+    // Seed with display_name = null (default)
+    await seedAccount(env.DB, accountId, null, 100);
+
+    const resp = await get('/api/leaderboard/me', {
+      Cookie: `session=${cookie}`,
+    });
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as {
+      rank: number | null;
+      leaderboardEligible: boolean;
+    };
+    expect(data.rank).toBeNull();
+    expect(data.leaderboardEligible).toBe(false);
+  });
+
+  it('GET /api/leaderboard/me returns rank: null for ineligible account', async () => {
+    const wallet = createTestWallet(5);
+    const { accountId, cookie } = await createTestSession(wallet);
+    await seedAccount(env.DB, accountId, 'IneligiblePlayer', 100);
+    // Mark account as ineligible
+    await env.DB.prepare(
+      'UPDATE accounts SET leaderboard_eligible = 0 WHERE account_id = ?',
+    )
+      .bind(accountId)
+      .run();
+
+    const resp = await get('/api/leaderboard/me', {
+      Cookie: `session=${cookie}`,
+    });
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as {
+      rank: number | null;
+      leaderboardEligible: boolean;
+    };
+    expect(data.rank).toBeNull();
+    expect(data.leaderboardEligible).toBe(false);
+  });
+
+  it('GET /api/leaderboard/me returns numeric rank for eligible account', async () => {
+    const wallet = createTestWallet(6);
+    const { accountId, cookie } = await createTestSession(wallet);
+    await seedAccount(env.DB, accountId, 'EligiblePlayer', 200);
+
+    const resp = await get('/api/leaderboard/me', {
+      Cookie: `session=${cookie}`,
+    });
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as {
+      rank: number | null;
+      leaderboardEligible: boolean;
+    };
+    expect(typeof data.rank).toBe('number');
+    expect(data.leaderboardEligible).toBe(true);
+  });
+
   it('POST /api/example-vote + GET /api/example-tally round-trips', async () => {
     const voteResp = await post('/api/example-vote', { optionIndex: 8 });
     expect(voteResp.status).toBe(200);
@@ -152,5 +228,65 @@ describe('HTTP routes', () => {
     const entry = tally.votes.find((v) => v.optionIndex === 8);
     expect(entry).toBeDefined();
     expect(entry!.count).toBeGreaterThanOrEqual(1);
+  });
+
+  // ---- Cookie Secure attribute regression tests (issue #83) ----
+
+  it('/api/auth/verify over HTTPS sets Secure cookie attribute', async () => {
+    const wallet = createTestWallet(4);
+    const challengeResp = await postWithBase(
+      HTTPS_BASE,
+      '/api/auth/challenge',
+      {
+        walletAddress: wallet.address,
+      },
+    );
+    const { challengeId, message } = (await challengeResp.json()) as {
+      challengeId: string;
+      message: string;
+    };
+    const signature = await wallet.signMessage(message);
+    const verifyResp = await postWithBase(HTTPS_BASE, '/api/auth/verify', {
+      challengeId,
+      walletAddress: wallet.address,
+      signature,
+    });
+    expect(verifyResp.status).toBe(200);
+    const setCookie = verifyResp.headers.get('Set-Cookie')!;
+    expect(setCookie).toContain('Secure');
+  });
+
+  it('/api/auth/verify over HTTP omits Secure cookie attribute', async () => {
+    const wallet = createTestWallet(5);
+    const challengeResp = await postWithBase(HTTP_BASE, '/api/auth/challenge', {
+      walletAddress: wallet.address,
+    });
+    const { challengeId, message } = (await challengeResp.json()) as {
+      challengeId: string;
+      message: string;
+    };
+    const signature = await wallet.signMessage(message);
+    const verifyResp = await postWithBase(HTTP_BASE, '/api/auth/verify', {
+      challengeId,
+      walletAddress: wallet.address,
+      signature,
+    });
+    expect(verifyResp.status).toBe(200);
+    const setCookie = verifyResp.headers.get('Set-Cookie')!;
+    expect(setCookie).not.toContain('Secure');
+  });
+
+  it('/api/logout over HTTPS sets Secure cookie attribute', async () => {
+    const resp = await postWithBase(HTTPS_BASE, '/api/logout', {});
+    expect(resp.status).toBe(200);
+    const setCookie = resp.headers.get('Set-Cookie')!;
+    expect(setCookie).toContain('Secure');
+  });
+
+  it('/api/logout over HTTP omits Secure cookie attribute', async () => {
+    const resp = await postWithBase(HTTP_BASE, '/api/logout', {});
+    expect(resp.status).toBe(200);
+    const setCookie = resp.headers.get('Set-Cookie')!;
+    expect(setCookie).not.toContain('Secure');
   });
 });

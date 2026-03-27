@@ -64,6 +64,7 @@ export interface RevealStatusMessage {
 
 export interface RoundResultMessage {
   type: 'round_result';
+  resultsDuration: number;
   result: RoundResultWithBalances;
 }
 

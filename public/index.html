@@ -491,6 +491,7 @@ footer{
 .reveal-delay-3{animation-delay:.24s}
 .reveal-delay-4{animation-delay:.32s}
 </style>
+<link rel="stylesheet" href="/shared-deploy.css"/>
 </head>
 <body>
 
@@ -577,12 +578,12 @@ footer{
       <div class="mech-step reveal reveal-delay-1">
         <span class="icon">I</span>
         <h3>Commit</h3>
-        <p>Read the question, pick your answer, lock it in with a cryptographic hash. 30 seconds. No take-backs.</p>
+        <p>Read the question, pick your answer, lock it in with a cryptographic hash. <span id="commit-seconds">60</span> seconds. No take-backs.</p>
       </div>
       <div class="mech-step reveal reveal-delay-2">
         <span class="icon">II</span>
         <h3>Reveal</h3>
-        <p>Everyone opens their sealed answer. The server verifies each hash matches. 15 seconds.</p>
+        <p>Everyone opens their sealed answer. The server verifies each hash matches. <span id="reveal-seconds">15</span> seconds.</p>
       </div>
       <div class="mech-step reveal reveal-delay-3">
         <span class="icon">III</span>
@@ -834,8 +835,12 @@ footer{
   }
 })();
 
+/* ── Phase durations from server (single source of truth) ── */
+fetch('/api/game-config').then(function(r) { return r.json(); }).then(function(cfg) {
+  document.getElementById('commit-seconds').textContent = cfg.commitDuration;
+  document.getElementById('reveal-seconds').textContent = cfg.revealDuration;
+}).catch(function() {});
 </script>
-<link rel="stylesheet" href="/shared-deploy.css"/>
 <script src="/shared-deploy.js"></script>
 </body>
 </html>

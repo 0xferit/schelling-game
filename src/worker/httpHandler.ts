@@ -1,9 +1,10 @@
 import { ethers } from 'ethers';
+import { COMMIT_DURATION, REVEAL_DURATION } from '../domain/constants';
 import type { Env } from '../types/worker-env';
 import {
-  type AccountWithStats,
   fetchAccountWithStats,
   fetchPlayerDOStatus,
+  type LeaderboardEntryInput,
   shapeLeaderboardEntry,
 } from './accountRepo';
 import {
@@ -29,6 +30,11 @@ function jsonResponse(
 
 function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
+}
+
+function cookieAttrs(request: Request): string {
+  const secure = new URL(request.url).protocol === 'https:';
+  return `Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
 }
 
 function escapeCsvField(value: unknown): string {
@@ -76,8 +82,7 @@ export async function handleHttpRequest(
   // ---- POST /api/logout ----
   if (url.pathname === '/api/logout' && method === 'POST') {
     return jsonResponse({ ok: true }, 200, {
-      'Set-Cookie':
-        'session=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0',
+      'Set-Cookie': `session=; ${cookieAttrs(request)}; Max-Age=0`,
     });
   }
 
@@ -214,7 +219,7 @@ export async function handleHttpRequest(
       },
       200,
       {
-        'Set-Cookie': `session=${token}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=86400`,
+        'Set-Cookie': `session=${token}; ${cookieAttrs(request)}; Max-Age=86400`,
       },
     );
   }
@@ -295,7 +300,7 @@ export async function handleHttpRequest(
     const leaderboard = (results || []).map(
       (r: Record<string, unknown>, i: number) => ({
         rank: i + 1,
-        ...shapeLeaderboardEntry(r as unknown as AccountWithStats),
+        ...shapeLeaderboardEntry(r as unknown as LeaderboardEntryInput),
       }),
     );
 
@@ -311,27 +316,33 @@ export async function handleHttpRequest(
     if (!account) return errorResponse('Account not found', 404);
 
     const cr = account.coherent_rounds || 0;
+    const eligible =
+      account.leaderboard_eligible === 1 && account.display_name !== null;
 
-    const rankRow = (await env.DB.prepare(
-      'SELECT COUNT(*) as rank FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
-        'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL AND (' +
-        'a.token_balance > ? OR ' +
-        '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) > ?) OR ' +
-        '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) = ? AND a.display_name < ?)' +
-        ')',
-    )
-      .bind(
-        account.token_balance ?? 0,
-        account.token_balance ?? 0,
-        cr,
-        account.token_balance ?? 0,
-        cr,
-        account.display_name ?? '',
+    let rank: number | null = null;
+    if (eligible) {
+      const rankRow = (await env.DB.prepare(
+        'SELECT COUNT(*) as rank FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
+          'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL AND (' +
+          'a.token_balance > ? OR ' +
+          '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) > ?) OR ' +
+          '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) = ? AND a.display_name < ?)' +
+          ')',
       )
-      .first()) as { rank: number } | null;
+        .bind(
+          account.token_balance ?? 0,
+          account.token_balance ?? 0,
+          cr,
+          account.token_balance ?? 0,
+          cr,
+          account.display_name ?? '',
+        )
+        .first()) as { rank: number } | null;
+      rank = (rankRow?.rank ?? 0) + 1;
+    }
 
     return jsonResponse({
-      rank: (rankRow?.rank ?? 0) + 1,
+      rank,
       ...shapeLeaderboardEntry(account),
     });
   }
@@ -436,6 +447,14 @@ export async function handleHttpRequest(
     return jsonResponse({
       accountId: accountId.toLowerCase(),
       leaderboardEligible: eligible,
+    });
+  }
+
+  // ---- GET /api/game-config ----
+  if (url.pathname === '/api/game-config' && method === 'GET') {
+    return jsonResponse({
+      commitDuration: COMMIT_DURATION,
+      revealDuration: REVEAL_DURATION,
     });
   }
 

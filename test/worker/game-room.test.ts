@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { createCommitHash } from '../../src/domain/commitReveal';
 import { createTestSession, createTestWallet, seedAccount } from './helpers';
 
 const BASE = 'https://test.local';
@@ -76,7 +77,7 @@ async function formMatch(
 ): Promise<
   { ws: WebSocket; accountId: string; gameStarted: Record<string, unknown> }[]
 > {
-  const players = [];
+  const players: Array<Awaited<ReturnType<typeof connectPlayer>>> = [];
   for (const [index, name] of wallets) {
     players.push(await connectPlayer(index, name));
   }
@@ -228,6 +229,83 @@ describe('GameRoom Durable Object', () => {
     const reconnectRoundStart = await reconnectRoundStartP;
     expect(reconnectRoundStart.yourCommitted).toBe(true);
     expect(reconnectRoundStart.yourRevealed).toBe(false);
+
+    p1r.ws.close();
+    p2.ws.close();
+    p3.ws.close();
+  });
+
+  it('reconnect during results phase replays round_result', {
+    timeout: 35_000,
+  }, async () => {
+    // Use wallet indices 10/11/12 to avoid collisions with other tests.
+    // Give players a balance so settlement can deduct ante.
+    const p1 = await connectPlayer(10, 'ResultP1', 1000);
+    const p2 = await connectPlayer(11, 'ResultP2', 1000);
+    const p3 = await connectPlayer(12, 'ResultP3', 1000);
+
+    // Listen for game_started before joining queue
+    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+
+    // Listen for round_start on all players before joining
+    const p1Round = waitForMessage(p1.ws, 'round_start', 28_000);
+    const p2Round = waitForMessage(p2.ws, 'round_start', 28_000);
+    const p3Round = waitForMessage(p3.ws, 'round_start', 28_000);
+
+    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+
+    await Promise.all([p1Started, p2Started, p3Started]);
+    await Promise.all([p1Round, p2Round, p3Round]);
+
+    // All players commit with option index 0 and distinct salts
+    const salt1 = 'a'.repeat(64);
+    const salt2 = 'b'.repeat(64);
+    const salt3 = 'c'.repeat(64);
+    const optionIndex = 0;
+    const hash1 = createCommitHash(optionIndex, salt1);
+    const hash2 = createCommitHash(optionIndex, salt2);
+    const hash3 = createCommitHash(optionIndex, salt3);
+
+    // Listen for phase_change (to reveal) before committing.
+    // All non-forfeited players committing triggers auto-advance.
+    const p1PhaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
+
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: hash1 }));
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: hash2 }));
+    p3.ws.send(JSON.stringify({ type: 'commit', hash: hash3 }));
+
+    const phaseChange = await p1PhaseChange;
+    expect(phaseChange.phase).toBe('reveal');
+
+    // All players reveal. When all committed players reveal, auto-advance
+    // triggers _finalizeRound which enters results phase.
+    const p1Result = waitForMessage(p1.ws, 'round_result', 5000);
+
+    p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
+    p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
+    p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt3 }));
+
+    // Wait for round_result to confirm we are in results phase
+    const originalResult = await p1Result;
+    expect(originalResult.type).toBe('round_result');
+
+    // Disconnect player 1 and reconnect during results phase
+    p1.ws.close();
+
+    const p1r = await connectPlayer(10, 'ResultP1', 1000);
+    const reconnectResult = waitForMessage(p1r.ws, 'round_result', 5000);
+
+    const replayedResult = await reconnectResult;
+    expect(replayedResult.type).toBe('round_result');
+    expect(replayedResult.result).toBeDefined();
+
+    const result = replayedResult.result as Record<string, unknown>;
+    expect(result.roundNum).toBe(1);
+    expect(result.players).toBeDefined();
 
     p1r.ws.close();
     p2.ws.close();

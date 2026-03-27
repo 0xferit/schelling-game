@@ -52,7 +52,23 @@ export interface LeaderboardEntry {
   provisional: boolean;
 }
 
-export function shapeLeaderboardEntry(row: AccountWithStats): LeaderboardEntry {
+// Only the fields actually read by shapeLeaderboardEntry — allows callers to
+// pass either a full AccountWithStats or a narrower bulk-query row.
+export type LeaderboardEntryInput = Pick<
+  AccountWithStats,
+  | 'display_name'
+  | 'token_balance'
+  | 'leaderboard_eligible'
+  | 'games_played'
+  | 'rounds_played'
+  | 'coherent_rounds'
+  | 'current_streak'
+  | 'longest_streak'
+>;
+
+export function shapeLeaderboardEntry(
+  row: LeaderboardEntryInput,
+): LeaderboardEntry {
   const gp = row.games_played || 0;
   const rp = row.rounds_played || 0;
   const cr = row.coherent_rounds || 0;

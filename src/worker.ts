@@ -4,6 +4,11 @@ import {
   validateSalt,
   verifyCommit,
 } from './domain/commitReveal';
+import {
+  COMMIT_DURATION,
+  RESULTS_DURATION,
+  REVEAL_DURATION,
+} from './domain/constants';
 import { selectQuestionsForMatch } from './domain/questions';
 import { ROUND_ANTE, settleRound } from './domain/settlement';
 import type {
@@ -11,6 +16,7 @@ import type {
   PlayerSettlementInput,
   RoundResult,
 } from './types/domain';
+import type { RoundResultMessage } from './types/messages';
 import type { Env } from './types/worker-env';
 import { handleHttpRequest } from './worker/httpHandler';
 import type {
@@ -47,6 +53,8 @@ interface WorkerMatchState extends PersistedMatchFields {
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
+  /** Cached last round_result payload for reconnect replay during results phase. Checkpointed. */
+  lastRoundResult: RoundResultMessage['result'] | null;
 }
 
 interface FormingMatchState {
@@ -59,9 +67,6 @@ interface FormingMatchState {
 // Constants
 // ---------------------------------------------------------------------------
 const TOTAL_ROUNDS = 10;
-const COMMIT_DURATION = 60;
-const REVEAL_DURATION = 15;
-const RESULTS_DURATION = 20;
 const FILL_TIMER_MS = 20_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_CHAT_LENGTH = 300;
@@ -256,19 +261,24 @@ export class GameRoom {
   }
 
   _setupWsListeners(ws: WebSocket, accountId: string): void {
-    ws.addEventListener('message', async (evt: MessageEvent) => {
-      try {
-        const msg = JSON.parse(evt.data as string) as {
-          type: string;
-          [key: string]: unknown;
-        };
-        await this._handleMessage(accountId, msg);
-      } catch (e) {
-        this._sendTo(accountId, {
-          type: 'error',
-          message: (e as Error).message || 'Internal error',
-        });
-      }
+    ws.addEventListener('message', (evt: MessageEvent) => {
+      this._waitUntil(
+        (async () => {
+          try {
+            const msg = JSON.parse(evt.data as string) as {
+              type: string;
+              [key: string]: unknown;
+            };
+            await this._handleMessage(accountId, msg);
+          } catch (e) {
+            this._sendTo(accountId, {
+              type: 'error',
+              message: (e as Error).message || 'Internal error',
+            });
+          }
+        })(),
+        `websocket message for ${accountId}`,
+      );
     });
 
     ws.addEventListener('close', () => {
@@ -455,7 +465,10 @@ export class GameRoom {
     const matchId = crypto.randomUUID();
     this.formingMatch = null;
 
-    this._startMatch(players, matchId);
+    this._waitUntil(
+      this._startMatch(players, matchId),
+      `start match ${matchId}`,
+    );
     this._broadcastQueueState();
   }
 
@@ -515,6 +528,7 @@ export class GameRoom {
       commitTimer: null,
       revealTimer: null,
       resultsTimer: null,
+      lastRoundResult: null,
     };
     this.activeMatches.set(matchId, match);
 
@@ -558,6 +572,7 @@ export class GameRoom {
     match.phase = 'commit';
     match.currentRound++;
     match.phaseEnteredAt = Date.now();
+    match.lastRoundResult = null;
     const question = match.questions[match.currentRound - 1]!;
 
     // Reset per-round player state
@@ -609,7 +624,10 @@ export class GameRoom {
 
     match.revealTimer = setTimeout(() => {
       match.revealTimer = null;
-      this._finalizeRound(match);
+      this._waitUntil(
+        this._finalizeRound(match),
+        `finalize round ${match.currentRound} for ${match.matchId}`,
+      );
     }, REVEAL_DURATION * 1000);
   }
 
@@ -737,38 +755,48 @@ export class GameRoom {
       }
     }
 
+    // Build round result payload for broadcast and reconnect replay
+    const roundResultPayload: RoundResultMessage['result'] = {
+      roundNum: match.currentRound,
+      voided: result.voided,
+      voidReason: result.voidReason,
+      playerCount: result.playerCount,
+      pot: result.pot,
+      validRevealCount: result.validRevealCount,
+      topCount: result.topCount,
+      winningOptionIndexes: result.winningOptionIndexes,
+      winnerCount: result.winnerCount,
+      payoutPerWinner: result.payoutPerWinner,
+      players: result.players.map((pr) => ({
+        accountId: pr.accountId,
+        displayName: pr.displayName,
+        revealedOptionIndex: pr.revealedOptionIndex,
+        revealedOptionLabel: pr.revealedOptionLabel,
+        wonRound: pr.wonRound,
+        earnsCoordinationCredit: pr.earnsCoordinationCredit,
+        antePaid: pr.antePaid,
+        roundPayout: pr.roundPayout,
+        netDelta: pr.netDelta,
+        newBalance: (pr as PlayerResultWithBalance).newBalance,
+      })),
+    };
+    match.lastRoundResult = roundResultPayload;
+
+    // Checkpoint after setting lastRoundResult so it survives DO eviction
     this._checkpointMatch(match);
 
     // Broadcast round_result
     this._broadcastToMatch(match, {
       type: 'round_result',
-      result: {
-        roundNum: match.currentRound,
-        voided: result.voided,
-        voidReason: result.voidReason,
-        playerCount: result.playerCount,
-        pot: result.pot,
-        winningOptionIndexes: result.winningOptionIndexes,
-        winnerCount: result.winnerCount,
-        payoutPerWinner: result.payoutPerWinner,
-        players: result.players.map((pr) => ({
-          displayName: pr.displayName,
-          revealedOptionIndex: pr.revealedOptionIndex,
-          wonRound: pr.wonRound,
-          earnsCoordinationCredit: pr.earnsCoordinationCredit,
-          antePaid: pr.antePaid,
-          roundPayout: pr.roundPayout,
-          netDelta: pr.netDelta,
-          newBalance: (pr as PlayerResultWithBalance).newBalance,
-        })),
-      },
+      resultsDuration: RESULTS_DURATION,
+      result: roundResultPayload,
     });
 
     // Check early termination: no non-forfeited players remain
     if (!this._hasNonForfeitedPlayers(match)) {
       match.resultsTimer = setTimeout(() => {
         match.resultsTimer = null;
-        this._endMatch(match);
+        this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
       }, RESULTS_DURATION * 1000);
       return;
     }
@@ -781,6 +809,7 @@ export class GameRoom {
   }
 
   async _endMatch(match: WorkerMatchState): Promise<void> {
+    match.lastRoundResult = null;
     if (match.resultsTimer) {
       clearTimeout(match.resultsTimer);
       match.resultsTimer = null;
@@ -1036,7 +1065,10 @@ export class GameRoom {
 
     // Auto-advance if all committed non-forfeited players revealed
     if (this._allCommittedNonForfeitedRevealed(match)) {
-      this._finalizeRound(match);
+      this._waitUntil(
+        this._finalizeRound(match),
+        `finalize round ${match.currentRound} for ${match.matchId}`,
+      );
     }
   }
 
@@ -1199,7 +1231,10 @@ export class GameRoom {
       match.phase === 'reveal' &&
       this._allCommittedNonForfeitedRevealed(match)
     ) {
-      this._finalizeRound(match);
+      this._waitUntil(
+        this._finalizeRound(match),
+        `finalize round ${match.currentRound} for ${match.matchId}`,
+      );
     }
   }
 
@@ -1402,8 +1437,17 @@ export class GameRoom {
         commitTimer: null,
         revealTimer: null,
         resultsTimer: null,
+        lastRoundResult: rm.lastRoundResult,
       });
     }
+  }
+
+  _waitUntil(task: Promise<void>, description: string): void {
+    this.state.waitUntil(
+      task.catch((error) => {
+        console.error(`GameRoom async task failed: ${description}`, error);
+      }),
+    );
   }
 
   _ensureMatchTimerRunning(match: WorkerMatchState): void {
@@ -1422,11 +1466,17 @@ export class GameRoom {
     } else if (match.phase === 'reveal' && !match.revealTimer) {
       const remaining = Math.max(0, REVEAL_DURATION * 1000 - elapsed);
       if (remaining <= 0) {
-        this._finalizeRound(match);
+        this._waitUntil(
+          this._finalizeRound(match),
+          `finalize round ${match.currentRound} for ${match.matchId}`,
+        );
       } else {
         match.revealTimer = setTimeout(() => {
           match.revealTimer = null;
-          this._finalizeRound(match);
+          this._waitUntil(
+            this._finalizeRound(match),
+            `finalize round ${match.currentRound} for ${match.matchId}`,
+          );
         }, remaining);
       }
     } else if (match.phase === 'results' && !match.resultsTimer) {
@@ -1463,7 +1513,7 @@ export class GameRoom {
       match.currentRound >= match.totalRounds ||
       !this._hasNonForfeitedPlayers(match)
     ) {
-      this._endMatch(match);
+      this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
     } else {
       this._startCommitPhase(match);
     }
@@ -1526,12 +1576,11 @@ export class GameRoom {
         yourRevealed: player.revealed,
       });
 
-      if (match.phase === 'reveal' || match.phase === 'results') {
+      if (match.phase === 'reveal') {
         this._sendTo(accountId, {
           type: 'phase_change',
-          phase: match.phase === 'results' ? 'results' : 'reveal',
-          revealDuration:
-            match.phase === 'reveal' ? revealRemaining : REVEAL_DURATION,
+          phase: 'reveal',
+          revealDuration: revealRemaining,
         });
       }
 
@@ -1552,6 +1601,15 @@ export class GameRoom {
             displayName: p.displayName,
             hasRevealed: p.revealed,
           })),
+        });
+      }
+
+      // Replay cached round result so the reconnecting client renders the results screen
+      if (match.phase === 'results' && match.lastRoundResult) {
+        this._sendTo(accountId, {
+          type: 'round_result',
+          resultsDuration: RESULTS_DURATION,
+          result: match.lastRoundResult,
         });
       }
     }
