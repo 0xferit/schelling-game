@@ -106,6 +106,9 @@ describe('HTTP routes', () => {
     expect(data.playersLast24h).toBe(2);
     expect(data.completedMatches).toBe(2);
     expect(data.longestStreak).toBe(8);
+    expect(resp.headers.get('Cache-Control')).toBe(
+      'public, max-age=60, s-maxage=60',
+    );
   });
 
   it('POST /api/auth/challenge returns challengeId and message', async () => {

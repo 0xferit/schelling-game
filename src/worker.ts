@@ -419,7 +419,7 @@ export class GameRoom {
     // No forming match: need at least 3 in queue to begin
     if (this.waitingQueue.length < MIN_MATCH_SIZE) return;
 
-    // Reserve first 3 (or up to 21)
+    // Reserve up to MAX_MATCH_SIZE players from the queue
     const reserveCount = Math.min(this.waitingQueue.length, MAX_MATCH_SIZE);
     const reserved = this.waitingQueue.splice(0, reserveCount);
 
