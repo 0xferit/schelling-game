@@ -276,19 +276,24 @@ export class GameRoom {
   }
 
   _setupWsListeners(ws: WebSocket, accountId: string): void {
-    ws.addEventListener('message', async (evt: MessageEvent) => {
-      try {
-        const msg = JSON.parse(evt.data as string) as {
-          type: string;
-          [key: string]: unknown;
-        };
-        await this._handleMessage(accountId, msg);
-      } catch (e) {
-        this._sendTo(accountId, {
-          type: 'error',
-          message: (e as Error).message || 'Internal error',
-        });
-      }
+    ws.addEventListener('message', (evt: MessageEvent) => {
+      this._waitUntil(
+        (async () => {
+          try {
+            const msg = JSON.parse(evt.data as string) as {
+              type: string;
+              [key: string]: unknown;
+            };
+            await this._handleMessage(accountId, msg);
+          } catch (e) {
+            this._sendTo(accountId, {
+              type: 'error',
+              message: (e as Error).message || 'Internal error',
+            });
+          }
+        })(),
+        `websocket message for ${accountId}`,
+      );
     });
 
     ws.addEventListener('close', () => {
@@ -475,7 +480,10 @@ export class GameRoom {
     const matchId = crypto.randomUUID();
     this.formingMatch = null;
 
-    this._startMatch(players, matchId);
+    this._waitUntil(
+      this._startMatch(players, matchId),
+      `start match ${matchId}`,
+    );
     this._broadcastQueueState();
   }
 
@@ -631,7 +639,10 @@ export class GameRoom {
 
     match.revealTimer = setTimeout(() => {
       match.revealTimer = null;
-      this._finalizeRound(match);
+      this._waitUntil(
+        this._finalizeRound(match),
+        `finalize round ${match.currentRound} for ${match.matchId}`,
+      );
     }, REVEAL_DURATION * 1000);
   }
 
@@ -800,7 +811,7 @@ export class GameRoom {
     if (!this._hasNonForfeitedPlayers(match)) {
       match.resultsTimer = setTimeout(() => {
         match.resultsTimer = null;
-        this._endMatch(match);
+        this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
       }, RESULTS_DURATION * 1000);
       return;
     }
@@ -1069,7 +1080,10 @@ export class GameRoom {
 
     // Auto-advance if all committed non-forfeited players revealed
     if (this._allCommittedNonForfeitedRevealed(match)) {
-      this._finalizeRound(match);
+      this._waitUntil(
+        this._finalizeRound(match),
+        `finalize round ${match.currentRound} for ${match.matchId}`,
+      );
     }
   }
 
@@ -1232,7 +1246,10 @@ export class GameRoom {
       match.phase === 'reveal' &&
       this._allCommittedNonForfeitedRevealed(match)
     ) {
-      this._finalizeRound(match);
+      this._waitUntil(
+        this._finalizeRound(match),
+        `finalize round ${match.currentRound} for ${match.matchId}`,
+      );
     }
   }
 
@@ -1440,6 +1457,14 @@ export class GameRoom {
     }
   }
 
+  _waitUntil(task: Promise<void>, description: string): void {
+    this.state.waitUntil(
+      task.catch((error) => {
+        console.error(`GameRoom async task failed: ${description}`, error);
+      }),
+    );
+  }
+
   _ensureMatchTimerRunning(match: WorkerMatchState): void {
     const elapsed = Date.now() - match.phaseEnteredAt;
 
@@ -1456,11 +1481,17 @@ export class GameRoom {
     } else if (match.phase === 'reveal' && !match.revealTimer) {
       const remaining = Math.max(0, REVEAL_DURATION * 1000 - elapsed);
       if (remaining <= 0) {
-        this._finalizeRound(match);
+        this._waitUntil(
+          this._finalizeRound(match),
+          `finalize round ${match.currentRound} for ${match.matchId}`,
+        );
       } else {
         match.revealTimer = setTimeout(() => {
           match.revealTimer = null;
-          this._finalizeRound(match);
+          this._waitUntil(
+            this._finalizeRound(match),
+            `finalize round ${match.currentRound} for ${match.matchId}`,
+          );
         }, remaining);
       }
     } else if (match.phase === 'results' && !match.resultsTimer) {
@@ -1497,7 +1528,7 @@ export class GameRoom {
       match.currentRound >= match.totalRounds ||
       !this._hasNonForfeitedPlayers(match)
     ) {
-      this._endMatch(match);
+      this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
     } else {
       this._startCommitPhase(match);
     }
