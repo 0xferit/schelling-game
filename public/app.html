@@ -1363,6 +1363,12 @@ function sendRating(rating) {
 function onQuestionRatingTally(msg) {
   $('#rating-likes').textContent = msg.likes ?? 0;
   $('#rating-dislikes').textContent = msg.dislikes ?? 0;
+  // Restore player's own rating on reconnect replay
+  if (msg.yourRating !== undefined) {
+    S.myRating = msg.yourRating;
+    $('#rating-like').classList.toggle('btn-primary', msg.yourRating === 'like');
+    $('#rating-dislike').classList.toggle('btn-primary', msg.yourRating === 'dislike');
+  }
 }
 
 $('#rating-like').addEventListener('click', () => sendRating('like'));

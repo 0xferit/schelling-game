@@ -109,6 +109,8 @@ export interface QuestionRatingTallyMessage {
   type: 'question_rating_tally';
   likes: number;
   dislikes: number;
+  /** Present on reconnect replay: the reconnecting player's own rating for this question. */
+  yourRating?: 'like' | 'dislike' | null;
 }
 
 export interface ErrorMessage {

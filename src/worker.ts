@@ -1613,7 +1613,61 @@ export class GameRoom {
           resultsDuration: resultsRemaining,
           result: match.lastRoundResult,
         });
+
+        // Replay question rating tally and the player's own rating (async D1 query)
+        const questionId = match.questions[match.currentRound - 1]?.id;
+        if (questionId) {
+          this.state.waitUntil(
+            this._replayRatingTally(match.matchId, questionId, accountId),
+          );
+        }
       }
+    }
+  }
+
+  async _replayRatingTally(
+    matchId: string,
+    questionId: number,
+    accountId: string,
+  ): Promise<void> {
+    try {
+      const [tallyRows, playerRow] = await Promise.all([
+        this.env.DB.prepare(
+          `SELECT rating, COUNT(*) as cnt FROM question_ratings
+           WHERE question_id = ? AND match_id = ?
+           GROUP BY rating`,
+        )
+          .bind(questionId, matchId)
+          .all(),
+        this.env.DB.prepare(
+          `SELECT rating FROM question_ratings
+           WHERE question_id = ? AND account_id = ? AND match_id = ?`,
+        )
+          .bind(questionId, accountId, matchId)
+          .first<{ rating: string }>(),
+      ]);
+
+      const tally = { likes: 0, dislikes: 0 };
+      for (const r of tallyRows.results as Array<{
+        rating: string;
+        cnt: number;
+      }>) {
+        if (r.rating === 'like') tally.likes = r.cnt;
+        else if (r.rating === 'dislike') tally.dislikes = r.cnt;
+      }
+
+      const yourRating =
+        playerRow?.rating === 'like' || playerRow?.rating === 'dislike'
+          ? playerRow.rating
+          : null;
+
+      this._sendTo(accountId, {
+        type: 'question_rating_tally',
+        ...tally,
+        yourRating,
+      });
+    } catch {
+      // Best-effort: rating replay is non-critical
     }
   }
 }

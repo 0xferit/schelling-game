@@ -379,4 +379,86 @@ describe('GameRoom Durable Object', () => {
     p2.ws.close();
     p3.ws.close();
   });
+
+  it('reconnect during results phase replays rating tally and own rating', {
+    timeout: 35_000,
+  }, async () => {
+    // Use wallet indices 16/17/18 to avoid collisions with other tests.
+    const p1 = await connectPlayer(16, 'RatingP1', 1000);
+    const p2 = await connectPlayer(17, 'RatingP2', 1000);
+    const p3 = await connectPlayer(18, 'RatingP3', 1000);
+
+    // Listen for game_started and round_start before joining queue
+    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+
+    const p1Round = waitForMessage(p1.ws, 'round_start', 28_000);
+    const p2Round = waitForMessage(p2.ws, 'round_start', 28_000);
+    const p3Round = waitForMessage(p3.ws, 'round_start', 28_000);
+
+    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+
+    await Promise.all([p1Started, p2Started, p3Started]);
+    await Promise.all([p1Round, p2Round, p3Round]);
+
+    // All players commit with option index 0 and distinct salts
+    const salt1 = 'a'.repeat(64);
+    const salt2 = 'b'.repeat(64);
+    const salt3 = 'c'.repeat(64);
+    const optionIndex = 0;
+    const hash1 = createCommitHash(optionIndex, salt1);
+    const hash2 = createCommitHash(optionIndex, salt2);
+    const hash3 = createCommitHash(optionIndex, salt3);
+
+    const p1PhaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
+
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: hash1 }));
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: hash2 }));
+    p3.ws.send(JSON.stringify({ type: 'commit', hash: hash3 }));
+
+    await p1PhaseChange;
+
+    // All players reveal to reach results phase
+    const p1Result = waitForMessage(p1.ws, 'round_result', 5000);
+
+    p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
+    p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
+    p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt3 }));
+
+    await p1Result;
+
+    // Player 1 submits a "like" rating during results phase
+    const p1Tally = waitForMessage(p1.ws, 'question_rating_tally', 3000);
+    p1.ws.send(JSON.stringify({ type: 'question_rating', rating: 'like' }));
+    const tally = await p1Tally;
+    expect(tally.likes).toBe(1);
+    expect(tally.dislikes).toBe(0);
+
+    // Disconnect player 1 and reconnect during results phase
+    p1.ws.close();
+
+    const p1r = await connectPlayer(16, 'RatingP1', 1000);
+    // Listen for both round_result and question_rating_tally on reconnect
+    const reconnectResult = waitForMessage(p1r.ws, 'round_result', 5000);
+    const reconnectTally = waitForMessage(
+      p1r.ws,
+      'question_rating_tally',
+      5000,
+    );
+
+    const replayedResult = await reconnectResult;
+    expect(replayedResult.type).toBe('round_result');
+
+    const replayedTally = await reconnectTally;
+    expect(replayedTally.likes).toBe(1);
+    expect(replayedTally.dislikes).toBe(0);
+    expect(replayedTally.yourRating).toBe('like');
+
+    p1r.ws.close();
+    p2.ws.close();
+    p3.ws.close();
+  });
 });
