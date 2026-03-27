@@ -1173,6 +1173,7 @@ export class GameRoom {
 
     const player = match.players.get(accountId);
     if (!player || player.forfeited) {
+      this.playerMatchIndex.delete(accountId);
       this.connections.delete(accountId);
       return;
     }
