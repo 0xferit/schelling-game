@@ -48,15 +48,12 @@ function waitForMessage(
   });
 }
 
-/** Connect a seeded player via WebSocket, returning the client socket. */
-async function connectPlayer(
+/** Open a WebSocket for a wallet index, returning the client socket. */
+async function connectWs(
   walletIndex: number,
-  displayName: string,
-  balance = 0,
 ): Promise<{ ws: WebSocket; accountId: string }> {
   const wallet = createTestWallet(walletIndex);
   const { accountId, cookie } = await createTestSession(wallet);
-  await seedAccount(env.DB, accountId, displayName, balance);
 
   const resp = await exports.default.fetch(
     new Request(`${BASE}/ws`, {
@@ -72,6 +69,18 @@ async function connectPlayer(
   return { ws, accountId };
 }
 
+/** Connect a seeded player via WebSocket, returning the client socket. */
+async function connectPlayer(
+  walletIndex: number,
+  displayName: string,
+  balance = 0,
+): Promise<{ ws: WebSocket; accountId: string }> {
+  const wallet = createTestWallet(walletIndex);
+  const { accountId } = await createTestSession(wallet);
+  await seedAccount(env.DB, accountId, displayName, balance);
+  return connectWs(walletIndex);
+}
+
 /**
  * Reconnect an already-seeded player via WebSocket without reseeding or
  * updating the account row in D1. Use this instead of connectPlayer when the
@@ -81,21 +90,7 @@ async function connectPlayer(
 async function reconnectPlayer(
   walletIndex: number,
 ): Promise<{ ws: WebSocket; accountId: string }> {
-  const wallet = createTestWallet(walletIndex);
-  const { accountId, cookie } = await createTestSession(wallet);
-
-  const resp = await exports.default.fetch(
-    new Request(`${BASE}/ws`, {
-      headers: {
-        Upgrade: 'websocket',
-        Cookie: `session=${cookie}`,
-      },
-    }),
-  );
-  expect(resp.status).toBe(101);
-  const ws = resp.webSocket!;
-  ws.accept();
-  return { ws, accountId };
+  return connectWs(walletIndex);
 }
 
 /** Connect N players, join queue, and await game_started for all. */
