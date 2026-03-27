@@ -70,6 +70,29 @@ async function connectPlayer(
   return { ws, accountId };
 }
 
+/** Connect N players, join queue, and await game_started for all. */
+async function formMatch(
+  wallets: [index: number, name: string][],
+): Promise<
+  { ws: WebSocket; accountId: string; gameStarted: Record<string, unknown> }[]
+> {
+  const players = [];
+  for (const [index, name] of wallets) {
+    players.push(await connectPlayer(index, name));
+  }
+
+  const startedPromises = players.map((p) =>
+    waitForMessage(p.ws, 'game_started', 25_000),
+  );
+
+  for (const p of players) {
+    p.ws.send(JSON.stringify({ type: 'join_queue' }));
+  }
+
+  const started = await Promise.all(startedPromises);
+  return players.map((p, i) => ({ ...p, gameStarted: started[i]! }));
+}
+
 describe('GameRoom Durable Object', () => {
   it('rejects WebSocket without session cookie (401)', async () => {
     const resp = await exports.default.fetch(
@@ -133,41 +156,25 @@ describe('GameRoom Durable Object', () => {
   it('3 players joining queue triggers match formation', {
     timeout: 30_000,
   }, async () => {
-    // Connect 3 players with unique wallet indices
-    const p1 = await connectPlayer(0, 'Player1');
-    const p2 = await connectPlayer(1, 'Player2');
-    const p3 = await connectPlayer(2, 'Player3');
-
-    // Set up listeners for game_started before joining.
-    // Timeout must exceed the 20 s fill timer.
-    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
-
-    // All join queue
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
-
-    // All should receive game_started (fill timer or immediate at MIN_MATCH_SIZE)
-    const [gs1, gs2, gs3] = await Promise.all([
-      p1Started,
-      p2Started,
-      p3Started,
+    const players = await formMatch([
+      [0, 'Player1'],
+      [1, 'Player2'],
+      [2, 'Player3'],
     ]);
 
     // Verify game_started has expected structure
+    const gs1 = players[0]!.gameStarted;
     expect(gs1.matchId).toBeTruthy();
     expect(gs1.players).toBeDefined();
     expect(gs1.roundCount).toBe(10);
 
     // All three should share the same matchId
-    expect(gs1.matchId).toBe(gs2.matchId);
-    expect(gs2.matchId).toBe(gs3.matchId);
+    expect(gs1.matchId).toBe(players[1]!.gameStarted.matchId);
+    expect(gs1.matchId).toBe(players[2]!.gameStarted.matchId);
 
-    p1.ws.close();
-    p2.ws.close();
-    p3.ws.close();
+    for (const p of players) {
+      p.ws.close();
+    }
   });
 
   it('reconnect after commit replays round_start with yourCommitted flag', {
