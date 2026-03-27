@@ -1542,6 +1542,29 @@ export class GameRoom {
       players: playersInfo,
     });
 
+    // Replay peer disconnected/forfeited status so the client renders badges
+    for (const peer of match.players.values()) {
+      if (peer.accountId === accountId) continue;
+      if (peer.forfeited) {
+        this._sendTo(accountId, {
+          type: 'player_forfeited',
+          displayName: peer.displayName,
+          autoLosesRemainingRounds: true,
+        });
+      } else if (peer.disconnectedAt !== null) {
+        const elapsedMs = Date.now() - peer.disconnectedAt;
+        const remainingGraceSeconds = Math.max(
+          0,
+          Math.ceil((GRACE_DURATION_MS - elapsedMs) / 1000),
+        );
+        this._sendTo(accountId, {
+          type: 'player_disconnected',
+          displayName: peer.displayName,
+          graceSeconds: remainingGraceSeconds,
+        });
+      }
+    }
+
     // Send current round info with remaining time (not full duration)
     if (
       match.phase === 'commit' ||
