@@ -8,8 +8,8 @@
 
   function schedule() {
     clearInterval(timer);
-    // 15s while deploying, 90s otherwise (stays under 60 req/hr GitHub limit)
-    timer = setInterval(check, pending ? 15000 : 90000);
+    // 60s while deploying, 90s otherwise (stays under 60 req/hr GitHub limit)
+    timer = setInterval(check, pending ? 60000 : 90000);
   }
 
   function check() {
