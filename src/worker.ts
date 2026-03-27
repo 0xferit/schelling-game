@@ -242,6 +242,13 @@ export class GameRoom {
       }
     }
 
+    // If we reach here with an existingMatchId, the reconnection paths above
+    // were skipped (player was forfeited or match no longer exists).
+    // Clean up the stale index entry so the player can re-queue.
+    if (existingMatchId) {
+      this.playerMatchIndex.delete(accountId);
+    }
+
     // Close previous connection if any (not a match reconnect)
     if (existingConn) {
       try {
@@ -1155,6 +1162,7 @@ export class GameRoom {
     // In a match: start grace timer
     const match = this.activeMatches.get(matchId);
     if (!match) {
+      this.playerMatchIndex.delete(accountId);
       this.connections.delete(accountId);
       return;
     }
