@@ -688,7 +688,14 @@ $('#logout-btn').addEventListener('click', async () => {
   wsRetryCount = 0;
   if (wsRetryTimer !== null) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
   if (S.ws) { S.ws.close(); S.ws = null; }
-  try { await api('POST', '/api/logout'); } catch (_) {}
+  try {
+    await api('POST', '/api/logout');
+  } catch (_) {
+    notify('Logout failed. Please try again.', 'error');
+    intentionalClose = false;
+    connectWebSocket();
+    return;
+  }
   S.walletAddress = null;
   S.accountId = null;
   S.displayName = null;
