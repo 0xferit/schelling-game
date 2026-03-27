@@ -476,10 +476,10 @@ function showView(name) {
   $$('.view').forEach(v => v.classList.remove('active'));
   $(`#${name}-view`).classList.add('active');
 
-  // header profile
-  if (S.displayName) {
+  // header profile: show whenever authenticated (accountId set), even before display name is claimed
+  if (S.accountId) {
     $('#header-profile').classList.remove('hidden');
-    $('#header-name').textContent = S.displayName;
+    $('#header-name').textContent = S.displayName || S.accountId.slice(0, 6) + '…';
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
     $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
   }
