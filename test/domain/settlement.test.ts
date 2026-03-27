@@ -6,6 +6,13 @@ import {
 import { settleRound } from '../../src/domain/settlement';
 import type { PlayerSettlementInput, Question } from '../../src/types/domain';
 
+function must<T>(value: T | null | undefined, message: string): T {
+  if (value == null) {
+    throw new Error(message);
+  }
+  return value;
+}
+
 const question: Question = {
   id: 1,
   text: 'Test',
@@ -61,7 +68,10 @@ describe('plurality settlement: basic cases', () => {
     expect(result.winnerCount).toBe(2);
     expect(result.payoutPerWinner).toBe(90);
 
-    const carol = result.players.find((p) => p.accountId === 'a3')!;
+    const carol = must(
+      result.players.find((p) => p.accountId === 'a3'),
+      'Expected Carol in round result',
+    );
     expect(carol.wonRound).toBe(false);
     expect(carol.netDelta).toBe(-60);
     expect(carol.earnsCoordinationCredit).toBe(false);
@@ -121,7 +131,10 @@ describe('single valid revealer', () => {
     expect(result.pot).toBe(180);
     expect(result.payoutPerWinner).toBe(180);
 
-    const alice = result.players.find((p) => p.accountId === 'a1')!;
+    const alice = must(
+      result.players.find((p) => p.accountId === 'a1'),
+      'Expected Alice in round result',
+    );
     expect(alice.netDelta).toBe(120);
     expect(alice.earnsCoordinationCredit).toBe(false);
   });
@@ -165,7 +178,10 @@ describe('tied pluralities', () => {
     expect(winners).toHaveLength(4);
     expect(winners.every((p) => p.earnsCoordinationCredit)).toBe(true);
 
-    const eve = result.players.find((p) => p.accountId === 'a5')!;
+    const eve = must(
+      result.players.find((p) => p.accountId === 'a5'),
+      'Expected Eve in round result',
+    );
     expect(eve.wonRound).toBe(false);
     expect(eve.earnsCoordinationCredit).toBe(false);
   });
@@ -264,7 +280,10 @@ describe('forfeited player handling', () => {
     expect(result.pot).toBe(180);
     expect(result.validRevealCount).toBe(2);
 
-    const carol = result.players.find((p) => p.accountId === 'a3')!;
+    const carol = must(
+      result.players.find((p) => p.accountId === 'a3'),
+      'Expected Carol in round result',
+    );
     expect(carol.wonRound).toBe(false);
     expect(carol.netDelta).toBe(-60);
   });
@@ -295,7 +314,10 @@ describe('coordination credit rules', () => {
     const result = settleRound(players, question);
 
     expect(result.topCount).toBe(1);
-    const alice = result.players.find((p) => p.accountId === 'a1')!;
+    const alice = must(
+      result.players.find((p) => p.accountId === 'a1'),
+      'Expected Alice in round result',
+    );
     expect(alice.earnsCoordinationCredit).toBe(false);
   });
 

@@ -261,6 +261,7 @@ export async function handleHttpRequest(
       .run();
 
     const account = await fetchAccountWithStats(env.DB, normalized);
+    if (!account) return errorResponse('Account not found', 500);
 
     const token = createSessionCookie(
       normalized,
@@ -268,15 +269,15 @@ export async function handleHttpRequest(
       challengeIssuedAt,
       signature,
     );
-    const requiresDisplayName = !account!.display_name;
+    const requiresDisplayName = !account.display_name;
 
     return jsonResponse(
       {
         accountId: normalized,
-        displayName: account!.display_name || null,
+        displayName: account.display_name || null,
         requiresDisplayName,
-        tokenBalance: account!.token_balance ?? 0,
-        leaderboardEligible: !!account!.leaderboard_eligible,
+        tokenBalance: account.token_balance ?? 0,
+        leaderboardEligible: !!account.leaderboard_eligible,
       },
       200,
       {

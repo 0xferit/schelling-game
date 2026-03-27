@@ -35,8 +35,19 @@ const TEST_KEYS = [
   '0x0000000000000000000000000000000000000000000000000000000000000019',
 ];
 
+export function must<T>(value: T | null | undefined, message: string): T {
+  if (value == null) {
+    throw new Error(message);
+  }
+  return value;
+}
+
 export function createTestWallet(index = 0): ethers.Wallet {
-  return new ethers.Wallet(TEST_KEYS[index]!);
+  const privateKey = TEST_KEYS[index];
+  if (!privateKey) {
+    throw new RangeError(`Missing test wallet for index ${index}`);
+  }
+  return new ethers.Wallet(privateKey);
 }
 
 /**

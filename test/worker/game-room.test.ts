@@ -2,7 +2,12 @@ import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
 import { RESULTS_DURATION } from '../../src/domain/constants';
-import { createTestSession, createTestWallet, seedAccount } from './helpers';
+import {
+  createTestSession,
+  createTestWallet,
+  must,
+  seedAccount,
+} from './helpers';
 
 const BASE = 'https://test.local';
 
@@ -31,12 +36,7 @@ function waitForMessage(
   timeoutMs = 3000,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    let handler!: (evt: MessageEvent) => void;
-    const timer = setTimeout(() => {
-      ws.removeEventListener('message', handler);
-      reject(new Error(`Timed out waiting for "${type}"`));
-    }, timeoutMs);
-    handler = (evt: MessageEvent) => {
+    const handler = (evt: MessageEvent) => {
       const msg = JSON.parse(evt.data as string);
       if (msg.type === type) {
         clearTimeout(timer);
@@ -44,6 +44,10 @@ function waitForMessage(
         resolve(msg);
       }
     };
+    const timer = setTimeout(() => {
+      ws.removeEventListener('message', handler);
+      reject(new Error(`Timed out waiting for "${type}"`));
+    }, timeoutMs);
     ws.addEventListener('message', handler);
   });
 }
@@ -64,7 +68,7 @@ async function connectWs(
     }),
   );
   expect(resp.status).toBe(101);
-  const ws = resp.webSocket!;
+  const ws = must(resp.webSocket, 'Expected WebSocket upgrade response');
   ws.accept();
   return { ws, accountId };
 }
@@ -113,7 +117,13 @@ async function formMatch(
   }
 
   const started = await Promise.all(startedPromises);
-  return players.map((p, i) => ({ ...p, gameStarted: started[i]! }));
+  return players.map((p, i) => ({
+    ...p,
+    gameStarted: must(
+      started[i],
+      `Expected game_started for player index ${i}`,
+    ),
+  }));
 }
 
 describe('GameRoom Durable Object', () => {
@@ -164,7 +174,9 @@ describe('GameRoom Durable Object', () => {
     const joinMsgs = await collectMessages(ws, 300);
     const joinState = joinMsgs.find((m) => m.type === 'queue_state');
     expect(joinState).toBeDefined();
-    expect(joinState!.queuedCount).toBeGreaterThanOrEqual(1);
+    expect(
+      must(joinState, 'Expected queue_state after join').queuedCount,
+    ).toBeGreaterThanOrEqual(1);
 
     // Leave queue
     ws.send(JSON.stringify({ type: 'leave_queue' }));
@@ -186,14 +198,18 @@ describe('GameRoom Durable Object', () => {
     ]);
 
     // Verify game_started has expected structure
-    const gs1 = players[0]!.gameStarted;
+    const gs1 = must(players[0], 'Expected first player').gameStarted;
     expect(gs1.matchId).toBeTruthy();
     expect(gs1.players).toBeDefined();
     expect(gs1.roundCount).toBe(10);
 
     // All three should share the same matchId
-    expect(gs1.matchId).toBe(players[1]!.gameStarted.matchId);
-    expect(gs1.matchId).toBe(players[2]!.gameStarted.matchId);
+    expect(gs1.matchId).toBe(
+      must(players[1], 'Expected second player').gameStarted.matchId,
+    );
+    expect(gs1.matchId).toBe(
+      must(players[2], 'Expected third player').gameStarted.matchId,
+    );
 
     for (const p of players) {
       p.ws.close();

@@ -3,6 +3,7 @@ import { createCommitHash } from '../../src/domain/commitReveal';
 import type { Question } from '../../src/types/domain';
 import type { Env } from '../../src/types/worker-env';
 import { GameRoom } from '../../src/worker';
+import { must } from './helpers';
 
 function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
   return {
@@ -79,12 +80,15 @@ describe('GameRoom async task tracking', () => {
     const onMessage = listeners.get('message');
     expect(onMessage).toBeDefined();
 
-    onMessage!({
+    must(
+      onMessage,
+      'Expected message listener',
+    )({
       data: JSON.stringify({ type: 'join_queue' }),
     } as MessageEvent);
 
     expect(waitUntil).toHaveBeenCalledTimes(1);
-    await waitUntil.mock.calls[0]![0];
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
     expect(handleMessage).toHaveBeenCalledWith('acct-1', {
       type: 'join_queue',
     });
@@ -127,7 +131,7 @@ describe('GameRoom async task tracking', () => {
     });
 
     expect(waitUntil).toHaveBeenCalledTimes(1);
-    await waitUntil.mock.calls[0]![0];
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
     expect(finalizeRound).toHaveBeenCalledWith(match);
     expect(player.revealed).toBe(true);
     expect(player.optionIndex).toBe(0);
@@ -151,13 +155,11 @@ describe('GameRoom async task tracking', () => {
     room._startFormingMatch();
 
     expect(startMatch).toHaveBeenCalledTimes(1);
-    expect(startMatch.mock.calls[0]![0]).toEqual([
-      'acct-1',
-      'acct-2',
-      'acct-3',
-    ]);
+    expect(
+      must(startMatch.mock.calls[0], 'Expected startMatch call')[0],
+    ).toEqual(['acct-1', 'acct-2', 'acct-3']);
     expect(waitUntil).toHaveBeenCalledTimes(1);
-    await waitUntil.mock.calls[0]![0];
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
   });
 
   it('returns the newest reserved player when fill closes on an even count', async () => {
@@ -176,12 +178,12 @@ describe('GameRoom async task tracking', () => {
     room._startFormingMatch();
 
     expect(startMatch).toHaveBeenCalledTimes(1);
-    expect(startMatch.mock.calls[0]![0]).toEqual(
-      Array.from({ length: 9 }, (_, i) => `acct-${i + 1}`),
-    );
+    expect(
+      must(startMatch.mock.calls[0], 'Expected startMatch call')[0],
+    ).toEqual(Array.from({ length: 9 }, (_, i) => `acct-${i + 1}`));
     expect(room.waitingQueue).toEqual(['acct-10']);
     expect(waitUntil).toHaveBeenCalledTimes(1);
-    await waitUntil.mock.calls[0]![0];
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
   });
 
   it('caps immediately formed public matches at 21 players', () => {
@@ -220,7 +222,7 @@ describe('GameRoom async task tracking', () => {
 
     expect(startCommitPhase).not.toHaveBeenCalled();
     expect(waitUntil).toHaveBeenCalledTimes(1);
-    await waitUntil.mock.calls[0]![0];
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
     expect(endMatch).toHaveBeenCalledWith(match);
   });
 });
