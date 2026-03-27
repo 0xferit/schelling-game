@@ -154,6 +154,21 @@ nav{display:flex;gap:.5rem}
 .notif-item.success{border-color:var(--green);color:var(--green)}
 .notif-item.warn{border-color:var(--orange);color:var(--orange)}
 @keyframes slideIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
+/* Action rows & rating */
+.action-row{display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap}
+#rating-row{display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)}
+/* ── Narrow viewport (phones) ─────────────────────────────────── */
+@media(max-width:480px){
+  header{flex-direction:column;align-items:stretch;text-align:center}
+  #header-profile{justify-content:center;flex-wrap:wrap}
+  nav{justify-content:center}
+  #commit-area,#reveal-area{flex-direction:column;align-items:stretch}
+  #commit-btn,#reveal-btn{min-width:0}
+  #rating-row{flex-direction:column;align-items:stretch;text-align:center}
+  .action-row{flex-direction:column}
+  .action-row button{width:100%}
+  .action-row .toggle-row{margin-left:0;justify-content:center}
+}
 .mt1{margin-top:.5rem}.mt2{margin-top:1rem}
 #build-info{text-align:center;padding:2rem 1rem 1rem;font-size:.7rem;color:#444;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;display:flex;justify-content:center;align-items:center;gap:1rem}
 /* ── Atmosphere ────────────────────────────────────────────────── */
@@ -218,7 +233,7 @@ nav{display:flex;gap:.5rem}
         Match forming: <strong id="forming-count">0</strong> players reserved.
         Fill closes in <strong id="forming-timer">--</strong>s
       </div>
-      <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap">
+      <div class="action-row">
         <button class="btn-primary" id="join-queue-btn">Join Queue</button>
         <button class="btn-danger hidden" id="leave-queue-btn">Leave Queue</button>
       </div>
@@ -265,7 +280,7 @@ nav{display:flex;gap:.5rem}
           <tbody id="result-tbody"></tbody>
         </table>
         <div id="result-note" style="font-size:.8rem;color:var(--muted);margin-top:.5rem"></div>
-        <div id="rating-row" class="hidden" style="display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)">
+        <div id="rating-row" class="hidden">
           <span>Rate this question:</span>
           <button id="rating-like" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128077; <span id="rating-likes">0</span></button>
           <button id="rating-dislike" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128078; <span id="rating-dislikes">0</span></button>
@@ -300,7 +315,7 @@ nav{display:flex;gap:.5rem}
         </tr></thead>
         <tbody id="summary-tbody"></tbody>
       </table>
-      <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap;align-items:center">
+      <div class="action-row" style="align-items:center">
         <button class="btn-primary" id="requeue-btn">Back to Queue</button>
         <button class="btn-ghost" id="summary-lb-btn">Leaderboard</button>
         <div class="toggle-row" style="margin-top:0;margin-left:auto">
