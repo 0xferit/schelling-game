@@ -31,7 +31,9 @@ export function createSessionCookie(
   issuedAt: number,
   signature: string,
 ): string {
-  return `${walletAddress}:${nonce}:${issuedAt}:${signature}`;
+  const normalizedWalletAddress = walletAddress.toLowerCase();
+  const normalizedSignature = signature.toLowerCase();
+  return `${normalizedWalletAddress}:${nonce}:${issuedAt}:${normalizedSignature}`;
 }
 
 export function verifySessionCookie(cookie: string | undefined): string | null {
