@@ -427,4 +427,67 @@ describe('HTTP routes', () => {
     const setCookie = resp.headers.get('Set-Cookie')!;
     expect(setCookie).not.toContain('Secure');
   });
+
+  // ---- Admin auth tests (timingSafeEqual fix) ----
+
+  const ADMIN_KEY = 'test-admin-secret-key';
+  const adminEnv = {
+    DB: env.DB,
+    GAME_ROOM: {} as DurableObjectNamespace,
+    ADMIN_KEY,
+  } satisfies Env;
+
+  function adminGet(path: string, headers: Record<string, string> = {}) {
+    return handleHttpRequest(
+      new Request(`${HTTPS_BASE}${path}`, { headers }),
+      adminEnv,
+    );
+  }
+
+  it('admin route with valid Bearer token succeeds', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: `Bearer ${ADMIN_KEY}`,
+    });
+    expect(resp.status).toBe(200);
+  });
+
+  it('admin route with wrong key (same length) returns 401', async () => {
+    const wrongKey = 'x'.repeat(ADMIN_KEY.length);
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: `Bearer ${wrongKey}`,
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route with shorter key returns 401', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: 'Bearer short',
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route with longer key returns 401', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: `Bearer ${ADMIN_KEY}-extra-long-suffix`,
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route with empty Authorization header returns 401', async () => {
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: '',
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it('admin route without ADMIN_KEY configured returns 503', async () => {
+    const resp = await handleHttpRequest(
+      new Request(`${HTTPS_BASE}/api/export/votes.csv`),
+      {
+        DB: env.DB,
+        GAME_ROOM: {} as DurableObjectNamespace,
+      } as Env,
+    );
+    expect(resp.status).toBe(503);
+  });
 });

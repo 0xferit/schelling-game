@@ -465,17 +465,16 @@ export async function handleHttpRequest(
     const enc = new TextEncoder();
     const bufA = enc.encode(a);
     const bufB = enc.encode(b);
-    if (bufA.byteLength !== bufB.byteLength) {
-      subtle.timingSafeEqual(
-        bufA.buffer as ArrayBuffer,
-        bufA.buffer as ArrayBuffer,
-      );
-      return false;
-    }
-    return subtle.timingSafeEqual(
-      bufA.buffer as ArrayBuffer,
-      bufB.buffer as ArrayBuffer,
+    const maxLen = Math.max(bufA.byteLength, bufB.byteLength);
+    const padA = new Uint8Array(maxLen);
+    const padB = new Uint8Array(maxLen);
+    padA.set(bufA);
+    padB.set(bufB);
+    const equal = subtle.timingSafeEqual(
+      padA.buffer as ArrayBuffer,
+      padB.buffer as ArrayBuffer,
     );
+    return equal && bufA.byteLength === bufB.byteLength;
   };
 
   const requireAdmin = async (): Promise<Response | null> => {
