@@ -906,7 +906,9 @@ export class GameRoom {
     // Clean up match (checkpoint already deleted at top of _endMatch)
     this.activeMatches.delete(match.matchId);
     for (const accountId of matchPlayerIds) {
-      this.playerMatchIndex.delete(accountId);
+      if (this.playerMatchIndex.get(accountId) === match.matchId) {
+        this.playerMatchIndex.delete(accountId);
+      }
     }
 
     // Auto-requeue non-forfeited players with autoRequeue enabled
