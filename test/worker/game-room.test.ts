@@ -236,6 +236,58 @@ describe('GameRoom Durable Object', () => {
     p3.ws.close();
   });
 
+  it('reconnect replays player_disconnected for peers in grace period', {
+    timeout: 35_000,
+  }, async () => {
+    // Use wallet indices 19/20/21 to avoid collisions with other tests.
+    const p1 = await connectPlayer(19, 'ReconP1');
+    const p2 = await connectPlayer(20, 'ReconP2');
+    const p3 = await connectPlayer(21, 'ReconP3');
+
+    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+
+    // Listen for round_start before joining to avoid missing it
+    const p1Round = waitForMessage(p1.ws, 'round_start', 28_000);
+
+    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
+    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+
+    await Promise.all([p1Started, p2Started, p3Started]);
+    await p1Round;
+
+    // Disconnect player 2 so the DO starts a grace timer for them
+    const p1DisconnectMsg = waitForMessage(p1.ws, 'player_disconnected', 3000);
+    p2.ws.close();
+    const disconnectMsg = await p1DisconnectMsg;
+    expect(disconnectMsg.displayName).toBe('ReconP2');
+
+    // Disconnect player 1 and reconnect: the replay should include
+    // a synthetic player_disconnected for player 2.
+    p1.ws.close();
+
+    const p1r = await connectPlayer(19, 'ReconP1');
+    const reconnectGameStarted = waitForMessage(p1r.ws, 'game_started', 3000);
+    const reconnectDisconnected = waitForMessage(
+      p1r.ws,
+      'player_disconnected',
+      3000,
+    );
+
+    await reconnectGameStarted;
+    const replayed = await reconnectDisconnected;
+    expect(replayed.displayName).toBe('ReconP2');
+    expect(typeof replayed.graceSeconds).toBe('number');
+    expect(Number.isInteger(replayed.graceSeconds)).toBe(true);
+    expect(replayed.graceSeconds).toBeGreaterThan(0);
+    expect(replayed.graceSeconds).toBeLessThanOrEqual(15);
+
+    p1r.ws.close();
+    p3.ws.close();
+  });
+
   it('reconnect during results phase replays round_result', {
     timeout: 35_000,
   }, async () => {
