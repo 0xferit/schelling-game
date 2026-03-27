@@ -279,7 +279,10 @@ describe('GameRoom Durable Object', () => {
     await reconnectGameStarted;
     const replayed = await reconnectDisconnected;
     expect(replayed.displayName).toBe('ReconP2');
+    expect(typeof replayed.graceSeconds).toBe('number');
+    expect(Number.isInteger(replayed.graceSeconds)).toBe(true);
     expect(replayed.graceSeconds).toBeGreaterThan(0);
+    expect(replayed.graceSeconds).toBeLessThanOrEqual(15);
 
     p1r.ws.close();
     p3.ws.close();
