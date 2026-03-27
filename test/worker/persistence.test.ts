@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { restoreMatchesFromStorage } from '../../src/worker/persistence';
+import { must } from './helpers';
 
 /**
  * Minimal mock of the SqlStorage interface used by persistence.ts.
@@ -99,20 +100,30 @@ describe('restoreMatchesFromStorage', () => {
     const after = Date.now();
 
     expect(restored).toHaveLength(1);
-    const match = restored[0]!;
+    const match = must(restored[0], 'Expected restored match');
     expect(match.players.size).toBe(2);
 
     // The previously-connected player (disconnected_at = NULL) should
     // have disconnectedAt set to approximately "now" (the restore time),
     // NOT to phaseEnteredAt (which was 20 s ago). This ensures the
     // grace timer gives them the full 15 s window after restore.
-    const connected = match.players.get('0xconnected')!;
+    const connected = must(
+      match.players.get('0xconnected'),
+      'Expected connected player state',
+    );
     expect(connected.disconnectedAt).toBeGreaterThanOrEqual(before);
     expect(connected.disconnectedAt).toBeLessThanOrEqual(after);
 
     // The explicitly-disconnected player keeps their original timestamp.
-    const disconnected = match.players.get('0xdisconnected')!;
-    expect(disconnected.disconnectedAt).toBe(playerRows[1]!.disconnected_at);
+    const disconnected = must(
+      match.players.get('0xdisconnected'),
+      'Expected disconnected player state',
+    );
+    const secondPlayerRow = must(
+      playerRows[1],
+      'Expected second player row in fixture data',
+    );
+    expect(disconnected.disconnectedAt).toBe(secondPlayerRow.disconnected_at);
   });
 
   it('uses a consistent timestamp for all NULL disconnected_at players in the same restore call', () => {
@@ -172,9 +183,9 @@ describe('restoreMatchesFromStorage', () => {
     const sql = createMockSql(matchRows, playerRows);
     const restored = restoreMatchesFromStorage(sql, STALE_THRESHOLD_MS);
 
-    const match = restored[0]!;
-    const p1 = match.players.get('0xplayer1')!;
-    const p2 = match.players.get('0xplayer2')!;
+    const match = must(restored[0], 'Expected restored match');
+    const p1 = must(match.players.get('0xplayer1'), 'Expected player 1 state');
+    const p2 = must(match.players.get('0xplayer2'), 'Expected player 2 state');
 
     // Both players should share the exact same disconnectedAt timestamp
     // because the function captures `now` once at the top rather than

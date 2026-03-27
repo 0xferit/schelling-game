@@ -15,6 +15,7 @@ import { settleRound } from './domain/settlement';
 import type {
   PlayerResultWithBalance,
   PlayerSettlementInput,
+  Question,
   RoundResult,
 } from './types/domain';
 import type { RoundResultMessage } from './types/messages';
@@ -415,7 +416,8 @@ export class GameRoom {
         this.waitingQueue.length > 0 &&
         this.formingMatch.players.length < MAX_MATCH_SIZE
       ) {
-        const nextId = this.waitingQueue.shift()!;
+        const nextId = this.waitingQueue.shift();
+        if (nextId === undefined) break;
         this.formingMatch.players.push(nextId);
       }
       // If max reached, start immediately
@@ -591,11 +593,13 @@ export class GameRoom {
   }
 
   _startCommitPhase(match: WorkerMatchState): void {
+    const nextRound = match.currentRound + 1;
+    const question = this._getQuestionForRound(match, nextRound);
+
     match.phase = 'commit';
-    match.currentRound++;
+    match.currentRound = nextRound;
     match.phaseEnteredAt = Date.now();
     match.lastRoundResult = null;
-    const question = match.questions[match.currentRound - 1]!;
 
     // Reset per-round player state
     for (const p of match.players.values()) {
@@ -658,10 +662,10 @@ export class GameRoom {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
+    const question = this._getQuestionForRound(match, match.currentRound);
+
     match.phase = 'results';
     match.phaseEnteredAt = Date.now();
-
-    const question = match.questions[match.currentRound - 1]!;
     const alreadySettled = match.currentRound <= match.lastSettledRound;
 
     // Build player array for settlement
@@ -1051,7 +1055,7 @@ export class GameRoom {
       salt: unknown;
       type: string;
     };
-    const question = match.questions[match.currentRound - 1]!;
+    const question = this._getQuestionForRound(match, match.currentRound);
 
     if (!validateOptionIndex(optionIndex, question.options.length)) {
       return this._sendTo(accountId, {
@@ -1067,7 +1071,13 @@ export class GameRoom {
     }
 
     // Verify hash (verifyCommit is synchronous)
-    const valid = verifyCommit(optionIndex, salt, player.hash!);
+    if (!player.hash) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'No commitment found',
+      });
+    }
+    const valid = verifyCommit(optionIndex, salt, player.hash);
     if (!valid) {
       return this._sendTo(accountId, {
         type: 'error',
@@ -1331,18 +1341,19 @@ export class GameRoom {
       allowedSizes: number[];
       fillDeadlineMs: number | null;
     } | null = null;
-    if (this.formingMatch) {
-      const fmPlayers = this.formingMatch.players.map((id) => {
+    const formingState = this.formingMatch;
+    if (formingState) {
+      const fmPlayers = formingState.players.map((id) => {
         const c = this.connections.get(id);
         return c ? c.displayName : 'unknown';
       });
       formingMatch = {
-        playerCount: this.formingMatch.players.length,
+        playerCount: formingState.players.length,
         players: fmPlayers,
         allowedSizes: buildAllowedMatchSizes(
-          this.formingMatch.players.length + this.waitingQueue.length,
+          formingState.players.length + this.waitingQueue.length,
         ),
-        fillDeadlineMs: this.formingMatch.fillDeadlineMs,
+        fillDeadlineMs: formingState.fillDeadlineMs,
       };
     }
 
@@ -1365,10 +1376,11 @@ export class GameRoom {
     matchId?: string;
   } {
     if (!accountId) return { status: 'idle' };
-    if (this.playerMatchIndex.has(accountId)) {
+    const matchId = this.playerMatchIndex.get(accountId);
+    if (matchId) {
       return {
         status: 'in_match',
-        matchId: this.playerMatchIndex.get(accountId)!,
+        matchId,
       };
     }
     if (this.formingMatch?.players.includes(accountId)) {
@@ -1520,8 +1532,17 @@ export class GameRoom {
     return false;
   }
 
+  _getQuestionForRound(match: WorkerMatchState, round: number): Question {
+    const question = match.questions[round - 1];
+    if (!question) {
+      throw new Error(
+        `Missing question for match ${match.matchId} round ${round}`,
+      );
+    }
+    return question;
+  }
+
   _sendMatchStateToPlayer(match: WorkerMatchState, accountId: string): void {
-    const question = match.questions[match.currentRound - 1]!;
     const player = match.players.get(accountId);
     if (!player) return;
 
@@ -1567,6 +1588,7 @@ export class GameRoom {
       match.phase === 'reveal' ||
       match.phase === 'results'
     ) {
+      const question = this._getQuestionForRound(match, match.currentRound);
       const elapsed = Date.now() - match.phaseEnteredAt;
       const commitRemaining = Math.max(
         0,

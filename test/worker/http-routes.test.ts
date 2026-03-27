@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { Env } from '../../src/types/worker-env';
 import { handleHttpRequest } from '../../src/worker/httpHandler';
 import { buildChallengeMessage } from '../../src/worker/session';
-import { createTestSession, createTestWallet, seedAccount } from './helpers';
+import {
+  createTestSession,
+  createTestWallet,
+  must,
+  seedAccount,
+} from './helpers';
 
 const HTTPS_BASE = 'https://test.local';
 const HTTP_BASE = 'http://test.local';
@@ -365,7 +370,9 @@ describe('HTTP routes', () => {
     expect(tally.total).toBeGreaterThanOrEqual(1);
     const entry = tally.votes.find((v) => v.optionIndex === 8);
     expect(entry).toBeDefined();
-    expect(entry!.count).toBeGreaterThanOrEqual(1);
+    expect(
+      must(entry, 'Expected tally entry for option 8').count,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   // ---- Cookie Secure attribute regression tests (issue #83) ----
@@ -390,7 +397,10 @@ describe('HTTP routes', () => {
       signature,
     });
     expect(verifyResp.status).toBe(200);
-    const setCookie = verifyResp.headers.get('Set-Cookie')!;
+    const setCookie = must(
+      verifyResp.headers.get('Set-Cookie'),
+      'Expected Set-Cookie header on verify response',
+    );
     expect(setCookie).toContain('Secure');
   });
 
@@ -410,21 +420,30 @@ describe('HTTP routes', () => {
       signature,
     });
     expect(verifyResp.status).toBe(200);
-    const setCookie = verifyResp.headers.get('Set-Cookie')!;
+    const setCookie = must(
+      verifyResp.headers.get('Set-Cookie'),
+      'Expected Set-Cookie header on verify response',
+    );
     expect(setCookie).not.toContain('Secure');
   });
 
   it('/api/logout over HTTPS sets Secure cookie attribute', async () => {
     const resp = await postWithBase(HTTPS_BASE, '/api/logout', {});
     expect(resp.status).toBe(200);
-    const setCookie = resp.headers.get('Set-Cookie')!;
+    const setCookie = must(
+      resp.headers.get('Set-Cookie'),
+      'Expected Set-Cookie header on logout response',
+    );
     expect(setCookie).toContain('Secure');
   });
 
   it('/api/logout over HTTP omits Secure cookie attribute', async () => {
     const resp = await postWithBase(HTTP_BASE, '/api/logout', {});
     expect(resp.status).toBe(200);
-    const setCookie = resp.headers.get('Set-Cookie')!;
+    const setCookie = must(
+      resp.headers.get('Set-Cookie'),
+      'Expected Set-Cookie header on logout response',
+    );
     expect(setCookie).not.toContain('Secure');
   });
 

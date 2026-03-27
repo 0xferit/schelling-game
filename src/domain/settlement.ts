@@ -6,6 +6,11 @@ import type {
 } from '../types/domain';
 import { ROUND_ANTE } from './constants';
 
+type ValidRevealInput = PlayerSettlementInput & {
+  optionIndex: number;
+  validReveal: true;
+};
+
 export function settleRound(
   players: PlayerSettlementInput[],
   question: Question,
@@ -15,7 +20,9 @@ export function settleRound(
   const pot = roundPlayerCount * ROUND_ANTE;
 
   // Collect valid reveals
-  const validReveals = players.filter((p) => p.validReveal);
+  const validReveals = players.filter(
+    (p): p is ValidRevealInput => p.validReveal && p.optionIndex !== null,
+  );
   const validRevealCount = validReveals.length;
 
   // Zero valid reveals: void
@@ -26,10 +33,7 @@ export function settleRound(
   // Count votes per option
   const optionCounts = new Map<number, number>();
   for (const p of validReveals) {
-    optionCounts.set(
-      p.optionIndex!,
-      (optionCounts.get(p.optionIndex!) || 0) + 1,
-    );
+    optionCounts.set(p.optionIndex, (optionCounts.get(p.optionIndex) || 0) + 1);
   }
 
   // Find topCount and winning options
@@ -43,7 +47,7 @@ export function settleRound(
   // Determine winners
   const winnerSet = new Set<string>();
   for (const p of validReveals) {
-    if (winningOptionIndexes.includes(p.optionIndex!)) {
+    if (winningOptionIndexes.includes(p.optionIndex)) {
       winnerSet.add(p.accountId);
     }
   }
