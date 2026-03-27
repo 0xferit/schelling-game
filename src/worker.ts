@@ -595,7 +595,6 @@ export class GameRoom {
   _startCommitPhase(match: WorkerMatchState): void {
     const nextRound = match.currentRound + 1;
     const question = this._getQuestionForRound(match, nextRound);
-    if (!question) return;
 
     match.phase = 'commit';
     match.currentRound = nextRound;
@@ -664,7 +663,6 @@ export class GameRoom {
       match.revealTimer = null;
     }
     const question = this._getQuestionForRound(match, match.currentRound);
-    if (!question) return;
 
     match.phase = 'results';
     match.phaseEnteredAt = Date.now();
@@ -1058,12 +1056,6 @@ export class GameRoom {
       type: string;
     };
     const question = this._getQuestionForRound(match, match.currentRound);
-    if (!question) {
-      return this._sendTo(accountId, {
-        type: 'error',
-        message: 'Round question unavailable',
-      });
-    }
 
     if (!validateOptionIndex(optionIndex, question.options.length)) {
       return this._sendTo(accountId, {
@@ -1540,16 +1532,12 @@ export class GameRoom {
     return false;
   }
 
-  _getQuestionForRound(
-    match: WorkerMatchState,
-    round: number,
-  ): Question | null {
+  _getQuestionForRound(match: WorkerMatchState, round: number): Question {
     const question = match.questions[round - 1];
     if (!question) {
-      console.error(
+      throw new Error(
         `Missing question for match ${match.matchId} round ${round}`,
       );
-      return null;
     }
     return question;
   }
@@ -1601,7 +1589,6 @@ export class GameRoom {
       match.phase === 'results'
     ) {
       const question = this._getQuestionForRound(match, match.currentRound);
-      if (!question) return;
       const elapsed = Date.now() - match.phaseEnteredAt;
       const commitRemaining = Math.max(
         0,

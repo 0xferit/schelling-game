@@ -261,7 +261,9 @@ export async function handleHttpRequest(
       .run();
 
     const account = await fetchAccountWithStats(env.DB, normalized);
-    if (!account) return errorResponse('Account not found', 500);
+    if (!account) {
+      return errorResponse('Failed to fetch account after upsert', 500);
+    }
 
     const token = createSessionCookie(
       normalized,
