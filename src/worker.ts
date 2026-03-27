@@ -8,9 +8,10 @@ import {
   COMMIT_DURATION,
   RESULTS_DURATION,
   REVEAL_DURATION,
+  ROUND_ANTE,
 } from './domain/constants';
 import { selectQuestionsForMatch } from './domain/questions';
-import { ROUND_ANTE, settleRound } from './domain/settlement';
+import { settleRound } from './domain/settlement';
 import type {
   PlayerResultWithBalance,
   PlayerSettlementInput,

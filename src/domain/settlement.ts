@@ -4,8 +4,7 @@ import type {
   Question,
   RoundResult,
 } from '../types/domain';
-
-const ROUND_ANTE = 60;
+import { ROUND_ANTE } from './constants';
 
 export function settleRound(
   players: PlayerSettlementInput[],
@@ -121,5 +120,3 @@ function buildVoidResult(
     players: playerResults,
   };
 }
-
-export { ROUND_ANTE };
