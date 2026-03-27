@@ -1,1 +1,1 @@
-.github/instructions/*.instructions.md
+.github/instructions/general.instructions.md
