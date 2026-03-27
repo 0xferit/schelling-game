@@ -307,6 +307,31 @@ export async function handleHttpRequest(
     return jsonResponse(leaderboard);
   }
 
+  // ---- GET /api/landing-stats ----
+  if (url.pathname === '/api/landing-stats' && method === 'GET') {
+    const [playersLast24hRow, completedMatchesRow, longestStreakRow] =
+      await Promise.all([
+        env.DB.prepare(
+          'SELECT COUNT(DISTINCT mp.account_id) AS players_last_24h ' +
+            'FROM match_players mp ' +
+            'JOIN matches m ON m.match_id = mp.match_id ' +
+            "WHERE julianday(m.started_at) >= julianday('now', '-1 day')",
+        ).first<{ players_last_24h: number }>(),
+        env.DB.prepare(
+          "SELECT COUNT(*) AS completed_matches FROM matches WHERE status = 'completed'",
+        ).first<{ completed_matches: number }>(),
+        env.DB.prepare(
+          'SELECT COALESCE(MAX(longest_streak), 0) AS longest_streak FROM player_stats',
+        ).first<{ longest_streak: number }>(),
+      ]);
+
+    return jsonResponse({
+      playersLast24h: playersLast24hRow?.players_last_24h ?? 0,
+      completedMatches: completedMatchesRow?.completed_matches ?? 0,
+      longestStreak: longestStreakRow?.longest_streak ?? 0,
+    });
+  }
+
   // ---- GET /api/leaderboard/me ----
   if (url.pathname === '/api/leaderboard/me' && method === 'GET') {
     const accountId = await getAuthenticatedAccountId(request);

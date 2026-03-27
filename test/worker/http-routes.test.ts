@@ -62,6 +62,52 @@ describe('HTTP routes', () => {
     expect(data).toEqual([]);
   });
 
+  it('GET /api/landing-stats returns recent activity and streak aggregates', async () => {
+    const accountA = 'landing-stats-a';
+    const accountB = 'landing-stats-b';
+    const accountC = 'landing-stats-c';
+
+    await seedAccount(env.DB, accountA, 'Alice');
+    await seedAccount(env.DB, accountB, 'Bob');
+    await seedAccount(env.DB, accountC, 'Carol');
+
+    const recent = new Date().toISOString();
+    const stale = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO matches (match_id, started_at, ended_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
+      ).bind('match-recent', recent, recent, 10, 3, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO matches (match_id, started_at, ended_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
+      ).bind('match-stale', stale, stale, 10, 2, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+      ).bind('match-recent', accountA, 'Alice', 0, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+      ).bind('match-recent', accountB, 'Bob', 0, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+      ).bind('match-stale', accountC, 'Carol', 0, 'completed'),
+      env.DB.prepare(
+        'UPDATE player_stats SET longest_streak = ? WHERE account_id = ?',
+      ).bind(8, accountB),
+    ]);
+
+    const resp = await get('/api/landing-stats');
+    expect(resp.status).toBe(200);
+
+    const data = (await resp.json()) as {
+      playersLast24h: number;
+      completedMatches: number;
+      longestStreak: number;
+    };
+    expect(data.playersLast24h).toBe(2);
+    expect(data.completedMatches).toBe(2);
+    expect(data.longestStreak).toBe(8);
+  });
+
   it('POST /api/auth/challenge returns challengeId and message', async () => {
     const wallet = createTestWallet();
     const resp = await post('/api/auth/challenge', {

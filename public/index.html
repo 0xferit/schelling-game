@@ -397,6 +397,57 @@ section{padding:6rem 2rem}
   border-left:2px solid var(--accent);
 }
 
+/* ── SOCIAL PROOF ───────────────────────── */
+.social-proof{border-top:1px solid var(--border)}
+.social-proof-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:1rem;
+  margin-top:3rem;
+}
+.social-card{
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(180deg, rgba(201,168,76,.06), rgba(17,17,17,.96));
+  border:1px solid var(--border);
+  border-radius:3px;
+  padding:1.5rem;
+}
+.social-card::before{
+  content:'';
+  position:absolute;
+  inset:0 auto auto 0;
+  width:100%;
+  height:1px;
+  background:linear-gradient(90deg, transparent, rgba(201,168,76,.5), transparent);
+}
+.social-value{
+  font-family:var(--serif);
+  font-size:clamp(2.6rem, 6vw, 4rem);
+  font-weight:600;
+  line-height:1;
+  color:var(--accent);
+  margin-bottom:.75rem;
+}
+.social-label{
+  font-size:.72rem;
+  font-weight:600;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--text);
+  margin-bottom:.5rem;
+}
+.social-copy{
+  color:var(--muted);
+  font-size:.9rem;
+  max-width:24ch;
+}
+.social-proof-note{
+  color:var(--muted);
+  font-size:.95rem;
+  margin-top:1.25rem;
+}
+
 /* ── FINAL CTA ───────────────────────────── */
 .final-cta{
   text-align:center;
@@ -468,6 +519,7 @@ footer{
   .concept-grid{grid-template-columns:1fr}
   .mech-steps{grid-template-columns:1fr}
   .example-layout{grid-template-columns:1fr}
+  .social-proof-grid{grid-template-columns:1fr}
   .example-left{position:static}
   .example-options{grid-template-columns:repeat(3,1fr)}
   nav{padding:1rem 1.25rem}
@@ -633,10 +685,40 @@ footer{
   </div>
 </section>
 
+<!-- ══ SOCIAL PROOF ═══════════════════════ -->
+<section class="social-proof">
+  <div class="container">
+    <div class="section-label reveal">Social Proof</div>
+    <h2 class="section-title reveal">Enough recent activity to make the guess matter</h2>
+    <p class="section-body reveal">
+      Recent public-match data, not hand-wavy promises. If you were worried about dead-lobby
+      risk, the queue now launches with any odd crowd from 3 to 21 players.
+    </p>
+    <div class="social-proof-grid">
+      <article class="social-card reveal reveal-delay-1">
+        <div class="social-value" id="stat-players-24h">--</div>
+        <div class="social-label">Players in the last 24h</div>
+        <p class="social-copy">A clearer signal than a static wait screen.</p>
+      </article>
+      <article class="social-card reveal reveal-delay-2">
+        <div class="social-value" id="stat-completed-matches">--</div>
+        <div class="social-label">Completed Matches</div>
+        <p class="social-copy">Finished games already feeding the public record.</p>
+      </article>
+      <article class="social-card reveal reveal-delay-3">
+        <div class="social-value" id="stat-longest-streak">--</div>
+        <div class="social-label">Best Coordination Streak</div>
+        <p class="social-copy">The longest run of coherent rounds on the board.</p>
+      </article>
+    </div>
+    <p class="social-proof-note reveal">Three cards, one practical takeaway: the queue is no longer waiting for exact 3/5/7 brackets to align.</p>
+  </div>
+</section>
+
 <!-- ══ FINAL CTA ═════════════════════════ -->
 <section class="final-cta">
   <h2 class="section-title reveal">Ready to find the focal point?</h2>
-  <p class="reveal">3, 5, or 7 players. 10 rounds. One question: can you think like everyone else?</p>
+  <p class="reveal">Any odd crowd from 3 to 21 players. 10 rounds. One question: can you think like everyone else?</p>
   <a href="/app.html" class="hero-cta reveal">Play Now</a>
 </section>
 
@@ -840,6 +922,19 @@ fetch('/api/game-config').then(function(r) { return r.json(); }).then(function(c
   document.getElementById('commit-seconds').textContent = cfg.commitDuration;
   document.getElementById('reveal-seconds').textContent = cfg.revealDuration;
 }).catch(function() {});
+
+/* ── Landing stats ───────────────────────── */
+(function() {
+  function formatInt(value) {
+    return new Intl.NumberFormat().format(value);
+  }
+
+  fetch('/api/landing-stats').then(function(r) { return r.json(); }).then(function(stats) {
+    document.getElementById('stat-players-24h').textContent = formatInt(stats.playersLast24h || 0);
+    document.getElementById('stat-completed-matches').textContent = formatInt(stats.completedMatches || 0);
+    document.getElementById('stat-longest-streak').textContent = formatInt(stats.longestStreak || 0);
+  }).catch(function() {});
+})();
 </script>
 <script src="/shared-deploy.js"></script>
 </body>
