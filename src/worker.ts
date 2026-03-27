@@ -68,9 +68,18 @@ const TOTAL_ROUNDS = 10;
 const FILL_TIMER_MS = 20_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_CHAT_LENGTH = 300;
-const MAX_MATCH_SIZE = 7;
+const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+function buildAllowedMatchSizes(availablePlayers: number): number[] {
+  const sizes: number[] = [];
+  const maxAllowed = Math.min(availablePlayers, MAX_MATCH_SIZE);
+  for (let size = MIN_MATCH_SIZE; size <= maxAllowed; size += 2) {
+    sizes.push(size);
+  }
+  return sizes;
+}
 
 // ---------------------------------------------------------------------------
 // Worker main handler (delegates to httpHandler module)
@@ -410,7 +419,7 @@ export class GameRoom {
     // No forming match: need at least 3 in queue to begin
     if (this.waitingQueue.length < MIN_MATCH_SIZE) return;
 
-    // Reserve first 3 (or up to 7)
+    // Reserve up to MAX_MATCH_SIZE players from the queue
     const reserveCount = Math.min(this.waitingQueue.length, MAX_MATCH_SIZE);
     const reserved = this.waitingQueue.splice(0, reserveCount);
 
@@ -534,8 +543,14 @@ export class GameRoom {
     try {
       const createStmts: D1PreparedStatement[] = [
         this.env.DB.prepare(
-          'INSERT INTO matches (match_id, started_at, round_count, status) VALUES (?, ?, ?, ?)',
-        ).bind(matchId, new Date().toISOString(), TOTAL_ROUNDS, 'active'),
+          'INSERT INTO matches (match_id, started_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?)',
+        ).bind(
+          matchId,
+          new Date().toISOString(),
+          TOTAL_ROUNDS,
+          playersMap.size,
+          'active',
+        ),
       ];
       for (const [acctId, p] of playersMap) {
         createStmts.push(
@@ -1342,9 +1357,8 @@ export class GameRoom {
       formingMatch = {
         playerCount: this.formingMatch.players.length,
         players: fmPlayers,
-        allowedSizes: [3, 5, 7].filter(
-          (s) =>
-            s <= this.formingMatch!.players.length + this.waitingQueue.length,
+        allowedSizes: buildAllowedMatchSizes(
+          this.formingMatch.players.length + this.waitingQueue.length,
         ),
         fillDeadlineMs: this.formingMatch.fillDeadlineMs,
       };

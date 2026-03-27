@@ -455,6 +455,36 @@ console.log('\n8. Pot Math Verification');
   );
 }
 
+{
+  // Arbitrary odd-size floor check: 11 players, 7 winners => floor(660/7) = 94
+  const players = [
+    makePlayer('a1', 'A', 0),
+    makePlayer('a2', 'B', 0),
+    makePlayer('a3', 'C', 0),
+    makePlayer('a4', 'D', 0),
+    makePlayer('a5', 'E', 0),
+    makePlayer('a6', 'F', 0),
+    makePlayer('a7', 'G', 0),
+    makePlayer('a8', 'H', 1),
+    makePlayer('a9', 'I', 1),
+    makePlayer('a10', 'J', 2),
+    makePlayer('a11', 'K', 3),
+  ];
+  const result = settleRound(players, question);
+  const winners = result.players.filter((p) => p.wonRound);
+
+  assert(result.pot === 660, '11 players: pot = 660');
+  assert(result.winnerCount === 7, '11 players: 7 winners');
+  assert(
+    result.payoutPerWinner === Math.floor(660 / 7),
+    'Odd-size floor: floor(660/7) = 94',
+  );
+  assert(
+    winners.every((p) => p.netDelta === 34),
+    'Odd-size floor: winners net +34 each',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 9. Forfeited Player Handling
 // ---------------------------------------------------------------------------
