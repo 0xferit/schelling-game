@@ -1,5 +1,8 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import type { Env } from '../../src/types/worker-env';
+import { handleHttpRequest } from '../../src/worker/httpHandler';
+import { buildChallengeMessage } from '../../src/worker/session';
 import { createTestSession, createTestWallet, seedAccount } from './helpers';
 
 const HTTPS_BASE = 'https://test.local';
@@ -111,6 +114,52 @@ describe('HTTP routes', () => {
     );
   });
 
+  it('POST /api/auth/challenge falls back when auth_challenges lacks issued_at', async () => {
+    const queries: string[] = [];
+    const fallbackDb = {
+      prepare(sql: string) {
+        queries.push(sql);
+        return {
+          bind: (..._params: unknown[]) => ({
+            run: async () => {
+              if (sql.includes('issued_at')) {
+                throw new Error(
+                  'table auth_challenges has no column named issued_at',
+                );
+              }
+              return {};
+            },
+          }),
+        };
+      },
+    } as unknown as D1Database;
+
+    const resp = await handleHttpRequest(
+      new Request(`${HTTPS_BASE}/api/auth/challenge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: '0x1234567890123456789012345678901234567890',
+        }),
+      }),
+      {
+        DB: fallbackDb,
+        GAME_ROOM: {} as DurableObjectNamespace,
+      } as Env,
+    );
+
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as { message: string };
+    expect(data.message).toContain('Issued:');
+    expect(queries.some((q) => q.includes('issued_at'))).toBe(true);
+    expect(
+      queries.some(
+        (q) =>
+          q.includes('INSERT INTO auth_challenges') && !q.includes('issued_at'),
+      ),
+    ).toBe(true);
+  });
+
   it('POST /api/auth/challenge returns challengeId and message', async () => {
     const wallet = createTestWallet();
     const resp = await post('/api/auth/challenge', {
@@ -157,6 +206,46 @@ describe('HTTP routes', () => {
       requiresDisplayName: boolean;
     };
     expect(body.accountId).toBe(normalized);
+    expect(body.requiresDisplayName).toBe(true);
+  });
+
+  it('POST /api/auth/verify accepts legacy challenges with NULL issued_at', async () => {
+    const wallet = createTestWallet(7);
+    const challengeId = 'ch_legacy_issued_at';
+    const nonce = crypto.randomUUID();
+    const issuedAt = Date.now();
+    const message = buildChallengeMessage(
+      wallet.address.toLowerCase(),
+      nonce,
+      issuedAt,
+    );
+    const expiresAt = new Date(issuedAt + 5 * 60 * 1000).toISOString();
+
+    await env.DB.prepare(
+      'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
+    )
+      .bind(
+        challengeId,
+        wallet.address.toLowerCase(),
+        nonce,
+        message,
+        expiresAt,
+      )
+      .run();
+
+    const signature = await wallet.signMessage(message);
+    const verifyResp = await post('/api/auth/verify', {
+      challengeId,
+      walletAddress: wallet.address,
+      signature,
+    });
+
+    expect(verifyResp.status).toBe(200);
+    const body = (await verifyResp.json()) as {
+      accountId: string;
+      requiresDisplayName: boolean;
+    };
+    expect(body.accountId).toBe(wallet.address.toLowerCase());
     expect(body.requiresDisplayName).toBe(true);
   });
 

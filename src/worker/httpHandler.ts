@@ -23,6 +23,15 @@ interface CacheStorageWithDefault extends CacheStorage {
   default?: Cache;
 }
 
+interface AuthChallengeRow {
+  challenge_id: string;
+  wallet_address: string;
+  nonce: string;
+  message: string;
+  expires_at: string;
+  issued_at?: number | null;
+}
+
 function jsonResponse(
   data: unknown,
   status = 200,
@@ -55,6 +64,51 @@ function escapeCsvField(value: unknown): string {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
+}
+
+function isMissingIssuedAtColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('no such column: issued_at') ||
+    message.includes('no column named issued_at')
+  );
+}
+
+async function insertAuthChallenge(
+  db: D1Database,
+  challengeId: string,
+  walletAddress: string,
+  nonce: string,
+  message: string,
+  expiresAt: string,
+  issuedAt: number,
+): Promise<void> {
+  try {
+    await db
+      .prepare(
+        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at, issued_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .bind(challengeId, walletAddress, nonce, message, expiresAt, issuedAt)
+      .run();
+  } catch (error) {
+    if (!isMissingIssuedAtColumnError(error)) throw error;
+
+    await db
+      .prepare(
+        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(challengeId, walletAddress, nonce, message, expiresAt)
+      .run();
+  }
+}
+
+function parseIssuedAtFromChallengeMessage(message: string): number | null {
+  const match = /\nIssued: (\d+)$/.exec(message);
+  if (!match) return null;
+
+  const issuedAt = Number(match[1]);
+  if (!Number.isSafeInteger(issuedAt)) return null;
+  return issuedAt;
 }
 
 export async function handleHttpRequest(
@@ -111,11 +165,15 @@ export async function handleHttpRequest(
     const expiresAt = new Date(issuedAt + 5 * 60 * 1000).toISOString();
     const message = buildChallengeMessage(normalized, nonce, issuedAt);
 
-    await env.DB.prepare(
-      'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at, issued_at) VALUES (?, ?, ?, ?, ?, ?)',
-    )
-      .bind(challengeId, normalized, nonce, message, expiresAt, issuedAt)
-      .run();
+    await insertAuthChallenge(
+      env.DB,
+      challengeId,
+      normalized,
+      nonce,
+      message,
+      expiresAt,
+      issuedAt,
+    );
 
     return jsonResponse({ challengeId, message, expiresAt });
   }
@@ -144,17 +202,13 @@ export async function handleHttpRequest(
       'SELECT * FROM auth_challenges WHERE challenge_id = ? AND wallet_address = ?',
     )
       .bind(challengeId, normalized)
-      .first()) as {
-      challenge_id: string;
-      wallet_address: string;
-      nonce: string;
-      message: string;
-      expires_at: string;
-      issued_at: number | null;
-    } | null;
+      .first()) as AuthChallengeRow | null;
 
     if (!challenge) return errorResponse('Invalid or expired challenge', 401);
-    if (challenge.issued_at == null) {
+    const challengeIssuedAt =
+      challenge.issued_at ??
+      parseIssuedAtFromChallengeMessage(challenge.message);
+    if (challengeIssuedAt == null) {
       // Pre-migration challenge row; force client to restart auth
       await env.DB.prepare('DELETE FROM auth_challenges WHERE challenge_id = ?')
         .bind(challengeId)
@@ -210,7 +264,7 @@ export async function handleHttpRequest(
     const token = createSessionCookie(
       normalized,
       challenge.nonce,
-      challenge.issued_at,
+      challengeIssuedAt,
       signature,
     );
     const requiresDisplayName = !account!.display_name;
