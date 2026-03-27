@@ -480,7 +480,10 @@ export class GameRoom {
     const matchId = crypto.randomUUID();
     this.formingMatch = null;
 
-    this._startMatch(players, matchId);
+    this._waitUntil(
+      this._startMatch(players, matchId),
+      `start match ${matchId}`,
+    );
     this._broadcastQueueState();
   }
 

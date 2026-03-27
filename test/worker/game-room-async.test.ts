@@ -134,6 +134,32 @@ describe('GameRoom async task tracking', () => {
     expect(player.salt).toBe(salt);
   });
 
+  it('tracks match start from _startFormingMatch with state.waitUntil', async () => {
+    const { room, waitUntil } = createRoom();
+    const startMatch = vi
+      .spyOn(room, '_startMatch')
+      .mockResolvedValue(undefined);
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    // Set up a forming match with 3 players (minimum odd count)
+    room.formingMatch = {
+      players: ['acct-1', 'acct-2', 'acct-3'],
+      timer: null,
+      fillDeadlineMs: null,
+    };
+
+    room._startFormingMatch();
+
+    expect(startMatch).toHaveBeenCalledTimes(1);
+    expect(startMatch.mock.calls[0]![0]).toEqual([
+      'acct-1',
+      'acct-2',
+      'acct-3',
+    ]);
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await waitUntil.mock.calls[0]![0];
+  });
+
   it('tracks match end after results with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);
