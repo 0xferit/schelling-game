@@ -1,10 +1,12 @@
 import { ethers } from 'ethers';
-import {
-  COMMIT_DURATION,
-  MIN_ESTABLISHED_MATCHES,
-  REVEAL_DURATION,
-} from '../domain/constants';
+import { COMMIT_DURATION, REVEAL_DURATION } from '../domain/constants';
 import type { Env } from '../types/worker-env';
+import {
+  fetchAccountWithStats,
+  fetchPlayerDOStatus,
+  type LeaderboardEntryInput,
+  shapeLeaderboardEntry,
+} from './accountRepo';
 import {
   buildChallengeMessage,
   createSessionCookie,
@@ -62,25 +64,7 @@ export async function handleHttpRequest(
     const accountId = verifySessionCookie(cookies.session);
     if (!accountId) return new Response('Unauthorized', { status: 401 });
 
-    const account = (await env.DB.prepare(
-      'SELECT a.account_id, a.display_name, a.token_balance, a.leaderboard_eligible, a.created_at, ' +
-        's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
-        'WHERE a.account_id = ?',
-    )
-      .bind(accountId)
-      .first()) as {
-      account_id: string;
-      display_name: string | null;
-      token_balance: number;
-      leaderboard_eligible: number;
-      created_at: string;
-      games_played: number;
-      rounds_played: number;
-      coherent_rounds: number;
-      current_streak: number;
-      longest_streak: number;
-    } | null;
+    const account = await fetchAccountWithStats(env.DB, accountId);
 
     if (!account?.display_name) {
       return new Response('Profile incomplete', { status: 403 });
@@ -215,22 +199,7 @@ export async function handleHttpRequest(
       .bind(normalized)
       .run();
 
-    const account = (await env.DB.prepare(
-      'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?',
-    )
-      .bind(normalized)
-      .first()) as {
-      account_id: string;
-      display_name: string | null;
-      token_balance: number;
-      leaderboard_eligible: number;
-      games_played: number;
-      rounds_played: number;
-      coherent_rounds: number;
-      current_streak: number;
-      longest_streak: number;
-    } | null;
+    const account = await fetchAccountWithStats(env.DB, normalized);
 
     const token = createSessionCookie(
       normalized,
@@ -260,38 +229,10 @@ export async function handleHttpRequest(
     const accountId = await getAuthenticatedAccountId(request);
     if (!accountId) return errorResponse('Unauthorized', 401);
 
-    const account = (await env.DB.prepare(
-      'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?',
-    )
-      .bind(accountId)
-      .first()) as {
-      account_id: string;
-      display_name: string | null;
-      token_balance: number;
-      leaderboard_eligible: number;
-      games_played: number;
-      rounds_played: number;
-      coherent_rounds: number;
-      current_streak: number;
-      longest_streak: number;
-    } | null;
+    const account = await fetchAccountWithStats(env.DB, accountId);
     if (!account) return errorResponse('Account not found', 404);
 
-    // Query queue status from the DO
-    let queueStatus = 'idle';
-    try {
-      const id = env.GAME_ROOM.idFromName('lobby');
-      const stub = env.GAME_ROOM.get(id);
-      const statusUrl = new URL(request.url);
-      statusUrl.pathname = '/status';
-      statusUrl.searchParams.set('accountId', accountId);
-      const statusResp = await stub.fetch(new Request(statusUrl.toString()));
-      const statusData = (await statusResp.json()) as { status?: string };
-      queueStatus = statusData.status || 'idle';
-    } catch {
-      // DO might not be reachable; default to idle
-    }
+    const queueStatus = await fetchPlayerDOStatus(env, request.url, accountId);
 
     return jsonResponse({
       accountId: account.account_id,
@@ -320,22 +261,12 @@ export async function handleHttpRequest(
     }
 
     // Check if player is in queue/match via DO
-    try {
-      const id = env.GAME_ROOM.idFromName('lobby');
-      const stub = env.GAME_ROOM.get(id);
-      const statusUrl = new URL(request.url);
-      statusUrl.pathname = '/status';
-      statusUrl.searchParams.set('accountId', accountId);
-      const statusResp = await stub.fetch(new Request(statusUrl.toString()));
-      const statusData = (await statusResp.json()) as { status?: string };
-      if (statusData.status !== 'idle') {
-        return errorResponse(
-          'Cannot change display name while queued, forming, or in a match',
-          409,
-        );
-      }
-    } catch {
-      // If DO is unreachable, allow the change
+    const playerStatus = await fetchPlayerDOStatus(env, request.url, accountId);
+    if (playerStatus !== 'idle') {
+      return errorResponse(
+        'Cannot change display name while queued, forming, or in a match',
+        409,
+      );
     }
 
     // Check uniqueness
@@ -367,29 +298,10 @@ export async function handleHttpRequest(
     ).all();
 
     const leaderboard = (results || []).map(
-      (r: Record<string, unknown>, i: number) => {
-        const gp = (r.games_played as number) || 0;
-        const rp = (r.rounds_played as number) || 0;
-        const cr = (r.coherent_rounds as number) || 0;
-        return {
-          rank: i + 1,
-          displayName: r.display_name,
-          tokenBalance: (r.token_balance as number) ?? 0,
-          leaderboardEligible: true,
-          gamesPlayed: gp,
-          avgNetTokensPerGame:
-            gp > 0
-              ? Math.round((((r.token_balance as number) ?? 0) / gp) * 100) /
-                100
-              : 0,
-          roundsPlayed: rp,
-          coherentRounds: cr,
-          coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
-          currentStreak: (r.current_streak as number) || 0,
-          longestStreak: (r.longest_streak as number) || 0,
-          provisional: gp < MIN_ESTABLISHED_MATCHES,
-        };
-      },
+      (r: Record<string, unknown>, i: number) => ({
+        rank: i + 1,
+        ...shapeLeaderboardEntry(r as unknown as LeaderboardEntryInput),
+      }),
     );
 
     return jsonResponse(leaderboard);
@@ -400,26 +312,9 @@ export async function handleHttpRequest(
     const accountId = await getAuthenticatedAccountId(request);
     if (!accountId) return errorResponse('Unauthorized', 401);
 
-    const account = (await env.DB.prepare(
-      'SELECT a.*, s.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
-        'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id WHERE a.account_id = ?',
-    )
-      .bind(accountId)
-      .first()) as {
-      account_id: string;
-      display_name: string | null;
-      token_balance: number;
-      leaderboard_eligible: number;
-      games_played: number;
-      rounds_played: number;
-      coherent_rounds: number;
-      current_streak: number;
-      longest_streak: number;
-    } | null;
+    const account = await fetchAccountWithStats(env.DB, accountId);
     if (!account) return errorResponse('Account not found', 404);
 
-    const gp = account.games_played || 0;
-    const rp = account.rounds_played || 0;
     const cr = account.coherent_rounds || 0;
     const eligible =
       account.leaderboard_eligible === 1 && account.display_name !== null;
@@ -448,20 +343,7 @@ export async function handleHttpRequest(
 
     return jsonResponse({
       rank,
-      displayName: account.display_name,
-      tokenBalance: account.token_balance ?? 0,
-      leaderboardEligible: eligible,
-      gamesPlayed: gp,
-      avgNetTokensPerGame:
-        gp > 0
-          ? Math.round(((account.token_balance ?? 0) / gp) * 100) / 100
-          : 0,
-      roundsPlayed: rp,
-      coherentRounds: cr,
-      coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
-      currentStreak: account.current_streak || 0,
-      longestStreak: account.longest_streak || 0,
-      provisional: gp < MIN_ESTABLISHED_MATCHES,
+      ...shapeLeaderboardEntry(account),
     });
   }
 

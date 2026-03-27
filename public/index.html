@@ -462,12 +462,6 @@ footer{
   font-size:.65rem;
   color:#444;
 }
-#deploy-status{display:flex;align-items:center;gap:.35rem}
-#deploy-status .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-#deploy-status .dot.success{background:#4caf50}
-#deploy-status .dot.in_progress{background:#ff9800;animation:pulse 1s infinite alternate}
-#deploy-status .dot.failure{background:#e53935}
-@keyframes pulse{to{opacity:.3}}
 
 /* ── RESPONSIVE ──────────────────────────── */
 @media(max-width:700px){
@@ -497,6 +491,7 @@ footer{
 .reveal-delay-3{animation-delay:.24s}
 .reveal-delay-4{animation-delay:.32s}
 </style>
+<link rel="stylesheet" href="/shared-deploy.css"/>
 </head>
 <body>
 
@@ -840,45 +835,12 @@ footer{
   }
 })();
 
-/* ── Deploy status indicator ─────────────── */
-(function() {
-  var el = document.getElementById('deploy-status');
-  var labels = { success: 'deployed', in_progress: 'deploying new version', failure: 'deploy failed' };
-  var pending = false;
-  var timer = null;
-
-  function schedule() {
-    clearInterval(timer);
-    // 15s while deploying, 90s otherwise (stays under 60 req/hr GitHub limit)
-    timer = setInterval(check, pending ? 15000 : 90000);
-  }
-
-  function check() {
-    fetch('https://api.github.com/repos/0xferit/schelling-game/actions/runs?per_page=1&branch=main')
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (!data.workflow_runs || !data.workflow_runs.length) return;
-        var run = data.workflow_runs[0];
-        var status = run.status === 'completed' ? run.conclusion : 'in_progress';
-        var text = labels[status] || status;
-        el.innerHTML = '<span class="dot ' + status + '"></span>' + text;
-        if ((status === 'in_progress') !== pending) {
-          pending = status === 'in_progress';
-          schedule();
-        }
-      })
-      .catch(function() {});
-  }
-
-  check();
-  schedule();
-})();
-
 /* ── Phase durations from server (single source of truth) ── */
 fetch('/api/game-config').then(function(r) { return r.json(); }).then(function(cfg) {
   document.getElementById('commit-seconds').textContent = cfg.commitDuration;
   document.getElementById('reveal-seconds').textContent = cfg.revealDuration;
 }).catch(function() {});
 </script>
+<script src="/shared-deploy.js"></script>
 </body>
 </html>

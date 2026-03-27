@@ -58,3 +58,8 @@ export interface RoundResultWithNum extends RoundResult {
 export interface PlayerResultWithBalance extends PlayerResult {
   newBalance: number;
 }
+
+export interface RoundResultWithBalances
+  extends Omit<RoundResultWithNum, 'players'> {
+  players: PlayerResultWithBalance[];
+}

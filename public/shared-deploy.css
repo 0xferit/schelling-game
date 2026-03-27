@@ -1,0 +1,6 @@
+#deploy-status{display:flex;align-items:center;gap:.35rem}
+#deploy-status .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+#deploy-status .dot.success{background:#4caf50}
+#deploy-status .dot.in_progress{background:#ff9800;animation:dsPulse 1s infinite alternate}
+#deploy-status .dot.failure{background:#e53935}
+@keyframes dsPulse{to{opacity:.3}}

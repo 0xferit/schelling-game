@@ -14,13 +14,16 @@ import { ROUND_ANTE, settleRound } from './domain/settlement';
 import type {
   PlayerResultWithBalance,
   PlayerSettlementInput,
-  Question,
   RoundResult,
 } from './types/domain';
 import type { RoundResultMessage } from './types/messages';
 import type { Env } from './types/worker-env';
 import { handleHttpRequest } from './worker/httpHandler';
-import type { PlayerActionFields } from './worker/persistence';
+import type {
+  PersistedMatchFields,
+  PersistedPlayerState,
+  PlayerActionFields,
+} from './worker/persistence';
 import {
   checkpointMatch,
   checkpointPlayerAction,
@@ -40,36 +43,16 @@ interface ConnectionState {
   previousOpponents: Set<string>;
 }
 
-interface WorkerPlayerState {
-  accountId: string;
-  displayName: string;
+interface WorkerPlayerState extends PersistedPlayerState {
   ws: WebSocket | null;
-  startingBalance: number;
-  currentBalance: number;
-  committed: boolean;
-  revealed: boolean;
-  hash: string | null;
-  optionIndex: number | null;
-  salt: string | null;
-  forfeited: boolean;
-  disconnectedAt: number | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
 }
 
-interface WorkerMatchState {
-  matchId: string;
+interface WorkerMatchState extends PersistedMatchFields {
   players: Map<string, WorkerPlayerState>;
-  questions: Question[];
-  currentRound: number;
-  totalRounds: number;
-  phase: string;
-  phaseEnteredAt: number;
-  lastSettledRound: number;
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
-  /** Cached last round_result payload for reconnect replay during results phase. Checkpointed. */
-  lastRoundResult: RoundResultMessage['result'] | null;
 }
 
 interface FormingMatchState {

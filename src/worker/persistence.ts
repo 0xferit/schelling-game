@@ -5,36 +5,12 @@
 import type { Question } from '../types/domain';
 import type { RoundResultMessage } from '../types/messages';
 
-// Matches the WorkerMatchState interface in worker.ts but only the
-// serializable fields needed for checkpointing.
-export interface CheckpointableMatch {
-  matchId: string;
-  phase: string;
-  currentRound: number;
-  totalRounds: number;
-  questions: Question[];
-  phaseEnteredAt: number;
-  lastSettledRound: number;
-  lastRoundResult: RoundResultMessage['result'] | null;
-  players: Map<
-    string,
-    {
-      accountId: string;
-      displayName: string;
-      startingBalance: number;
-      currentBalance: number;
-      committed: boolean;
-      revealed: boolean;
-      hash: string | null;
-      optionIndex: number | null;
-      salt: string | null;
-      forfeited: boolean;
-      disconnectedAt: number | null;
-    }
-  >;
-}
+// ---------------------------------------------------------------------------
+// Persisted state: single source of truth for checkpointable fields.
+// worker.ts extends these with runtime-only fields (ws, timers).
+// ---------------------------------------------------------------------------
 
-export interface RestoredPlayer {
+export interface PersistedPlayerState {
   accountId: string;
   displayName: string;
   startingBalance: number;
@@ -48,7 +24,7 @@ export interface RestoredPlayer {
   disconnectedAt: number | null;
 }
 
-export interface RestoredMatch {
+export interface PersistedMatchFields {
   matchId: string;
   phase: string;
   currentRound: number;
@@ -57,19 +33,27 @@ export interface RestoredMatch {
   phaseEnteredAt: number;
   lastSettledRound: number;
   lastRoundResult: RoundResultMessage['result'] | null;
-  players: Map<string, RestoredPlayer>;
 }
 
-export type PlayerActionFields = Partial<{
-  committed: boolean;
-  revealed: boolean;
-  hash: string | null;
-  optionIndex: number | null;
-  salt: string | null;
-  forfeited: boolean;
-  currentBalance: number;
-  disconnectedAt: number | null;
-}>;
+export interface CheckpointableMatch extends PersistedMatchFields {
+  players: Map<string, PersistedPlayerState>;
+}
+
+export type RestoredMatch = CheckpointableMatch;
+
+export type PlayerActionFields = Partial<
+  Pick<
+    PersistedPlayerState,
+    | 'committed'
+    | 'revealed'
+    | 'hash'
+    | 'optionIndex'
+    | 'salt'
+    | 'forfeited'
+    | 'currentBalance'
+    | 'disconnectedAt'
+  >
+>;
 
 interface SqlStorage {
   exec(
@@ -253,7 +237,7 @@ export function restoreMatchesFromStorage(
         ),
       ];
 
-      const players = new Map<string, RestoredPlayer>();
+      const players = new Map<string, PersistedPlayerState>();
 
       for (const pr of playerRows) {
         const accountId = pr.account_id as string;
