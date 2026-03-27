@@ -1551,10 +1551,15 @@ export class GameRoom {
           autoLosesRemainingRounds: true,
         });
       } else if (peer.disconnectedAt !== null) {
+        const elapsedMs = Date.now() - peer.disconnectedAt;
+        const remainingGraceSeconds = Math.max(
+          0,
+          Math.ceil((GRACE_DURATION_MS - elapsedMs) / 1000),
+        );
         this._sendTo(accountId, {
           type: 'player_disconnected',
           displayName: peer.displayName,
-          graceSeconds: GRACE_DURATION_MS / 1000,
+          graceSeconds: remainingGraceSeconds,
         });
       }
     }
