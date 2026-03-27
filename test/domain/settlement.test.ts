@@ -219,6 +219,29 @@ describe('pot math', () => {
     const result = settleRound(players, question);
     expect(result.payoutPerWinner).toBe(Math.floor(420 / 3));
   });
+
+  it('odd-size floor: 11 players, 7 winners → floor(660/7) = 94', () => {
+    const players = [
+      makePlayer('a1', 'A', 0),
+      makePlayer('a2', 'B', 0),
+      makePlayer('a3', 'C', 0),
+      makePlayer('a4', 'D', 0),
+      makePlayer('a5', 'E', 0),
+      makePlayer('a6', 'F', 0),
+      makePlayer('a7', 'G', 0),
+      makePlayer('a8', 'H', 1),
+      makePlayer('a9', 'I', 1),
+      makePlayer('a10', 'J', 2),
+      makePlayer('a11', 'K', 3),
+    ];
+    const result = settleRound(players, question);
+    const winners = result.players.filter((p) => p.wonRound);
+
+    expect(result.pot).toBe(660);
+    expect(result.winnerCount).toBe(7);
+    expect(result.payoutPerWinner).toBe(Math.floor(660 / 7));
+    expect(winners.every((p) => p.netDelta === 34)).toBe(true);
+  });
 });
 
 describe('forfeited player handling', () => {
