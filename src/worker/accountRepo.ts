@@ -11,11 +11,11 @@ export interface AccountWithStats {
   token_balance: number;
   leaderboard_eligible: number;
   created_at: string;
-  games_played: number;
-  rounds_played: number;
-  coherent_rounds: number;
-  current_streak: number;
-  longest_streak: number;
+  games_played: number | null;
+  rounds_played: number | null;
+  coherent_rounds: number | null;
+  current_streak: number | null;
+  longest_streak: number | null;
 }
 
 const ACCOUNT_WITH_STATS_SQL =

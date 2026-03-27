@@ -53,8 +53,6 @@ interface WorkerMatchState extends PersistedMatchFields {
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
-  /** Cached last round_result payload for reconnect replay during results phase. Checkpointed. */
-  lastRoundResult: RoundResultMessage['result'] | null;
 }
 
 interface FormingMatchState {

@@ -1,6 +1,7 @@
 /* Deploy status indicator (shared across index.html and app.html) */
 (function() {
   var el = document.getElementById('deploy-status');
+  if (!el) return;
   var labels = { success: 'deployed', in_progress: 'deploying new version', failure: 'deploy failed' };
   var pending = false;
   var timer = null;
@@ -19,7 +20,11 @@
         var run = data.workflow_runs[0];
         var status = run.status === 'completed' ? run.conclusion : 'in_progress';
         var text = labels[status] || status;
-        el.innerHTML = '<span class="dot ' + status + '"></span>' + text;
+        var dot = document.createElement('span');
+        dot.className = 'dot ' + status;
+        el.textContent = '';
+        el.appendChild(dot);
+        el.appendChild(document.createTextNode(text));
         if ((status === 'in_progress') !== pending) {
           pending = status === 'in_progress';
           schedule();
