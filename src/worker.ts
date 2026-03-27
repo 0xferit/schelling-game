@@ -242,11 +242,15 @@ export class GameRoom {
       }
     }
 
-    // If we reach here with an existingMatchId, the reconnection paths above
-    // were skipped (player was forfeited or match no longer exists).
-    // Clean up the stale index entry so the player can re-queue.
+    // Clean up the stale index entry so the player can re-queue, but only if
+    // the match is actually gone or the player is no longer an active
+    // participant in it.
     if (existingMatchId) {
-      this.playerMatchIndex.delete(accountId);
+      const match = this.activeMatches.get(existingMatchId);
+      const playerState = match?.players.get(accountId);
+      if (!match || !playerState || playerState.forfeited) {
+        this.playerMatchIndex.delete(accountId);
+      }
     }
 
     // Close previous connection if any (not a match reconnect)
