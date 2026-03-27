@@ -3,7 +3,7 @@
 Status: Accepted
 Date: 2026-03-23
 
-Supersession note: ADR [0006](/Users/ferit/Documents/Projects/0xferit/schelling-game/docs/adr/0006-generalize-public-match-sizes.md) supersedes this ADR's `3/5/7` divisibility rationale. The rest of this ADR remains canonical.
+Supersession note: ADR [0006](0006-generalize-public-match-sizes.md) supersedes this ADR's `3/5/7` divisibility rationale. The rest of this ADR remains canonical.
 
 ## Context
 

@@ -18,6 +18,7 @@ import {
 const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
 const LANDING_STATS_CACHE_TTL_SECONDS = 60;
 const LANDING_STATS_CACHE_CONTROL = `public, max-age=${LANDING_STATS_CACHE_TTL_SECONDS}, s-maxage=${LANDING_STATS_CACHE_TTL_SECONDS}`;
+const LANDING_STATS_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 interface CacheStorageWithDefault extends CacheStorage {
   default?: Cache;
@@ -377,14 +378,20 @@ export async function handleHttpRequest(
       if (cached) return cached;
     }
 
+    const startedAfter = new Date(
+      Date.now() - LANDING_STATS_LOOKBACK_MS,
+    ).toISOString();
+
     const [playersLast24hRow, completedMatchesRow, longestStreakRow] =
       await Promise.all([
         env.DB.prepare(
           'SELECT COUNT(DISTINCT mp.account_id) AS players_last_24h ' +
-            'FROM match_players mp ' +
-            'JOIN matches m ON m.match_id = mp.match_id ' +
-            "WHERE julianday(m.started_at) >= julianday('now', '-1 day')",
-        ).first<{ players_last_24h: number }>(),
+            'FROM matches m ' +
+            'JOIN match_players mp ON mp.match_id = m.match_id ' +
+            'WHERE m.started_at >= ?',
+        )
+          .bind(startedAfter)
+          .first<{ players_last_24h: number }>(),
         env.DB.prepare(
           "SELECT COUNT(*) AS completed_matches FROM matches WHERE status = 'completed'",
         ).first<{ completed_matches: number }>(),
