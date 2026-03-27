@@ -7,7 +7,6 @@ export type ClientMessage =
   | { type: 'leave_queue' }
   | { type: 'commit'; hash: string }
   | { type: 'reveal'; optionIndex: number; salt: string }
-  | { type: 'chat'; text: string }
   | { type: 'question_rating'; rating: 'like' | 'dislike' };
 
 // ── Server → Client ──────────────────────────────────────────────
@@ -102,13 +101,6 @@ export interface PlayerReconnectedMessage {
   displayName: string;
 }
 
-export interface ChatMessage {
-  type: 'chat';
-  from: string;
-  text: string;
-  messageId: string;
-}
-
 export interface QuestionRatingTallyMessage {
   type: 'question_rating_tally';
   questionId: number;
@@ -135,6 +127,5 @@ export type ServerMessage =
   | PlayerDisconnectedMessage
   | PlayerForfeitedMessage
   | PlayerReconnectedMessage
-  | ChatMessage
   | QuestionRatingTallyMessage
   | ErrorMessage;
