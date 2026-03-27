@@ -77,7 +77,8 @@ export function shapeLeaderboardEntry(
   return {
     displayName: row.display_name,
     tokenBalance: balance,
-    leaderboardEligible: !!row.leaderboard_eligible,
+    leaderboardEligible:
+      !!row.leaderboard_eligible && row.display_name !== null,
     gamesPlayed: gp,
     avgNetTokensPerGame: gp > 0 ? Math.round((balance / gp) * 100) / 100 : 0,
     roundsPlayed: rp,
