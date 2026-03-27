@@ -243,6 +243,17 @@ export class GameRoom {
       }
     }
 
+    // Clean up the stale index entry so the player can re-queue, but only if
+    // the match is actually gone or the player is no longer an active
+    // participant in it.
+    if (existingMatchId) {
+      const match = this.activeMatches.get(existingMatchId);
+      const playerState = match?.players.get(accountId);
+      if (!match || !playerState || playerState.forfeited) {
+        this.playerMatchIndex.delete(accountId);
+      }
+    }
+
     // Close previous connection if any (not a match reconnect)
     if (existingConn) {
       try {
@@ -896,7 +907,9 @@ export class GameRoom {
     // Clean up match (checkpoint already deleted at top of _endMatch)
     this.activeMatches.delete(match.matchId);
     for (const accountId of matchPlayerIds) {
-      this.playerMatchIndex.delete(accountId);
+      if (this.playerMatchIndex.get(accountId) === match.matchId) {
+        this.playerMatchIndex.delete(accountId);
+      }
     }
 
     // Auto-requeue non-forfeited players with autoRequeue enabled
@@ -1156,12 +1169,14 @@ export class GameRoom {
     // In a match: start grace timer
     const match = this.activeMatches.get(matchId);
     if (!match) {
+      this.playerMatchIndex.delete(accountId);
       this.connections.delete(accountId);
       return;
     }
 
     const player = match.players.get(accountId);
     if (!player || player.forfeited) {
+      this.playerMatchIndex.delete(accountId);
       this.connections.delete(accountId);
       return;
     }
