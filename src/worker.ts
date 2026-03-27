@@ -67,7 +67,6 @@ interface FormingMatchState {
 const TOTAL_ROUNDS = 10;
 const FILL_TIMER_MS = 20_000;
 const GRACE_DURATION_MS = 15_000;
-const MAX_CHAT_LENGTH = 300;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
@@ -314,8 +313,6 @@ export class GameRoom {
         return this._handleCommit(accountId, msg);
       case 'reveal':
         return this._handleReveal(accountId, msg);
-      case 'chat':
-        return this._handleChat(accountId, msg);
       case 'question_rating':
         return this._handleQuestionRating(accountId, msg);
       default:
@@ -928,7 +925,7 @@ export class GameRoom {
   }
 
   // -------------------------------------------------------------------------
-  // Commit / Reveal / Chat handlers
+  // Commit / Reveal handlers
   // -------------------------------------------------------------------------
 
   _handleCommit(
@@ -1083,37 +1080,6 @@ export class GameRoom {
         `finalize round ${match.currentRound} for ${match.matchId}`,
       );
     }
-  }
-
-  _handleChat(
-    accountId: string,
-    msg: { type: string; [key: string]: unknown },
-  ): void {
-    const matchId = this.playerMatchIndex.get(accountId);
-    if (!matchId) return;
-    const match = this.activeMatches.get(matchId);
-    if (!match) return;
-    if (match.phase !== 'results') {
-      return this._sendTo(accountId, {
-        type: 'error',
-        message: 'Chat only allowed during results phase',
-      });
-    }
-    const player = match.players.get(accountId);
-    if (!player || player.forfeited) return;
-
-    const text = String(msg.text || '')
-      .trim()
-      .slice(0, MAX_CHAT_LENGTH);
-    if (!text) return;
-
-    const messageId = crypto.randomUUID();
-    this._broadcastToMatch(match, {
-      type: 'chat',
-      from: player.displayName,
-      text,
-      messageId,
-    });
   }
 
   async _handleQuestionRating(

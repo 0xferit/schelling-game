@@ -120,16 +120,6 @@ nav{display:flex;gap:.5rem}
 .dot.forfeited{background:var(--red)}
 .dot.disconnected{background:var(--red);animation:pulse 1s infinite alternate}
 .balance-badge{font-family:var(--serif);font-size:.8rem;color:var(--muted)}
-/* Chat */
-#chat-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;display:flex;flex-direction:column;gap:.5rem;max-height:260px}
-#chat-panel h3{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.25em;color:var(--accent)}
-#chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:.35rem;min-height:60px;max-height:160px}
-.chat-msg{font-size:.83rem;line-height:1.4}
-.chat-msg .from{font-weight:600;color:var(--accent);margin-right:.3rem}
-#chat-input-row{display:flex;gap:.4rem}
-#chat-input{flex:1;font-size:.85rem}
-#chat-send{padding:.4rem .8rem;font-size:.85rem}
-#chat-disabled-note{font-size:.75rem;color:var(--muted);text-align:center;padding:.3rem}
 /* Summary */
 #summary-view .card{max-width:620px;margin:0 auto}
 #summary-table{width:100%;border-collapse:collapse;font-size:.9rem}
@@ -278,14 +268,6 @@ nav{display:flex;gap:.5rem}
       <div id="players-panel">
         <h3>Players</h3>
         <div id="players-list"></div>
-      </div>
-      <div id="chat-panel">
-        <h3>Chat</h3>
-        <div id="chat-messages"></div>
-        <div id="chat-input-row">
-          <input id="chat-input" type="text" placeholder="Message..." maxlength="300" autocomplete="off"/>
-          <button class="btn-ghost" id="chat-send">Send</button>
-        </div>
       </div>
     </div>
   </div>
@@ -815,7 +797,6 @@ function handleMessage(msg) {
     case 'player_disconnected': onPlayerDisconnected(msg); break;
     case 'player_reconnected': onPlayerReconnected(msg); break;
     case 'player_forfeited': onPlayerForfeited(msg); break;
-    case 'chat': onChat(msg); break;
     case 'question_rating_tally': onQuestionRatingTally(msg); break;
     case 'error': notify(msg.message, 'error'); break;
     default: break;
@@ -920,7 +901,6 @@ function onGameStarted(msg) {
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
-  clearChat();
   notify('Match started with ' + S.players.length + ' players', 'success');
 }
 
@@ -1027,10 +1007,6 @@ function onRoundStart(msg) {
     $('#timer-num').classList.remove('urgent');
   }
 
-  // Chat is disabled during commit/reveal to preserve independent judgment,
-  // but enabled during results (which normally re-enables it via onRoundResult).
-  enableChat(msg.phase === 'results');
-
   // Reset player dots
   renderPlayers();
 }
@@ -1113,7 +1089,6 @@ function onPhaseChange(msg) {
     }
 
     startTimer(msg.revealDuration);
-    enableChat(false);
   }
 }
 
@@ -1159,7 +1134,6 @@ function onRoundResult(msg) {
 
   renderRoundResult(r);
   renderPlayers();
-  enableChat(true);
 }
 
 function renderRoundResult(r) {
@@ -1317,38 +1291,6 @@ function tickTimer() {
     num.classList.remove('urgent');
   }
   if (remaining <= 0) clearInterval(S.timerInterval);
-}
-
-// ── Chat ─────────────────────────────────────────────────────────
-function enableChat(enabled) {
-  $('#chat-input').disabled = !enabled;
-  $('#chat-send').disabled = !enabled;
-}
-
-function clearChat() {
-  $('#chat-messages').innerHTML = '';
-}
-
-$('#chat-send').addEventListener('click', sendChat);
-$('#chat-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChat();
-});
-
-function sendChat() {
-  const input = $('#chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  wsSend({ type: 'chat', text });
-  input.value = '';
-}
-
-function onChat(msg) {
-  const container = $('#chat-messages');
-  const div = document.createElement('div');
-  div.className = 'chat-msg';
-  div.innerHTML = `<span class="from">${esc(msg.from)}:</span>${esc(msg.text)}`;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
 }
 
 // ── Question rating ──────────────────────────────────────────────
