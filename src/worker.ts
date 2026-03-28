@@ -1,4 +1,5 @@
 import {
+  createCommitHash,
   validateHash,
   validateOptionIndex,
   validateSalt,
@@ -48,6 +49,7 @@ interface ConnectionState {
 interface WorkerPlayerState extends PersistedPlayerState {
   ws: WebSocket | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  pendingAiCommit: boolean;
 }
 
 interface WorkerMatchState extends PersistedMatchFields {
@@ -72,6 +74,11 @@ const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
+const AI_BOT_DISPLAY_NAME = 'AI Backfill';
+const DEFAULT_AI_BOT_MODEL = '@cf/qwen/qwq-32b';
+const DEFAULT_AI_BOT_TIMEOUT_MS = 2_500;
+const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 
 function buildAllowedMatchSizes(availablePlayers: number): number[] {
   const sizes: number[] = [];
@@ -262,6 +269,8 @@ export class GameRoom {
       } catch {}
       // Remove from queue if they were queued
       this._removeFromQueue(accountId);
+      this._ensureAiBotBackfill();
+      this._tryFormMatch();
     }
 
     this.connections.set(accountId, {
@@ -336,6 +345,98 @@ export class GameRoom {
     }
   }
 
+  _aiBotEnabled(): boolean {
+    return (
+      this.env.AI_BOT_ENABLED === 'true' || this.env.AI_BOT_ENABLED === '1'
+    );
+  }
+
+  _isAiBot(accountId: string): boolean {
+    return accountId.startsWith(AI_BOT_ACCOUNT_PREFIX);
+  }
+
+  _createAiBotId(): string {
+    return `${AI_BOT_ACCOUNT_PREFIX}${crypto.randomUUID()}`;
+  }
+
+  _getDisplayName(accountId: string): string {
+    if (this._isAiBot(accountId)) {
+      return AI_BOT_DISPLAY_NAME;
+    }
+    return this.connections.get(accountId)?.displayName || 'unknown';
+  }
+
+  _getAiBotTimeoutMs(): number {
+    const parsed = Number.parseInt(this.env.AI_BOT_TIMEOUT_MS || '', 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_AI_BOT_TIMEOUT_MS;
+    }
+    return parsed;
+  }
+
+  _getAiBotModel(): string {
+    const model = this.env.AI_BOT_MODEL?.trim();
+    return model || DEFAULT_AI_BOT_MODEL;
+  }
+
+  _countQueuedHumans(): number {
+    let count = 0;
+    for (const accountId of this.waitingQueue) {
+      if (!this._isAiBot(accountId)) {
+        count += 1;
+      }
+    }
+    if (this.formingMatch) {
+      for (const accountId of this.formingMatch.players) {
+        if (!this._isAiBot(accountId)) {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  }
+
+  _getQueuedAiBotIds(): string[] {
+    const botIds = this.waitingQueue.filter((accountId) =>
+      this._isAiBot(accountId),
+    );
+    if (this.formingMatch) {
+      botIds.push(
+        ...this.formingMatch.players.filter((accountId) =>
+          this._isAiBot(accountId),
+        ),
+      );
+    }
+    return botIds;
+  }
+
+  _ensureAiBotBackfill(): void {
+    const queuedBotIds = this._getQueuedAiBotIds();
+
+    if (!this._aiBotEnabled()) {
+      for (const botId of queuedBotIds) {
+        this._removeFromQueue(botId);
+      }
+      return;
+    }
+
+    const needBot = this._countQueuedHumans() === 2;
+    if (needBot) {
+      if (queuedBotIds.length === 0) {
+        this.waitingQueue.push(this._createAiBotId());
+      } else {
+        for (const botId of queuedBotIds.slice(1)) {
+          this._removeFromQueue(botId);
+        }
+      }
+      return;
+    }
+
+    for (const botId of queuedBotIds) {
+      this._removeFromQueue(botId);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Queue management
   // -------------------------------------------------------------------------
@@ -368,6 +469,7 @@ export class GameRoom {
 
     conn.autoRequeue = true;
     this.waitingQueue.push(accountId);
+    this._ensureAiBotBackfill();
     this._tryFormMatch();
     this._broadcastQueueState();
   }
@@ -378,6 +480,8 @@ export class GameRoom {
 
     conn.autoRequeue = false;
     this._removeFromQueue(accountId);
+    this._ensureAiBotBackfill();
+    this._tryFormMatch();
     this._broadcastQueueState();
   }
 
@@ -501,26 +605,33 @@ export class GameRoom {
 
     const playersMap = new Map<string, WorkerPlayerState>();
     for (const accountId of playerIds) {
-      const conn = this.connections.get(accountId);
-      if (!conn) continue;
-
-      // Load current balance from D1
       let balance = 0;
-      try {
-        const row = (await this.env.DB.prepare(
-          'SELECT token_balance FROM accounts WHERE account_id = ?',
-        )
-          .bind(accountId)
-          .first()) as { token_balance: number } | null;
-        if (row) balance = row.token_balance ?? 0;
-      } catch (e) {
-        console.error('D1: fetch balance for', accountId, e);
+      let displayName = this._getDisplayName(accountId);
+      let ws: WebSocket | null = null;
+
+      if (!this._isAiBot(accountId)) {
+        const conn = this.connections.get(accountId);
+        if (!conn) continue;
+        displayName = conn.displayName;
+        ws = conn.ws;
+
+        // Load current balance from D1
+        try {
+          const row = (await this.env.DB.prepare(
+            'SELECT token_balance FROM accounts WHERE account_id = ?',
+          )
+            .bind(accountId)
+            .first()) as { token_balance: number } | null;
+          if (row) balance = row.token_balance ?? 0;
+        } catch (e) {
+          console.error('D1: fetch balance for', accountId, e);
+        }
       }
 
       playersMap.set(accountId, {
         accountId,
-        displayName: conn.displayName,
-        ws: conn.ws,
+        displayName,
+        ws,
         startingBalance: balance,
         currentBalance: balance,
         committed: false,
@@ -532,6 +643,7 @@ export class GameRoom {
         forfeitedAtRound: null,
         disconnectedAt: null,
         graceTimer: null,
+        pendingAiCommit: false,
       });
 
       this.playerMatchIndex.set(accountId, matchId);
@@ -567,6 +679,7 @@ export class GameRoom {
         ),
       ];
       for (const [acctId, p] of playersMap) {
+        if (this._isAiBot(acctId)) continue;
         createStmts.push(
           this.env.DB.prepare(
             'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
@@ -611,6 +724,7 @@ export class GameRoom {
       p.hash = null;
       p.optionIndex = null;
       p.salt = null;
+      p.pendingAiCommit = false;
     }
 
     this._checkpointMatch(match);
@@ -628,6 +742,8 @@ export class GameRoom {
       roundAnte: ROUND_ANTE,
       phase: 'commit',
     });
+
+    this._maybeScheduleAiBotCommit(match);
 
     match.commitTimer = setTimeout(() => {
       match.commitTimer = null;
@@ -658,6 +774,8 @@ export class GameRoom {
         `finalize round ${match.currentRound} for ${match.matchId}`,
       );
     }, REVEAL_DURATION * 1000);
+
+    this._autoRevealAiBots(match);
   }
 
   async _finalizeRound(match: WorkerMatchState): Promise<void> {
@@ -713,33 +831,35 @@ export class GameRoom {
         const playerState = match.players.get(pr.accountId);
         if (!playerState) continue;
 
-        stmts.push(
-          this.env.DB.prepare(
-            'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-          ).bind(playerState.currentBalance, pr.accountId),
-        );
-
-        if (!result.voided) {
+        if (!this._isAiBot(pr.accountId)) {
           stmts.push(
             this.env.DB.prepare(
-              'UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?',
-            ).bind(pr.accountId),
+              'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+            ).bind(playerState.currentBalance, pr.accountId),
           );
-          if (pr.earnsCoordinationCredit) {
+
+          if (!result.voided) {
             stmts.push(
               this.env.DB.prepare(
-                'UPDATE player_stats SET coherent_rounds = coherent_rounds + 1, ' +
-                  'current_streak = current_streak + 1, ' +
-                  'longest_streak = MAX(longest_streak, current_streak + 1) ' +
-                  'WHERE account_id = ?',
+                'UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?',
               ).bind(pr.accountId),
             );
-          } else {
-            stmts.push(
-              this.env.DB.prepare(
-                'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
-              ).bind(pr.accountId),
-            );
+            if (pr.earnsCoordinationCredit) {
+              stmts.push(
+                this.env.DB.prepare(
+                  'UPDATE player_stats SET coherent_rounds = coherent_rounds + 1, ' +
+                    'current_streak = current_streak + 1, ' +
+                    'longest_streak = MAX(longest_streak, current_streak + 1) ' +
+                    'WHERE account_id = ?',
+                ).bind(pr.accountId),
+              );
+            } else {
+              stmts.push(
+                this.env.DB.prepare(
+                  'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
+                ).bind(pr.accountId),
+              );
+            }
           }
         }
 
@@ -828,7 +948,7 @@ export class GameRoom {
     });
 
     // Check early termination: no non-forfeited players remain
-    if (!this._hasNonForfeitedPlayers(match)) {
+    if (!this._hasNonForfeitedHumanPlayers(match)) {
       match.resultsTimer = setTimeout(() => {
         match.resultsTimer = null;
         this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
@@ -882,6 +1002,8 @@ export class GameRoom {
       ];
 
       for (const p of match.players.values()) {
+        if (this._isAiBot(p.accountId)) continue;
+
         endStmts.push(
           this.env.DB.prepare(
             'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
@@ -918,7 +1040,7 @@ export class GameRoom {
       const conn = this.connections.get(accountId);
       if (conn) {
         conn.previousOpponents = new Set(
-          matchPlayerIds.filter((id) => id !== accountId),
+          matchPlayerIds.filter((id) => id !== accountId && !this._isAiBot(id)),
         );
       }
     }
@@ -934,6 +1056,7 @@ export class GameRoom {
     // Auto-requeue non-forfeited players with autoRequeue enabled
     for (const p of match.players.values()) {
       if (p.forfeited) continue;
+      if (this._isAiBot(p.accountId)) continue;
       const conn = this.connections.get(p.accountId);
       if (conn?.autoRequeue) {
         // Refresh balance from D1 before requeueing
@@ -953,6 +1076,7 @@ export class GameRoom {
       }
     }
 
+    this._ensureAiBotBackfill();
     this._tryFormMatch();
     this._broadcastQueueState();
   }
@@ -960,6 +1084,259 @@ export class GameRoom {
   // -------------------------------------------------------------------------
   // Commit / Reveal handlers
   // -------------------------------------------------------------------------
+
+  _maybeScheduleAiBotCommit(match: WorkerMatchState): void {
+    for (const player of match.players.values()) {
+      if (
+        !this._isAiBot(player.accountId) ||
+        player.forfeited ||
+        player.committed ||
+        player.pendingAiCommit
+      ) {
+        continue;
+      }
+      this._waitUntil(
+        this._commitAiBotChoice(match, player.accountId),
+        `AI bot commit for ${player.accountId} in ${match.matchId}`,
+      );
+    }
+  }
+
+  async _commitAiBotChoice(
+    match: WorkerMatchState,
+    accountId: string,
+  ): Promise<void> {
+    const player = match.players.get(accountId);
+    if (
+      !player ||
+      !this._isAiBot(accountId) ||
+      player.forfeited ||
+      player.committed ||
+      player.pendingAiCommit ||
+      match.phase !== 'commit'
+    ) {
+      return;
+    }
+
+    const question = this._getQuestionForRound(match, match.currentRound);
+    const roundAtDispatch = match.currentRound;
+
+    player.pendingAiCommit = true;
+    try {
+      const optionIndex = await this._selectAiBotOption(match, question);
+      if (
+        match.phase !== 'commit' ||
+        match.currentRound !== roundAtDispatch ||
+        player.forfeited ||
+        player.committed
+      ) {
+        return;
+      }
+
+      const safeOptionIndex = validateOptionIndex(
+        optionIndex,
+        question.options.length,
+      )
+        ? optionIndex
+        : this._pickAiBotFallbackOption(question);
+      const salt = this._createAiBotSalt();
+      const hash = createCommitHash(safeOptionIndex, salt);
+
+      player.committed = true;
+      player.hash = hash;
+      player.optionIndex = safeOptionIndex;
+      player.salt = salt;
+      this._checkpointPlayerAction(match.matchId, accountId, {
+        committed: true,
+        hash,
+        optionIndex: safeOptionIndex,
+        salt,
+      });
+
+      this._broadcastCommitStatus(match);
+
+      if (this._allNonForfeitedCommitted(match)) {
+        this._startRevealPhase(match);
+      }
+    } finally {
+      if (
+        match.currentRound === roundAtDispatch &&
+        match.players.get(accountId) === player
+      ) {
+        player.pendingAiCommit = false;
+      }
+    }
+  }
+
+  async _selectAiBotOption(
+    match: WorkerMatchState,
+    question: Question,
+  ): Promise<number> {
+    if (!this.env.AI) {
+      return this._pickAiBotFallbackOption(question);
+    }
+
+    const elapsedMs = Date.now() - match.phaseEnteredAt;
+    const remainingCommitMs =
+      COMMIT_DURATION * 1000 - elapsedMs - AI_BOT_COMMIT_BUFFER_MS;
+    const timeoutMs = Math.min(this._getAiBotTimeoutMs(), remainingCommitMs);
+
+    if (timeoutMs <= 0) {
+      return this._pickAiBotFallbackOption(question);
+    }
+
+    try {
+      const output = await Promise.race([
+        this.env.AI.run(this._getAiBotModel(), {
+          prompt: this._buildAiBotPrompt(question),
+          guided_json: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['optionIndex'],
+            properties: {
+              optionIndex: {
+                type: 'integer',
+                minimum: 0,
+                maximum: question.options.length - 1,
+              },
+            },
+          },
+          max_tokens: 16,
+          temperature: 0.2,
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error('AI bot commit timed out')),
+            timeoutMs,
+          );
+        }),
+      ]);
+
+      const parsedIndex = this._parseAiBotOptionIndex(output, question);
+      if (parsedIndex !== null) {
+        return parsedIndex;
+      }
+    } catch (error) {
+      console.error('Workers AI bot inference failed', error);
+    }
+
+    return this._pickAiBotFallbackOption(question);
+  }
+
+  _buildAiBotPrompt(question: Question): string {
+    const options = question.options
+      .map((option, index) => `${index}: ${option}`)
+      .join('\n');
+    return [
+      'You are an AI backfill player in a 3-player coordination game.',
+      'Two human players are answering independently.',
+      'Choose the option they are most likely to converge on.',
+      'Do not answer with your personal preference.',
+      `Question: ${question.text}`,
+      'Options:',
+      options,
+      'Respond with JSON only: {"optionIndex": <zero-based index>}.',
+    ].join('\n');
+  }
+
+  _parseAiBotOptionIndex(output: unknown, question: Question): number | null {
+    const response =
+      typeof output === 'object' &&
+      output !== null &&
+      'response' in output &&
+      typeof output.response === 'string'
+        ? output.response.trim()
+        : null;
+
+    if (!response) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(response) as { optionIndex?: unknown };
+      if (validateOptionIndex(parsed.optionIndex, question.options.length)) {
+        return parsed.optionIndex;
+      }
+    } catch {}
+
+    const exactOptionIndex = question.options.findIndex(
+      (option) => option.toLowerCase() === response.toLowerCase(),
+    );
+    if (exactOptionIndex !== -1) {
+      return exactOptionIndex;
+    }
+
+    const numericMatch = response.match(/-?\d+/);
+    if (!numericMatch) {
+      return null;
+    }
+
+    const parsedIndex = Number.parseInt(numericMatch[0], 10);
+    if (!validateOptionIndex(parsedIndex, question.options.length)) {
+      return null;
+    }
+    return parsedIndex;
+  }
+
+  _pickAiBotFallbackOption(question: Question): number {
+    const normalizedTargets = ['1', '0', '50%', '50', '0.5', '0.50'];
+    for (const target of normalizedTargets) {
+      const index = question.options.findIndex(
+        (option) => option.trim().toLowerCase() === target,
+      );
+      if (index !== -1) {
+        return index;
+      }
+    }
+    return Math.floor(question.options.length / 2);
+  }
+
+  _createAiBotSalt(): string {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return [...bytes]
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  _autoRevealAiBots(match: WorkerMatchState): boolean {
+    let anyRevealed = false;
+    for (const player of match.players.values()) {
+      if (
+        !this._isAiBot(player.accountId) ||
+        player.forfeited ||
+        !player.committed ||
+        player.revealed ||
+        player.optionIndex === null ||
+        !player.salt
+      ) {
+        continue;
+      }
+
+      player.revealed = true;
+      this._checkpointPlayerAction(match.matchId, player.accountId, {
+        revealed: true,
+        optionIndex: player.optionIndex,
+        salt: player.salt,
+      });
+      anyRevealed = true;
+    }
+
+    if (!anyRevealed) {
+      return false;
+    }
+
+    this._broadcastRevealStatus(match);
+
+    if (this._allCommittedNonForfeitedRevealed(match)) {
+      this._waitUntil(
+        this._finalizeRound(match),
+        `finalize round ${match.currentRound} for ${match.matchId}`,
+      );
+      return true;
+    }
+
+    return false;
+  }
 
   _handleCommit(
     accountId: string,
@@ -1187,6 +1564,8 @@ export class GameRoom {
       // Not in a match: remove from queue and forming match
       this._removeFromQueue(accountId);
       this.connections.delete(accountId);
+      this._ensureAiBotBackfill();
+      this._tryFormMatch();
       this._broadcastQueueState();
       return;
     }
@@ -1390,10 +1769,7 @@ export class GameRoom {
     if (this.formingMatch) {
       allQueuedIds.unshift(...this.formingMatch.players);
     }
-    const queuedPlayers = allQueuedIds.map((id) => {
-      const c = this.connections.get(id);
-      return c ? c.displayName : 'unknown';
-    });
+    const queuedPlayers = allQueuedIds.map((id) => this._getDisplayName(id));
 
     let formingMatch: {
       playerCount: number;
@@ -1403,10 +1779,9 @@ export class GameRoom {
     } | null = null;
     const formingState = this.formingMatch;
     if (formingState) {
-      const fmPlayers = formingState.players.map((id) => {
-        const c = this.connections.get(id);
-        return c ? c.displayName : 'unknown';
-      });
+      const fmPlayers = formingState.players.map((id) =>
+        this._getDisplayName(id),
+      );
       formingMatch = {
         playerCount: formingState.players.length,
         players: fmPlayers,
@@ -1509,7 +1884,12 @@ export class GameRoom {
     for (const rm of restored) {
       const players = new Map<string, WorkerPlayerState>();
       for (const [id, rp] of rm.players) {
-        players.set(id, { ...rp, ws: null, graceTimer: null });
+        players.set(id, {
+          ...rp,
+          ws: null,
+          graceTimer: null,
+          pendingAiCommit: false,
+        });
         this.playerMatchIndex.set(id, rm.matchId);
       }
       this.activeMatches.set(rm.matchId, {
@@ -1539,6 +1919,7 @@ export class GameRoom {
       if (remaining <= 0) {
         this._startRevealPhase(match);
       } else {
+        this._maybeScheduleAiBotCommit(match);
         match.commitTimer = setTimeout(() => {
           match.commitTimer = null;
           this._startRevealPhase(match);
@@ -1547,6 +1928,9 @@ export class GameRoom {
     } else if (match.phase === 'reveal' && !match.revealTimer) {
       const remaining = Math.max(0, REVEAL_DURATION * 1000 - elapsed);
       if (remaining <= 0) {
+        if (this._autoRevealAiBots(match)) {
+          return;
+        }
         this._waitUntil(
           this._finalizeRound(match),
           `finalize round ${match.currentRound} for ${match.matchId}`,
@@ -1559,6 +1943,7 @@ export class GameRoom {
             `finalize round ${match.currentRound} for ${match.matchId}`,
           );
         }, remaining);
+        this._autoRevealAiBots(match);
       }
     } else if (match.phase === 'results' && !match.resultsTimer) {
       const remaining = Math.max(0, RESULTS_DURATION * 1000 - elapsed);
@@ -1592,7 +1977,7 @@ export class GameRoom {
   _advanceAfterResults(match: WorkerMatchState): void {
     if (
       match.currentRound >= match.totalRounds ||
-      !this._hasNonForfeitedPlayers(match)
+      !this._hasNonForfeitedHumanPlayers(match)
     ) {
       this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
     } else {
@@ -1600,9 +1985,11 @@ export class GameRoom {
     }
   }
 
-  _hasNonForfeitedPlayers(match: WorkerMatchState): boolean {
+  _hasNonForfeitedHumanPlayers(match: WorkerMatchState): boolean {
     for (const p of match.players.values()) {
-      if (!p.forfeited) return true;
+      if (!p.forfeited && !this._isAiBot(p.accountId)) {
+        return true;
+      }
     }
     return false;
   }

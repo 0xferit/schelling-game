@@ -30,3 +30,15 @@ jobs:
 
       - name: Worker tests
         run: npm run test:worker
+
+      - name: Bot install
+        working-directory: bot
+        run: npm ci
+
+      - name: Bot lint
+        working-directory: bot
+        run: npm run lint
+
+      - name: Bot type check
+        working-directory: bot
+        run: npx tsc --noEmit -p tsconfig.json

@@ -15,7 +15,7 @@ function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
   };
 }
 
-function createRoom(db: D1Database = {} as D1Database) {
+function createRoom(envOverrides: Partial<Env> = {}) {
   const waitUntil = vi.fn((_task: Promise<unknown>) => undefined);
   const state = {
     waitUntil,
@@ -34,8 +34,22 @@ function createRoom(db: D1Database = {} as D1Database) {
     },
   } as unknown as DurableObjectState;
 
-  const room = new GameRoom(state, { DB: db } as Env);
+  const room = new GameRoom(state, {
+    DB: {} as D1Database,
+    ...envOverrides,
+  } as Env);
   return { room, waitUntil };
+}
+
+function createConnectionState(displayName: string) {
+  return {
+    ws: {
+      send: vi.fn(),
+    } as unknown as WebSocket,
+    displayName,
+    autoRequeue: false,
+    previousOpponents: new Set<string>(),
+  };
 }
 
 function createMatch() {
@@ -147,8 +161,8 @@ describe('GameRoom async task tracking', () => {
     const bind = vi.fn(() => ({ run }));
     const prepare = vi.fn(() => ({ bind }));
     const { room, waitUntil } = createRoom({
-      prepare,
-    } as unknown as D1Database);
+      DB: { prepare } as unknown as D1Database,
+    });
     const checkpointPlayerAction = vi
       .spyOn(room, '_checkpointPlayerAction')
       .mockImplementation(() => {});
@@ -218,8 +232,8 @@ describe('GameRoom async task tracking', () => {
   it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeRound)', () => {
     const prepare = vi.fn();
     const { room, waitUntil } = createRoom({
-      prepare,
-    } as unknown as D1Database);
+      DB: { prepare } as unknown as D1Database,
+    });
     vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
     vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
 
@@ -277,8 +291,8 @@ describe('GameRoom async task tracking', () => {
   it('does not persist to D1 during mid-settlement results phase (avoids race with in-flight D1 batch)', () => {
     const prepare = vi.fn();
     const { room, waitUntil } = createRoom({
-      prepare,
-    } as unknown as D1Database);
+      DB: { prepare } as unknown as D1Database,
+    });
     vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
     vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
 
@@ -431,6 +445,114 @@ describe('GameRoom async task tracking', () => {
     expect(capturedFormingMatch?.players).toHaveLength(3);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('injects a synthetic AI bot for a two-human queue and removes it when a third human arrives', () => {
+    const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+
+    room._handleJoinQueue('acct-1');
+    room._handleJoinQueue('acct-2');
+
+    expect(room.waitingQueue).toHaveLength(0);
+    expect(room.formingMatch).not.toBeNull();
+    expect(
+      room.formingMatch?.players.filter((accountId) =>
+        room._isAiBot(accountId),
+      ),
+    ).toHaveLength(1);
+    expect(
+      room.formingMatch?.players.filter(
+        (accountId) => !room._isAiBot(accountId),
+      ),
+    ).toEqual(['acct-1', 'acct-2']);
+
+    room._handleJoinQueue('acct-3');
+
+    expect(room.waitingQueue).toHaveLength(0);
+    expect(room.formingMatch?.players).toEqual(['acct-1', 'acct-2', 'acct-3']);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('commits and auto-reveals synthetic AI players through the Workers AI path', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      response: '{"optionIndex":1}',
+    });
+    const { room, waitUntil } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_TIMEOUT_MS: '250',
+      AI: {
+        run: aiRun,
+      },
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastCommitStatus').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastRevealStatus').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.currentRound = 0;
+    match.phase = 'starting';
+
+    const human = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    const bot = {
+      accountId: 'ai-bot:test',
+      displayName: 'AI Backfill',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    match.players.set(human.accountId, human);
+    match.players.set(bot.accountId, bot);
+
+    room._startCommitPhase(match);
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected AI bot waitUntil call')[0];
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(bot.committed).toBe(true);
+    expect(bot.optionIndex).toBe(1);
+    expect(bot.hash).toBeTruthy();
+    expect(bot.salt).toBeTruthy();
+
+    human.committed = true;
+    human.hash = createCommitHash(0, 'a'.repeat(64));
+
+    room._startRevealPhase(match);
+
+    expect(bot.revealed).toBe(true);
+
+    if (match.revealTimer) clearTimeout(match.revealTimer);
   });
 
   it('tracks match end after results with state.waitUntil', async () => {
