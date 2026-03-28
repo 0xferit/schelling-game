@@ -1,14 +1,14 @@
-# Schelling Game Design
+# The Schelling Game Design
 
 Status: canonical game-rules document
 
-This document defines Schelling Game's rules and match logic. It is authoritative for gameplay behavior.
+This document defines the rules and match logic for The Schelling Game. It is authoritative for gameplay behavior.
 
 Authentication, transport, persistence, leaderboard implementation, and UI are out of scope.
 
 ## 1. Game Summary
 
-Schelling Game is a multiplayer coordination game. In each round, every player independently picks the option they expect the most other players to pick. Answers are hidden during commit, opened during reveal, and settled by exact-match plurality.
+The Schelling Game is a multiplayer coordination game. In each round, every player independently picks the option they expect the most other players to pick. Answers are hidden during commit, opened during reveal, and settled by exact-match plurality.
 
 The game distinguishes between two outcomes:
 
