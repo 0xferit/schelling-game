@@ -205,7 +205,12 @@ section{padding:6rem 2rem}
   user-select:none;
   pointer-events:none;
   white-space:nowrap;
+  z-index:0;
 }
+.origin .section-label,
+.origin .section-title,
+.origin-body,
+.origin-accent{position:relative;z-index:1}
 .origin-body{
   color:var(--muted);
   font-size:1.05rem;
@@ -607,7 +612,8 @@ footer{
       where would they go? Most people said Grand Central Station at noon.
       He called these natural meeting points <em>focal points</em> and proved that
       coordination without communication is not only possible, it is predictable.
-      Schelling won the Nobel Prize in Economics in 2005 for this work.
+      Schelling won the 2005 Nobel Prize in Economics for his work on
+      conflict and cooperation through game-theory analysis.
       This game is a live experiment of his theory.
     </p>
     <div class="origin-accent reveal"></div>
