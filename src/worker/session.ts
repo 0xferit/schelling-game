@@ -20,7 +20,7 @@ export function buildChallengeMessage(
   issuedAt: number,
 ): string {
   return (
-    'Sign this message to authenticate with Schelling Game.' +
+    'Sign this message to authenticate with The Schelling Game.' +
     `\n\nWallet: ${walletAddress}\nNonce: ${nonce}\nIssued: ${issuedAt}`
   );
 }
