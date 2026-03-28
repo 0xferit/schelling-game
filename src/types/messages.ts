@@ -93,7 +93,7 @@ export interface PlayerDisconnectedMessage {
 export interface PlayerForfeitedMessage {
   type: 'player_forfeited';
   displayName: string;
-  autoLosesRemainingRounds: boolean;
+  futureRoundsPenaltyApplied: boolean;
 }
 
 export interface PlayerReconnectedMessage {

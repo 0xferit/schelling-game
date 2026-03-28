@@ -22,7 +22,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 - Match: one complete game with any odd number of players from `3` to `21`.
 - Round: one `commit -> reveal -> results` cycle built around one question.
 - Question: a prompt with a fixed ordered list of discrete answer options.
-- Attached player: a player still counted for round accounting. A forfeited player remains attached until the match ends.
+- Attached player: a player still counted for round accounting. A forfeited player is attached only for the round in which they forfeit; they are detached for all subsequent rounds.
 - Valid reveal: a reveal from an attached, non-forfeited player who committed in time, revealed in time, and passed commitment verification.
 - `topCount`: the largest number of valid reveals on any single option in a round.
 
@@ -70,11 +70,10 @@ If the player reconnects within `15` seconds:
 
 If the player does not reconnect within `15` seconds, they forfeit:
 
-- they remain attached to the match for accounting purposes
+- they are attached for the current round: the round settles normally with them included in the pot
 - they may no longer commit or reveal
-- the current round settles based on whatever actions they did or did not complete before forfeiture
-- in each later non-voided round they lose the ante and cannot be a winner
-- in a later voided round their ante is refunded along with everyone else's
+- all future-round antes are charged as a one-time penalty when the forfeit round settles (burned: not redistributed to other players)
+- from the next round onward the player is detached: pot and results are calculated as if the match shrunk
 
 ## 6. Questions and Commit-Reveal
 
@@ -272,14 +271,14 @@ In a `5`-player round where all five players reveal the same option:
 
 ### Forfeited Player in a Later Round
 
-In a `3`-player match, suppose one player has already forfeited before a later round begins and the two remaining active players reveal the same option:
+In a `3`-player match, one player forfeited in round 2. In round 3 the two remaining active players reveal the same option:
 
-- the forfeited player is still attached, so `pot = 3 * 60 = 180`
-- the two active players are the only winners
-- each winner gets `90`
-- each winner's net delta is `+30`
-- the forfeited player gets `-60`
-- both active winners earn coordination credit because `topCount = 2`
+- the forfeited player is detached, so `roundPlayerCount = 2` and `pot = 2 * 60 = 120`
+- the two active players each pay `60`; both win
+- each winner gets `60`
+- each winner's net delta is `0`
+- the forfeited player is not part of this round at all
+- both active players earn coordination credit because `topCount = 2`
 
 ## 10. Out of Scope
 

@@ -529,6 +529,7 @@ export class GameRoom {
         optionIndex: null,
         salt: null,
         forfeited: false,
+        forfeitedAtRound: null,
         disconnectedAt: null,
         graceTimer: null,
       });
@@ -679,7 +680,7 @@ export class GameRoom {
       optionIndex: p.revealed ? p.optionIndex : null,
       validReveal: p.committed && p.revealed && !p.forfeited,
       forfeited: p.forfeited,
-      attached: true,
+      attached: !p.forfeited || p.forfeitedAtRound === match.currentRound,
     }));
 
     const result: RoundResult = settleRound(settlementPlayers, question);
@@ -690,6 +691,16 @@ export class GameRoom {
       if (!playerState) continue;
       if (!alreadySettled) {
         playerState.currentBalance += pr.netDelta;
+        // Burn future-round antes as a one-time penalty for the player who
+        // forfeited this round. They are detached from all subsequent rounds,
+        // so this is the only place the penalty is applied.
+        if (
+          playerState.forfeited &&
+          playerState.forfeitedAtRound === match.currentRound
+        ) {
+          const futureRounds = match.totalRounds - match.currentRound;
+          playerState.currentBalance -= futureRounds * ROUND_ANTE;
+        }
       }
       (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
       pr.revealedOptionLabel =
@@ -1216,13 +1227,17 @@ export class GameRoom {
     if (!player || player.forfeited) return;
 
     player.forfeited = true;
+    player.forfeitedAtRound = match.currentRound;
     player.graceTimer = null;
-    this._checkpointPlayerAction(match.matchId, accountId, { forfeited: true });
+    this._checkpointPlayerAction(match.matchId, accountId, {
+      forfeited: true,
+      forfeitedAtRound: match.currentRound,
+    });
 
     this._broadcastToMatch(match, {
       type: 'player_forfeited',
       displayName: player.displayName,
-      autoLosesRemainingRounds: true,
+      futureRoundsPenaltyApplied: true,
     });
 
     // If all players are now forfeited, check for early termination
@@ -1568,7 +1583,7 @@ export class GameRoom {
         this._sendTo(accountId, {
           type: 'player_forfeited',
           displayName: peer.displayName,
-          autoLosesRemainingRounds: true,
+          futureRoundsPenaltyApplied: true,
         });
       } else if (peer.disconnectedAt !== null) {
         const elapsedMs = Date.now() - peer.disconnectedAt;
