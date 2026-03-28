@@ -3,10 +3,70 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>The Schelling Game</title>
+
+<!-- Primary SEO -->
+<title>The Schelling Game — Coordination Theory Meets On-Chain Play</title>
+<meta name="description"
+  content="Can you predict what strangers will choose? The Schelling Game is a commit-reveal coordination game inspired by Thomas Schelling's focal point theory. Play now — no install required."/>
+<link rel="canonical" href="https://schelling.games/"/>
+<meta name="robots" content="index, follow"/>
+
+<!-- Open Graph -->
+<meta property="og:type"         content="website"/>
+<meta property="og:url"          content="https://schelling.games/"/>
+<meta property="og:title"        content="The Schelling Game"/>
+<meta property="og:description"  content="A commit-reveal coordination game. Think like everyone else — and win."/>
+<meta property="og:image"        content="https://schelling.games/og-image.png"/>
+<meta property="og:image:width"  content="1200"/>
+<meta property="og:image:height" content="630"/>
+<meta property="og:image:alt"    content="The Schelling Game — focal point coordination"/>
+<meta property="og:locale"       content="en_US"/>
+<meta property="og:site_name"    content="Schelling Games"/>
+
+<!-- Twitter / X Card -->
+<meta name="twitter:card"        content="summary_large_image"/>
+<meta name="twitter:site"        content="@0xferit"/>
+<meta name="twitter:title"       content="The Schelling Game"/>
+<meta name="twitter:description" content="A commit-reveal coordination game. Think like everyone else — and win."/>
+<meta name="twitter:image"       content="https://schelling.games/og-image.png"/>
+<meta name="twitter:image:alt"   content="The Schelling Game — focal point coordination"/>
+
+<!-- Favicon & PWA -->
+<link rel="icon"             type="image/svg+xml"  href="/favicon.svg"/>
+<link rel="apple-touch-icon" sizes="180x180"       href="/apple-touch-icon.png"/>
+<link rel="manifest"                                href="/site.webmanifest"/>
+<meta name="theme-color" content="#0a0a0a"/>
+<meta name="color-scheme" content="dark"/>
+
+<!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+
+<!-- Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "The Schelling Game",
+  "url": "https://schelling.games/",
+  "description": "A commit-reveal, on-chain coordination game inspired by Thomas Schelling's focal point theory. Players simultaneously commit secret choices, then reveal — plurality wins.",
+  "applicationCategory": "GameApplication",
+  "browserRequirements": "Requires JavaScript. Requires an Ethereum-compatible browser wallet.",
+  "inLanguage": "en",
+  "author": {
+    "@type": "Person",
+    "name": "Ferit Tunçer",
+    "url": "https://github.com/0xferit"
+  },
+  "genre": ["Coordination Game", "Game Theory", "Blockchain Game"],
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -21,7 +81,7 @@
   --serif:'Cormorant Garamond',Georgia,serif;
   --sans:'Outfit',system-ui,sans-serif;
 }
-html{scroll-behavior:smooth;scrollbar-color:rgba(201,168,76,.25) transparent;scrollbar-width:thin}
+html{scroll-behavior:smooth;scroll-padding-top:5rem;scrollbar-color:rgba(201,168,76,.25) transparent;scrollbar-width:thin}
 body{
   background:var(--bg);
   color:var(--text);
@@ -30,6 +90,33 @@ body{
   line-height:1.7;
   overflow-x:hidden;
   -webkit-font-smoothing:antialiased;
+}
+
+/* ── SKIP LINK ──────────────────────────── */
+.skip-link{
+  position:absolute;
+  left:-9999px;
+  top:auto;
+  width:1px;
+  height:1px;
+  overflow:hidden;
+  z-index:200;
+  font-family:var(--sans);
+  font-size:.85rem;
+  font-weight:500;
+  color:var(--bg);
+  background:var(--accent);
+  padding:.75rem 1.5rem;
+  text-decoration:none;
+  border-radius:0 0 3px 3px;
+}
+.skip-link:focus{
+  position:fixed;
+  left:1rem;
+  top:0;
+  width:auto;
+  height:auto;
+  overflow:visible;
 }
 
 /* ── NAV ─────────────────────────────────── */
@@ -578,15 +665,18 @@ footer{
 <link rel="stylesheet" href="/shared-deploy.css"/>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
 
-<nav>
+<nav aria-label="Primary navigation">
   <div class="logo">Schelling <span>Game</span></div>
   <a href="/app.html" class="play-link">Play</a>
 </nav>
 
+<main id="main-content">
+
 <!-- ══ HERO ══════════════════════════════ -->
 <section class="hero">
-  <canvas class="hero-canvas" id="convergence"></canvas>
+  <canvas class="hero-canvas" id="convergence" aria-hidden="true"></canvas>
   <div class="hero-overtitle hero-anim">A coordination game</div>
   <h1 class="hero-anim ha-1">Think Like<br/><em>Everyone</em> Else</h1>
   <p class="hero-sub hero-anim ha-2">
@@ -713,24 +803,24 @@ footer{
       <div class="example-demo">
         <div class="example-question">Pick the number you think most others will pick.</div>
         <div class="example-options">
-          <button class="example-opt">13</button>
-          <button class="example-opt">7</button>
-          <button class="example-opt">61</button>
-          <button class="example-opt">29</button>
-          <button class="example-opt">41</button>
-          <button class="example-opt">3</button>
-          <button class="example-opt">67</button>
-          <button class="example-opt">19</button>
-          <button class="example-opt popular">100</button>
-          <button class="example-opt">53</button>
-          <button class="example-opt">2</button>
-          <button class="example-opt">37</button>
-          <button class="example-opt">11</button>
-          <button class="example-opt">71</button>
-          <button class="example-opt">43</button>
-          <button class="example-opt">59</button>
-          <button class="example-opt">23</button>
-          <button class="example-opt">47</button>
+          <button class="example-opt" aria-label="Choose 13">13</button>
+          <button class="example-opt" aria-label="Choose 7">7</button>
+          <button class="example-opt" aria-label="Choose 61">61</button>
+          <button class="example-opt" aria-label="Choose 29">29</button>
+          <button class="example-opt" aria-label="Choose 41">41</button>
+          <button class="example-opt" aria-label="Choose 3">3</button>
+          <button class="example-opt" aria-label="Choose 67">67</button>
+          <button class="example-opt" aria-label="Choose 19">19</button>
+          <button class="example-opt popular" aria-label="Choose 100">100</button>
+          <button class="example-opt" aria-label="Choose 53">53</button>
+          <button class="example-opt" aria-label="Choose 2">2</button>
+          <button class="example-opt" aria-label="Choose 37">37</button>
+          <button class="example-opt" aria-label="Choose 11">11</button>
+          <button class="example-opt" aria-label="Choose 71">71</button>
+          <button class="example-opt" aria-label="Choose 43">43</button>
+          <button class="example-opt" aria-label="Choose 59">59</button>
+          <button class="example-opt" aria-label="Choose 23">23</button>
+          <button class="example-opt" aria-label="Choose 47">47</button>
         </div>
       </div>
     </div>
@@ -772,6 +862,8 @@ footer{
   <p class="reveal">Any odd crowd from 3 to 21 players. 10 rounds. One question: can you think like everyone else?</p>
   <a href="/app.html" class="hero-cta reveal">Play Now</a>
 </section>
+
+</main>
 
 <footer>
   <div class="footer-inner">
