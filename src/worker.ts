@@ -878,6 +878,12 @@ export class GameRoom {
       for (const p of match.players.values()) {
         endStmts.push(
           this.env.DB.prepare(
+            'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+          ).bind(p.currentBalance, p.accountId),
+        );
+
+        endStmts.push(
+          this.env.DB.prepare(
             'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?',
           ).bind(
             p.currentBalance,
@@ -1233,6 +1239,19 @@ export class GameRoom {
       currentBalance: player.currentBalance,
     });
 
+    // Once the current round is fully settled, this player will never appear
+    // in another round settlement write. Persist the burned balance now so a
+    // results-phase forfeit is durable before match end.
+    if (
+      match.phase === 'results' &&
+      match.lastRoundResult?.roundNum === match.currentRound
+    ) {
+      this._waitUntil(
+        this._persistAccountBalance(accountId, player.currentBalance),
+        `persist forfeited balance for ${accountId}`,
+      );
+    }
+
     this._broadcastToMatch(match, {
       type: 'player_forfeited',
       displayName: player.displayName,
@@ -1436,6 +1455,21 @@ export class GameRoom {
     fields: PlayerActionFields,
   ): void {
     checkpointPlayerAction(this.state.storage.sql, matchId, accountId, fields);
+  }
+
+  async _persistAccountBalance(
+    accountId: string,
+    currentBalance: number,
+  ): Promise<void> {
+    try {
+      await this.env.DB.prepare(
+        'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+      )
+        .bind(currentBalance, accountId)
+        .run();
+    } catch (error) {
+      console.error('D1: persist account balance for', accountId, error);
+    }
   }
 
   _deleteMatchCheckpoint(matchId: string): void {
