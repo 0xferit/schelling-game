@@ -296,12 +296,28 @@ export class GameClient {
       return;
     }
 
-    const optionIndex = await pickOption(
-      msg.question.text,
-      msg.question.options,
-      this.opts.model,
-      this.opts.ollamaUrl,
-    );
+    const commitDeadlineMs = msg.commitDuration * 1000;
+    const safetyMarginMs = 5000;
+    const deadline = Date.now() + commitDeadlineMs - safetyMarginMs;
+
+    let optionIndex: number;
+    try {
+      optionIndex = await pickOption(
+        msg.question.text,
+        msg.question.options,
+        this.opts.model,
+        this.opts.ollamaUrl,
+      );
+    } catch {
+      optionIndex = Math.floor(Math.random() * msg.question.options.length);
+    }
+
+    if (Date.now() > deadline) {
+      console.error(
+        `[bot] round ${msg.round}: LLM exceeded commit deadline, using random`,
+      );
+      optionIndex = Math.floor(Math.random() * msg.question.options.length);
+    }
 
     const salt = generateSalt();
     const hash = createCommitHash(optionIndex, salt);
@@ -365,6 +381,9 @@ export class GameClient {
     if (this.opts.loop) {
       console.error('[bot] re-queuing...');
       this.send({ type: 'join_queue' });
+    } else {
+      this.send({ type: 'leave_queue' });
+      this.ws?.close();
     }
   }
 }
