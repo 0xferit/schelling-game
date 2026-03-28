@@ -476,8 +476,8 @@ export class GameRoom {
     if (players.length < MIN_MATCH_SIZE) {
       this.waitingQueue.unshift(...players);
       this.formingMatch = null;
-      this._broadcastQueueState();
       this._tryFormMatch();
+      this._broadcastQueueState();
       return;
     }
 
@@ -488,8 +488,8 @@ export class GameRoom {
       this._startMatch(players, matchId),
       `start match ${matchId}`,
     );
-    this._broadcastQueueState();
     this._tryFormMatch();
+    this._broadcastQueueState();
   }
 
   // -------------------------------------------------------------------------

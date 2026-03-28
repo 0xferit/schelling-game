@@ -208,6 +208,46 @@ describe('GameRoom async task tracking', () => {
     ]);
   });
 
+  it('immediately starts forming a leftover queue after a full-cap match', () => {
+    const { room } = createRoom();
+    vi.spyOn(room, '_startMatch').mockResolvedValue(undefined);
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.waitingQueue = Array.from({ length: 24 }, (_, i) => `acct-${i + 1}`);
+    room._tryFormMatch();
+
+    // 21 reserved for the first match; the chained _tryFormMatch() picks up
+    // the remaining 3 into a new formingMatch before the broadcast fires.
+    expect(room.waitingQueue).toHaveLength(0);
+    expect(room.formingMatch?.players).toEqual([
+      'acct-22',
+      'acct-23',
+      'acct-24',
+    ]);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('broadcast reflects new formingMatch after full-cap drain', () => {
+    const { room } = createRoom();
+    vi.spyOn(room, '_startMatch').mockResolvedValue(undefined);
+
+    let capturedFormingMatch: typeof room.formingMatch = null;
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {
+      capturedFormingMatch = room.formingMatch;
+    });
+
+    room.waitingQueue = Array.from({ length: 24 }, (_, i) => `acct-${i + 1}`);
+    room._tryFormMatch();
+
+    // The final broadcast must see the leftover formingMatch so clients
+    // receive the fill timer countdown.
+    expect(capturedFormingMatch).not.toBeNull();
+    expect(capturedFormingMatch?.players).toHaveLength(3);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
   it('tracks match end after results with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);
