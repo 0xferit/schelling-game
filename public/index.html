@@ -191,6 +191,38 @@ section{padding:6rem 2rem}
   max-width:620px;
 }
 
+/* ── ORIGIN ─────────────────────────────── */
+.origin{border-top:1px solid var(--border)}
+.origin-year{
+  font-family:var(--serif);
+  font-size:clamp(6rem, 15vw, 12rem);
+  font-weight:700;
+  color:rgba(201,168,76,.06);
+  position:absolute;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  line-height:1;
+  user-select:none;
+  pointer-events:none;
+  white-space:nowrap;
+  z-index:0;
+}
+.origin .section-label,
+.origin .section-title,
+.origin-body,
+.origin-accent{position:relative;z-index:1}
+.origin-body{
+  color:var(--muted);
+  font-size:1.05rem;
+  max-width:620px;
+}
+.origin-accent{
+  width:40px;height:1px;
+  background:var(--accent);
+  margin-top:2rem;
+  opacity:.5;
+}
+
 /* ── THEORY ──────────────────────────────── */
 .theory{border-top:1px solid var(--border)}
 .theory-quote{
@@ -565,6 +597,26 @@ footer{
   <div class="hero-wallet-note hero-anim ha-3">Ethereum wallet required &middot; any EIP-1193 wallet works</div>
   <div class="hero-scroll">
     <div class="hero-scroll-chevron"></div>
+  </div>
+</section>
+
+<!-- ══ ORIGIN ═══════════════════════════ -->
+<section class="origin">
+  <div class="container" style="position:relative">
+    <div class="origin-year" aria-hidden="true">1960</div>
+    <div class="section-label reveal">The Origin</div>
+    <h2 class="section-title reveal">Thomas Schelling</h2>
+    <p class="origin-body reveal">
+      In 1960, economist Thomas Schelling posed a deceptively simple question:
+      if two strangers had to meet in New York City with no way to communicate,
+      where would they go? Most people said Grand Central Station at noon.
+      He called these natural meeting points <em>focal points</em> and proved that
+      coordination without communication is not only possible, it is predictable.
+      Schelling won the 2005 Nobel Prize in Economics for his work on
+      conflict and cooperation through game-theory analysis.
+      This game is a live experiment of his theory.
+    </p>
+    <div class="origin-accent reveal"></div>
   </div>
 </section>
 
