@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { LEADERBOARD_LIMIT } from '../../src/domain/constants';
 import type { Env } from '../../src/types/worker-env';
 import { handleHttpRequest } from '../../src/worker/httpHandler';
 import { buildChallengeMessage } from '../../src/worker/session';
@@ -12,6 +13,61 @@ import {
 
 const HTTPS_BASE = 'https://test.local';
 const HTTP_BASE = 'http://test.local';
+
+interface SeedLeaderboardAccountInput {
+  accountId: string;
+  displayName: string | null;
+  balance: number;
+  coherentRounds?: number;
+  leaderboardEligible?: boolean;
+}
+
+interface LeaderboardResponseEntry {
+  rank: number;
+  displayName: string;
+  tokenBalance: number;
+  coherentRounds: number;
+}
+
+function compareLeaderboardEntries(
+  a: LeaderboardResponseEntry,
+  b: LeaderboardResponseEntry,
+): number {
+  return (
+    b.tokenBalance - a.tokenBalance ||
+    b.coherentRounds - a.coherentRounds ||
+    a.displayName.localeCompare(b.displayName)
+  );
+}
+
+async function seedLeaderboardAccounts(
+  db: D1Database,
+  accounts: SeedLeaderboardAccountInput[],
+): Promise<void> {
+  await db.batch(
+    accounts.flatMap((account) => {
+      const coherentRounds = account.coherentRounds ?? 0;
+      const leaderboardEligible = account.leaderboardEligible ?? true;
+      return [
+        db
+          .prepare(
+            'INSERT INTO accounts (account_id, display_name, token_balance, leaderboard_eligible) VALUES (?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET display_name = excluded.display_name, token_balance = excluded.token_balance, leaderboard_eligible = excluded.leaderboard_eligible',
+          )
+          .bind(
+            account.accountId,
+            account.displayName,
+            account.balance,
+            leaderboardEligible ? 1 : 0,
+          ),
+        db
+          .prepare(
+            'INSERT INTO player_stats (account_id, games_played, rounds_played, coherent_rounds, current_streak, longest_streak) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET games_played = excluded.games_played, rounds_played = excluded.rounds_played, coherent_rounds = excluded.coherent_rounds, current_streak = excluded.current_streak, longest_streak = excluded.longest_streak',
+          )
+          .bind(account.accountId, 10, 10, coherentRounds, 0, 0),
+      ];
+    }),
+  );
+}
 
 function get(path: string, headers: Record<string, string> = {}) {
   return exports.default.fetch(
@@ -68,6 +124,97 @@ describe('HTTP routes', () => {
     expect(resp.status).toBe(200);
     const data = await resp.json();
     expect(data).toEqual([]);
+  });
+
+  it('GET /api/leaderboard returns the top 100 eligible named accounts in rank order', async () => {
+    const seeded: SeedLeaderboardAccountInput[] = [
+      {
+        accountId: 'leader-zulu',
+        displayName: 'Zulu',
+        balance: 1000,
+        coherentRounds: 5,
+      },
+      {
+        accountId: 'leader-alpha',
+        displayName: 'Alpha',
+        balance: 950,
+        coherentRounds: 9,
+      },
+      {
+        accountId: 'leader-tie-high',
+        displayName: 'TieHigh',
+        balance: 900,
+        coherentRounds: 9,
+      },
+      {
+        accountId: 'leader-tie-low',
+        displayName: 'TieLow',
+        balance: 900,
+        coherentRounds: 3,
+      },
+      {
+        accountId: 'leader-aaron',
+        displayName: 'Aaron',
+        balance: 850,
+        coherentRounds: 7,
+      },
+      {
+        accountId: 'leader-beatrice',
+        displayName: 'Beatrice',
+        balance: 850,
+        coherentRounds: 7,
+      },
+      {
+        accountId: 'excluded-ineligible',
+        displayName: 'ShouldBeHidden',
+        balance: 5000,
+        coherentRounds: 99,
+        leaderboardEligible: false,
+      },
+      {
+        accountId: 'excluded-nameless',
+        displayName: null,
+        balance: 4000,
+        coherentRounds: 88,
+      },
+      ...Array.from({ length: 96 }, (_, index) => ({
+        accountId: `filler-${index}`,
+        displayName: `Player${String(index).padStart(3, '0')}`,
+        balance: 800 - index,
+        coherentRounds: index % 5,
+      })),
+    ];
+
+    await seedLeaderboardAccounts(env.DB, seeded);
+
+    const resp = await get('/api/leaderboard');
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as LeaderboardResponseEntry[];
+
+    expect(data).toHaveLength(LEADERBOARD_LIMIT);
+    expect(data.map((entry) => entry.rank)).toEqual(
+      Array.from({ length: LEADERBOARD_LIMIT }, (_, index) => index + 1),
+    );
+    expect(data.map((entry) => entry.displayName).slice(0, 6)).toEqual([
+      'Zulu',
+      'Alpha',
+      'TieHigh',
+      'TieLow',
+      'Aaron',
+      'Beatrice',
+    ]);
+    expect(data.every((entry) => typeof entry.displayName === 'string')).toBe(
+      true,
+    );
+    expect(data.some((entry) => entry.displayName === 'ShouldBeHidden')).toBe(
+      false,
+    );
+
+    for (let index = 1; index < data.length; index += 1) {
+      expect(
+        compareLeaderboardEntries(data[index - 1], data[index]),
+      ).toBeLessThanOrEqual(0);
+    }
   });
 
   it('GET /api/landing-stats returns recent activity and streak aggregates', async () => {
@@ -355,6 +502,47 @@ describe('HTTP routes', () => {
     };
     expect(typeof data.rank).toBe('number');
     expect(data.leaderboardEligible).toBe(true);
+  });
+
+  it('GET /api/leaderboard/me returns global rank outside the visible top 100 table', async () => {
+    const wallet = createTestWallet(7);
+    const { accountId, cookie } = await createTestSession(wallet);
+    await seedLeaderboardAccounts(env.DB, [
+      {
+        accountId,
+        displayName: 'TargetPlayer',
+        balance: 100000,
+        coherentRounds: 1,
+      },
+      ...Array.from({ length: LEADERBOARD_LIMIT }, (_, index) => ({
+        accountId: `ahead-${index}`,
+        displayName: `Ahead${String(index).padStart(3, '0')}`,
+        balance: 200000 - index,
+        coherentRounds: index % 7,
+      })),
+    ]);
+
+    const leaderboardResp = await get('/api/leaderboard');
+    expect(leaderboardResp.status).toBe(200);
+    const leaderboard =
+      (await leaderboardResp.json()) as LeaderboardResponseEntry[];
+    expect(leaderboard).toHaveLength(LEADERBOARD_LIMIT);
+    expect(
+      leaderboard.some((entry) => entry.displayName === 'TargetPlayer'),
+    ).toBe(false);
+
+    const myRankResp = await get('/api/leaderboard/me', {
+      Cookie: `session=${cookie}`,
+    });
+    expect(myRankResp.status).toBe(200);
+    const myRank = (await myRankResp.json()) as {
+      rank: number | null;
+      leaderboardEligible: boolean;
+      displayName: string;
+    };
+    expect(myRank.rank).toBe(LEADERBOARD_LIMIT + 1);
+    expect(myRank.leaderboardEligible).toBe(true);
+    expect(myRank.displayName).toBe('TargetPlayer');
   });
 
   it('POST /api/example-vote + GET /api/example-tally round-trips', async () => {

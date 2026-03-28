@@ -1,5 +1,9 @@
 import { ethers } from 'ethers';
-import { COMMIT_DURATION, REVEAL_DURATION } from '../domain/constants';
+import {
+  COMMIT_DURATION,
+  LEADERBOARD_LIMIT,
+  REVEAL_DURATION,
+} from '../domain/constants';
 import type { Env } from '../types/worker-env';
 import {
   fetchAccountWithStats,
@@ -358,7 +362,7 @@ export async function handleHttpRequest(
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
         'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL ' +
         'ORDER BY a.token_balance DESC, COALESCE(s.coherent_rounds, 0) DESC, a.display_name ASC ' +
-        'LIMIT 100',
+        `LIMIT ${LEADERBOARD_LIMIT}`,
     ).all();
 
     const leaderboard = (results || []).map(
