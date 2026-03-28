@@ -242,8 +242,8 @@ export class GameClient {
     this.ws.on('close', (code) => {
       console.error(`[bot] disconnected (code ${code})`);
       if (this.opts.loop) {
-        console.error('[bot] reconnecting in 3s...');
-        setTimeout(() => this.connect(), 3000);
+        console.error('[bot] re-authenticating in 3s...');
+        setTimeout(() => this.start(), 3000);
       }
     });
 

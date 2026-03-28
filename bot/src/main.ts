@@ -36,12 +36,14 @@ function logRound(entry: RoundLog): void {
   process.stdout.write(`${JSON.stringify(entry)}\n`);
 }
 
+const privateKey = values.key ?? process.env.BOT_PRIVATE_KEY;
+
 const client = new GameClient({
   serverUrl: values.server,
   model: values.model ?? 'gemma3:1b',
   ollamaUrl: values.ollama,
   loop: values.loop ?? false,
-  privateKey: values.key,
+  privateKey,
   displayName: values.name,
   onRoundLog: logRound,
 });
