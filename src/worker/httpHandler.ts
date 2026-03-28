@@ -1,5 +1,9 @@
 import { ethers } from 'ethers';
-import { COMMIT_DURATION, REVEAL_DURATION } from '../domain/constants';
+import {
+  COMMIT_DURATION,
+  LEADERBOARD_LIMIT,
+  REVEAL_DURATION,
+} from '../domain/constants';
 import type { Env } from '../types/worker-env';
 import {
   fetchAccountWithStats,
@@ -16,7 +20,6 @@ import {
 } from './session';
 
 const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
-const LEADERBOARD_LIMIT = 100;
 const LANDING_STATS_CACHE_TTL_SECONDS = 60;
 const LANDING_STATS_CACHE_CONTROL = `public, max-age=${LANDING_STATS_CACHE_TTL_SECONDS}, s-maxage=${LANDING_STATS_CACHE_TTL_SECONDS}`;
 const LANDING_STATS_LOOKBACK_MS = 24 * 60 * 60 * 1000;

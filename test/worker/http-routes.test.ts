@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { LEADERBOARD_LIMIT } from '../../src/domain/constants';
 import type { Env } from '../../src/types/worker-env';
 import { handleHttpRequest } from '../../src/worker/httpHandler';
 import { buildChallengeMessage } from '../../src/worker/session';
@@ -12,7 +13,6 @@ import {
 
 const HTTPS_BASE = 'https://test.local';
 const HTTP_BASE = 'http://test.local';
-const LEADERBOARD_LIMIT = 100; // must match backend leaderboard cap
 
 interface SeedLeaderboardAccountInput {
   accountId: string;
