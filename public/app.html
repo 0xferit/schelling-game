@@ -19,8 +19,9 @@
 }
 html{scrollbar-color:rgba(201,168,76,.25) transparent;scrollbar-width:thin}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.7;font-weight:300;-webkit-font-smoothing:antialiased}
-button{cursor:pointer;border:none;border-radius:var(--radius);padding:.5rem 1.1rem;font-size:.8rem;font-family:var(--sans);font-weight:600;text-transform:uppercase;letter-spacing:.1em;transition:all .2s}
-button:active{transform:scale(.97)}
+button,.button-link{cursor:pointer;border:none;border-radius:var(--radius);padding:.5rem 1.1rem;font-size:.8rem;font-family:var(--sans);font-weight:600;text-transform:uppercase;letter-spacing:.1em;transition:all .2s}
+.button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+button:active,.button-link:active{transform:scale(.97)}
 button:disabled{opacity:.4;cursor:default;transform:none}
 .btn-primary{background:var(--accent);color:var(--bg)}.btn-primary:hover:not(:disabled){background:var(--accent2);transform:translateY(-1px)}
 .btn-danger{background:var(--red);color:#fff}
@@ -120,16 +121,6 @@ nav{display:flex;gap:.5rem}
 .dot.forfeited{background:var(--red)}
 .dot.disconnected{background:var(--red);animation:pulse 1s infinite alternate}
 .balance-badge{font-family:var(--serif);font-size:.8rem;color:var(--muted)}
-/* Chat */
-#chat-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;display:flex;flex-direction:column;gap:.5rem;max-height:260px}
-#chat-panel h3{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.25em;color:var(--accent)}
-#chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:.35rem;min-height:60px;max-height:160px}
-.chat-msg{font-size:.83rem;line-height:1.4}
-.chat-msg .from{font-weight:600;color:var(--accent);margin-right:.3rem}
-#chat-input-row{display:flex;gap:.4rem}
-#chat-input{flex:1;font-size:.85rem}
-#chat-send{padding:.4rem .8rem;font-size:.85rem}
-#chat-disabled-note{font-size:.75rem;color:var(--muted);text-align:center;padding:.3rem}
 /* Summary */
 #summary-view .card{max-width:620px;margin:0 auto}
 #summary-table{width:100%;border-collapse:collapse;font-size:.9rem}
@@ -154,6 +145,21 @@ nav{display:flex;gap:.5rem}
 .notif-item.success{border-color:var(--green);color:var(--green)}
 .notif-item.warn{border-color:var(--orange);color:var(--orange)}
 @keyframes slideIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
+/* Action rows & rating */
+.action-row{display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap}
+#rating-row{display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)}
+/* ── Narrow viewport (phones) ─────────────────────────────────── */
+@media(max-width:480px){
+  header{flex-direction:column;align-items:stretch;text-align:center}
+  #header-profile{justify-content:center;flex-wrap:wrap}
+  nav{justify-content:center}
+  #commit-area,#reveal-area{flex-direction:column;align-items:stretch}
+  #commit-btn,#reveal-btn{min-width:0}
+  #rating-row{flex-direction:column;align-items:stretch;text-align:center}
+  .action-row{flex-direction:column}
+  .action-row button{width:100%}
+  .action-row .toggle-row{margin-left:0;justify-content:center}
+}
 .mt1{margin-top:.5rem}.mt2{margin-top:1rem}
 #build-info{text-align:center;padding:2rem 1rem 1rem;font-size:.7rem;color:#444;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;display:flex;justify-content:center;align-items:center;gap:1rem}
 /* ── Atmosphere ────────────────────────────────────────────────── */
@@ -174,8 +180,9 @@ nav{display:flex;gap:.5rem}
       <button class="btn-ghost" id="logout-btn" title="Log out">✕</button>
     </div>
     <nav>
+      <a class="button-link btn-ghost" id="nav-feedback" href="https://github.com/0xferit/schelling-game/issues/new?template=feedback.md&labels=feedback&title=%5BFeedback%5D%3A%20" target="_blank" rel="noopener noreferrer">Feedback</a>
       <button class="btn-ghost" id="nav-leaderboard">Leaderboard</button>
-      <button class="btn-ghost" id="nav-queue" class="hidden">Queue</button>
+      <button class="btn-ghost hidden" id="nav-queue">Queue</button>
     </nav>
   </header>
 
@@ -211,14 +218,14 @@ nav{display:flex;gap:.5rem}
   <div id="queue-view" class="view">
     <div class="card">
       <h2>Public Queue</h2>
-      <p style="color:var(--muted);font-size:.9rem;margin:.5rem 0">Waiting for players. Matches form automatically with 3, 5, or 7 players.</p>
+      <p style="color:var(--muted);font-size:.9rem;margin:.5rem 0">Waiting for players. Matches form automatically with any odd crowd from 3 to 21 players.</p>
       <div style="font-size:.9rem;color:var(--muted)">Players in queue: <strong id="queue-count">0</strong></div>
       <ul id="queue-players"></ul>
       <div id="forming-banner" class="hidden">
         Match forming: <strong id="forming-count">0</strong> players reserved.
         Fill closes in <strong id="forming-timer">--</strong>s
       </div>
-      <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap">
+      <div class="action-row">
         <button class="btn-primary" id="join-queue-btn">Join Queue</button>
         <button class="btn-danger hidden" id="leave-queue-btn">Leave Queue</button>
       </div>
@@ -265,7 +272,7 @@ nav{display:flex;gap:.5rem}
           <tbody id="result-tbody"></tbody>
         </table>
         <div id="result-note" style="font-size:.8rem;color:var(--muted);margin-top:.5rem"></div>
-        <div id="rating-row" class="hidden" style="display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)">
+        <div id="rating-row" class="hidden">
           <span>Rate this question:</span>
           <button id="rating-like" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128077; <span id="rating-likes">0</span></button>
           <button id="rating-dislike" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128078; <span id="rating-dislikes">0</span></button>
@@ -278,14 +285,6 @@ nav{display:flex;gap:.5rem}
       <div id="players-panel">
         <h3>Players</h3>
         <div id="players-list"></div>
-      </div>
-      <div id="chat-panel">
-        <h3>Chat</h3>
-        <div id="chat-messages"></div>
-        <div id="chat-input-row">
-          <input id="chat-input" type="text" placeholder="Message..." maxlength="300" autocomplete="off"/>
-          <button class="btn-ghost" id="chat-send">Send</button>
-        </div>
       </div>
     </div>
   </div>
@@ -300,7 +299,7 @@ nav{display:flex;gap:.5rem}
         </tr></thead>
         <tbody id="summary-tbody"></tbody>
       </table>
-      <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap;align-items:center">
+      <div class="action-row" style="align-items:center">
         <button class="btn-primary" id="requeue-btn">Back to Queue</button>
         <button class="btn-ghost" id="summary-lb-btn">Leaderboard</button>
         <div class="toggle-row" style="margin-top:0;margin-left:auto">
@@ -470,24 +469,43 @@ function notify(msg, type = '') {
   setTimeout(() => el.remove(), 4000);
 }
 
+// ── Header profile ──────────────────────────────────────────────
+function updateHeaderProfile() {
+  if (S.accountId) {
+    $('#header-profile').classList.remove('hidden');
+    $('#header-name').textContent = S.displayName || S.accountId.slice(0, 6) + '…';
+    $('#header-balance').textContent = S.tokenBalance + ' tokens';
+    $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
+  }
+}
+
 // ── View switching ──────────────────────────────────────────────
 function showView(name) {
   S.view = name;
   $$('.view').forEach(v => v.classList.remove('active'));
   $(`#${name}-view`).classList.add('active');
 
-  // header profile
-  if (S.displayName) {
-    $('#header-profile').classList.remove('hidden');
-    $('#header-name').textContent = S.displayName;
-    $('#header-balance').textContent = S.tokenBalance + ' tokens';
-    $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
-  }
+  updateHeaderProfile();
 
   // nav visibility
   $('#nav-queue').classList.toggle('hidden', name === 'auth');
   // hide logout during active matches
   $('#logout-btn').classList.toggle('hidden', name === 'play');
+}
+
+// ── Name-claim UI (shared by authenticateWithWallet + checkSession) ──
+function showNameClaim(statusText) {
+  updateHeaderProfile();
+  $('#auth-status').textContent = statusText;
+  $('#name-section').classList.remove('hidden');
+  $('#connect-wallet-btn').classList.add('hidden');
+  $('#browser-wallet-btn').classList.add('hidden');
+  $('.auth-divider').classList.add('hidden');
+  $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
+  $('#show-import-btn').classList.add('hidden');
+  $('#import-section').classList.add('hidden');
+  $('#show-import-btn').setAttribute('aria-expanded', 'false');
+  $('#import-input').value = '';
 }
 
 // ── REST helpers ────────────────────────────────────────────────
@@ -527,16 +545,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
   S.isBrowserWallet = isBrowserWallet;
 
   if (result.requiresDisplayName) {
-    status.textContent = successMsg + ' Please claim a display name.';
-    $('#name-section').classList.remove('hidden');
-    $('#connect-wallet-btn').classList.add('hidden');
-    $('#browser-wallet-btn').classList.add('hidden');
-    $('.auth-divider').classList.add('hidden');
-    $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
-    $('#show-import-btn').classList.add('hidden');
-    $('#import-section').classList.add('hidden');
-    $('#show-import-btn').setAttribute('aria-expanded', 'false');
-    $('#import-input').value = '';
+    showNameClaim(successMsg + ' Please claim a display name.');
   } else {
     S.displayName = result.displayName;
     onAuthComplete();
@@ -688,7 +697,14 @@ $('#logout-btn').addEventListener('click', async () => {
   wsRetryCount = 0;
   if (wsRetryTimer !== null) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
   if (S.ws) { S.ws.close(); S.ws = null; }
-  try { await api('POST', '/api/logout'); } catch (_) {}
+  try {
+    await api('POST', '/api/logout');
+  } catch (_) {
+    notify('Logout failed. Please try again.', 'error');
+    intentionalClose = false;
+    connectWebSocket();
+    return;
+  }
   S.walletAddress = null;
   S.accountId = null;
   S.displayName = null;
@@ -736,16 +752,7 @@ async function checkSession() {
     if (S.displayName) {
       onAuthComplete();
     } else {
-      $('#auth-status').textContent = 'Welcome back! Please claim a display name.';
-      $('#name-section').classList.remove('hidden');
-      $('#connect-wallet-btn').classList.add('hidden');
-      $('#browser-wallet-btn').classList.add('hidden');
-      $('.auth-divider').classList.add('hidden');
-      $$('.browser-wallet-note').forEach(el => el.classList.add('hidden'));
-      $('#show-import-btn').classList.add('hidden');
-      $('#import-section').classList.add('hidden');
-      $('#show-import-btn').setAttribute('aria-expanded', 'false');
-      $('#import-input').value = '';
+      showNameClaim('Welcome back! Please claim a display name.');
     }
   } catch (_) {
     // not logged in; check if wallet is available
@@ -807,7 +814,6 @@ function handleMessage(msg) {
     case 'player_disconnected': onPlayerDisconnected(msg); break;
     case 'player_reconnected': onPlayerReconnected(msg); break;
     case 'player_forfeited': onPlayerForfeited(msg); break;
-    case 'chat': onChat(msg); break;
     case 'question_rating_tally': onQuestionRatingTally(msg); break;
     case 'error': notify(msg.message, 'error'); break;
     default: break;
@@ -912,7 +918,6 @@ function onGameStarted(msg) {
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
-  clearChat();
   notify('Match started with ' + S.players.length + ' players', 'success');
 }
 
@@ -1019,10 +1024,6 @@ function onRoundStart(msg) {
     $('#timer-num').classList.remove('urgent');
   }
 
-  // Chat is disabled during commit/reveal to preserve independent judgment,
-  // but enabled during results (which normally re-enables it via onRoundResult).
-  enableChat(msg.phase === 'results');
-
   // Reset player dots
   renderPlayers();
 }
@@ -1105,7 +1106,6 @@ function onPhaseChange(msg) {
     }
 
     startTimer(msg.revealDuration);
-    enableChat(false);
   }
 }
 
@@ -1151,7 +1151,6 @@ function onRoundResult(msg) {
 
   renderRoundResult(r);
   renderPlayers();
-  enableChat(true);
 }
 
 function renderRoundResult(r) {
@@ -1311,38 +1310,6 @@ function tickTimer() {
   if (remaining <= 0) clearInterval(S.timerInterval);
 }
 
-// ── Chat ─────────────────────────────────────────────────────────
-function enableChat(enabled) {
-  $('#chat-input').disabled = !enabled;
-  $('#chat-send').disabled = !enabled;
-}
-
-function clearChat() {
-  $('#chat-messages').innerHTML = '';
-}
-
-$('#chat-send').addEventListener('click', sendChat);
-$('#chat-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChat();
-});
-
-function sendChat() {
-  const input = $('#chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  wsSend({ type: 'chat', text });
-  input.value = '';
-}
-
-function onChat(msg) {
-  const container = $('#chat-messages');
-  const div = document.createElement('div');
-  div.className = 'chat-msg';
-  div.innerHTML = `<span class="from">${esc(msg.from)}:</span>${esc(msg.text)}`;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-}
-
 // ── Question rating ──────────────────────────────────────────────
 function sendRating(rating) {
   if (S.myRating === rating) return; // already voted this
@@ -1356,6 +1323,12 @@ function sendRating(rating) {
 function onQuestionRatingTally(msg) {
   $('#rating-likes').textContent = msg.likes ?? 0;
   $('#rating-dislikes').textContent = msg.dislikes ?? 0;
+  // Restore player's own rating on reconnect replay
+  if (msg.yourRating !== undefined) {
+    S.myRating = msg.yourRating;
+    $('#rating-like').classList.toggle('btn-primary', msg.yourRating === 'like');
+    $('#rating-dislike').classList.toggle('btn-primary', msg.yourRating === 'dislike');
+  }
 }
 
 $('#rating-like').addEventListener('click', () => sendRating('like'));

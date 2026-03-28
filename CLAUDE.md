@@ -1,1 +1,1 @@
-AGENTS.md
+.github/instructions/general.instructions.md

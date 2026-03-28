@@ -19,7 +19,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 
 ## 2. Core Concepts
 
-- Match: one complete game with exactly `3`, `5`, or `7` players.
+- Match: one complete game with any odd number of players from `3` to `21`.
 - Round: one `commit -> reveal -> results` cycle built around one question.
 - Question: a prompt with a fixed ordered list of discrete answer options.
 - Attached player: a player still counted for round accounting. A forfeited player remains attached until the match ends.
@@ -28,7 +28,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 
 ## 3. Match Format
 
-- Match size is exactly `3`, `5`, or `7` players.
+- Match size is any odd number from `3` to `21`.
 - Every match lasts `10` rounds unless it ends early under the rule in section 4.
 - Every round uses one `select` question from the canonical public question pool.
 - Questions are used without replacement inside a match.
@@ -166,15 +166,14 @@ Consequences:
 In a non-voided round:
 
 - every attached player contributes `60` to the pot
-- winners split the entire pot equally
+- winners receive equal integer payouts computed as `floor(pot / winnerCount)`
 - losers receive no round payout
+- if the pot does not divide evenly, the remainder is not distributed
 
 Per-player net round delta:
 
-- winner: `(pot / winnerCount) - 60`
+- winner: `floor(pot / winnerCount) - 60`
 - loser: `-60`
-
-Because the match size is restricted to `3`, `5`, or `7` and the ante is `60`, the split remains integer-valued in every allowed outcome.
 
 ### Coordination Credit
 

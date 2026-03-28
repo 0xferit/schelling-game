@@ -22,7 +22,7 @@
         "noVoidTypeReturn": "off"
       },
       "style": {
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "error"
       },
       "complexity": {
         "noUselessLoneBlockStatements": "off"

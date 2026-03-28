@@ -1,6 +1,9 @@
 /** Minimum matches before leaderboard stats are treated as established. */
 export const MIN_ESTABLISHED_MATCHES = 5;
 
+/** Token ante charged per player per round. */
+export const ROUND_ANTE = 60;
+
 /** Phase durations in seconds. Single source of truth for all consumers. */
 export const COMMIT_DURATION = 60;
 export const REVEAL_DURATION = 15;

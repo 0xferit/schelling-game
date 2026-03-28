@@ -743,8 +743,18 @@ export function selectQuestionsForMatch(count = 10): Question[] {
   for (let i = pool.length - 1; i > 0; i--) {
     const buf = new Uint32Array(1);
     crypto.getRandomValues(buf);
-    const j = buf[0]! % (i + 1);
-    [pool[i], pool[j]] = [pool[j]!, pool[i]!];
+    const randomValue = buf[0];
+    if (randomValue === undefined) {
+      throw new RangeError('Missing random value during question shuffle');
+    }
+    const j = randomValue % (i + 1);
+    const current = pool[i];
+    const swap = pool[j];
+    if (current === undefined || swap === undefined) {
+      throw new RangeError('Question shuffle index out of bounds');
+    }
+    pool[i] = swap;
+    pool[j] = current;
   }
 
   return pool.slice(0, count);

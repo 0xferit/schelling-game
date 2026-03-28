@@ -16,6 +16,22 @@ import {
 } from './session';
 
 const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
+const LANDING_STATS_CACHE_TTL_SECONDS = 60;
+const LANDING_STATS_CACHE_CONTROL = `public, max-age=${LANDING_STATS_CACHE_TTL_SECONDS}, s-maxage=${LANDING_STATS_CACHE_TTL_SECONDS}`;
+const LANDING_STATS_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+interface CacheStorageWithDefault extends CacheStorage {
+  default?: Cache;
+}
+
+interface AuthChallengeRow {
+  challenge_id: string;
+  wallet_address: string;
+  nonce: string;
+  message: string;
+  expires_at: string;
+  issued_at?: number | null;
+}
 
 function jsonResponse(
   data: unknown,
@@ -49,6 +65,51 @@ function escapeCsvField(value: unknown): string {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
+}
+
+function isMissingIssuedAtColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('no such column: issued_at') ||
+    message.includes('no column named issued_at')
+  );
+}
+
+async function insertAuthChallenge(
+  db: D1Database,
+  challengeId: string,
+  walletAddress: string,
+  nonce: string,
+  message: string,
+  expiresAt: string,
+  issuedAt: number,
+): Promise<void> {
+  try {
+    await db
+      .prepare(
+        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at, issued_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .bind(challengeId, walletAddress, nonce, message, expiresAt, issuedAt)
+      .run();
+  } catch (error) {
+    if (!isMissingIssuedAtColumnError(error)) throw error;
+
+    await db
+      .prepare(
+        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(challengeId, walletAddress, nonce, message, expiresAt)
+      .run();
+  }
+}
+
+function parseIssuedAtFromChallengeMessage(message: string): number | null {
+  const match = /\nIssued: (\d+)$/.exec(message);
+  if (!match) return null;
+
+  const issuedAt = Number(match[1]);
+  if (!Number.isSafeInteger(issuedAt)) return null;
+  return issuedAt;
 }
 
 export async function handleHttpRequest(
@@ -105,11 +166,15 @@ export async function handleHttpRequest(
     const expiresAt = new Date(issuedAt + 5 * 60 * 1000).toISOString();
     const message = buildChallengeMessage(normalized, nonce, issuedAt);
 
-    await env.DB.prepare(
-      'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at, issued_at) VALUES (?, ?, ?, ?, ?, ?)',
-    )
-      .bind(challengeId, normalized, nonce, message, expiresAt, issuedAt)
-      .run();
+    await insertAuthChallenge(
+      env.DB,
+      challengeId,
+      normalized,
+      nonce,
+      message,
+      expiresAt,
+      issuedAt,
+    );
 
     return jsonResponse({ challengeId, message, expiresAt });
   }
@@ -138,17 +203,13 @@ export async function handleHttpRequest(
       'SELECT * FROM auth_challenges WHERE challenge_id = ? AND wallet_address = ?',
     )
       .bind(challengeId, normalized)
-      .first()) as {
-      challenge_id: string;
-      wallet_address: string;
-      nonce: string;
-      message: string;
-      expires_at: string;
-      issued_at: number | null;
-    } | null;
+      .first()) as AuthChallengeRow | null;
 
     if (!challenge) return errorResponse('Invalid or expired challenge', 401);
-    if (challenge.issued_at == null) {
+    const challengeIssuedAt =
+      challenge.issued_at ??
+      parseIssuedAtFromChallengeMessage(challenge.message);
+    if (challengeIssuedAt == null) {
       // Pre-migration challenge row; force client to restart auth
       await env.DB.prepare('DELETE FROM auth_challenges WHERE challenge_id = ?')
         .bind(challengeId)
@@ -200,22 +261,25 @@ export async function handleHttpRequest(
       .run();
 
     const account = await fetchAccountWithStats(env.DB, normalized);
+    if (!account) {
+      return errorResponse('Failed to fetch account after upsert', 500);
+    }
 
     const token = createSessionCookie(
       normalized,
       challenge.nonce,
-      challenge.issued_at,
+      challengeIssuedAt,
       signature,
     );
-    const requiresDisplayName = !account!.display_name;
+    const requiresDisplayName = !account.display_name;
 
     return jsonResponse(
       {
         accountId: normalized,
-        displayName: account!.display_name || null,
+        displayName: account.display_name || null,
         requiresDisplayName,
-        tokenBalance: account!.token_balance ?? 0,
-        leaderboardEligible: !!account!.leaderboard_eligible,
+        tokenBalance: account.token_balance ?? 0,
+        leaderboardEligible: !!account.leaderboard_eligible,
       },
       200,
       {
@@ -307,6 +371,55 @@ export async function handleHttpRequest(
     return jsonResponse(leaderboard);
   }
 
+  // ---- GET /api/landing-stats ----
+  if (url.pathname === '/api/landing-stats' && method === 'GET') {
+    const cache = (globalThis.caches as CacheStorageWithDefault | undefined)
+      ?.default;
+    const cacheKey = new Request(url.toString(), { method: 'GET' });
+    if (cache) {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    }
+
+    const startedAfter = new Date(
+      Date.now() - LANDING_STATS_LOOKBACK_MS,
+    ).toISOString();
+
+    const [playersLast24hRow, completedMatchesRow, longestStreakRow] =
+      await Promise.all([
+        env.DB.prepare(
+          'SELECT COUNT(DISTINCT mp.account_id) AS players_last_24h ' +
+            'FROM matches m ' +
+            'JOIN match_players mp ON mp.match_id = m.match_id ' +
+            'WHERE m.started_at >= ?',
+        )
+          .bind(startedAfter)
+          .first<{ players_last_24h: number }>(),
+        env.DB.prepare(
+          "SELECT COUNT(*) AS completed_matches FROM matches WHERE status = 'completed'",
+        ).first<{ completed_matches: number }>(),
+        env.DB.prepare(
+          'SELECT COALESCE(MAX(longest_streak), 0) AS longest_streak FROM player_stats',
+        ).first<{ longest_streak: number }>(),
+      ]);
+
+    const response = jsonResponse(
+      {
+        playersLast24h: playersLast24hRow?.players_last_24h ?? 0,
+        completedMatches: completedMatchesRow?.completed_matches ?? 0,
+        longestStreak: longestStreakRow?.longest_streak ?? 0,
+      },
+      200,
+      { 'Cache-Control': LANDING_STATS_CACHE_CONTROL },
+    );
+
+    if (cache) {
+      await cache.put(cacheKey, response.clone());
+    }
+
+    return response;
+  }
+
   // ---- GET /api/leaderboard/me ----
   if (url.pathname === '/api/leaderboard/me' && method === 'GET') {
     const accountId = await getAuthenticatedAccountId(request);
@@ -351,27 +464,19 @@ export async function handleHttpRequest(
   const subtle = crypto.subtle as unknown as {
     timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean;
   };
-  const timingSafeEqual = (a: string, b: string): boolean => {
+  const timingSafeEqual = async (a: string, b: string): Promise<boolean> => {
     const enc = new TextEncoder();
-    const bufA = enc.encode(a);
-    const bufB = enc.encode(b);
-    if (bufA.byteLength !== bufB.byteLength) {
-      subtle.timingSafeEqual(
-        bufA.buffer as ArrayBuffer,
-        bufA.buffer as ArrayBuffer,
-      );
-      return false;
-    }
-    return subtle.timingSafeEqual(
-      bufA.buffer as ArrayBuffer,
-      bufB.buffer as ArrayBuffer,
-    );
+    const [digestA, digestB] = await Promise.all([
+      crypto.subtle.digest('SHA-256', enc.encode(a)),
+      crypto.subtle.digest('SHA-256', enc.encode(b)),
+    ]);
+    return subtle.timingSafeEqual(digestA, digestB);
   };
 
   const requireAdmin = async (): Promise<Response | null> => {
     if (!env.ADMIN_KEY) return errorResponse('ADMIN_KEY not configured', 503);
     const auth = request.headers.get('Authorization') ?? '';
-    if (!timingSafeEqual(auth, `Bearer ${env.ADMIN_KEY}`)) {
+    if (!(await timingSafeEqual(auth, `Bearer ${env.ADMIN_KEY}`))) {
       await new Promise((r) => setTimeout(r, 1000));
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
