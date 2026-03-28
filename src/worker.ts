@@ -68,7 +68,7 @@ const TOTAL_ROUNDS = 10;
 const FILL_TIMER_MS = 20_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_CHAT_LENGTH = 300;
-const MAX_MATCH_SIZE = 7;
+const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -457,6 +457,7 @@ export class GameRoom {
       this.waitingQueue.unshift(...players);
       this.formingMatch = null;
       this._broadcastQueueState();
+      this._tryFormMatch();
       return;
     }
 
@@ -468,6 +469,7 @@ export class GameRoom {
       `start match ${matchId}`,
     );
     this._broadcastQueueState();
+    this._tryFormMatch();
   }
 
   // -------------------------------------------------------------------------
