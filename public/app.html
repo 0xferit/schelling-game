@@ -323,7 +323,10 @@ nav{display:flex;gap:.5rem}
   <!-- ── LEADERBOARD ───────────────────────────────────────────── -->
   <div id="leaderboard-view" class="view">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-      <h2>Leaderboard</h2>
+      <div>
+        <h2 style="margin:0">Leaderboard</h2>
+        <div style="font-size:.9rem;color:var(--muted)">Showing the top 100 eligible players. Your rank card below is your full global rank and may fall outside this table.</div>
+      </div>
       <button class="btn-ghost" id="lb-back-btn">Back</button>
     </div>
     <div id="my-rank-card" class="card hidden"></div>
@@ -465,6 +468,7 @@ const S = {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 const MIN_ESTABLISHED = 5; // must match backend MIN_ESTABLISHED_MATCHES
+const LEADERBOARD_LIMIT = 100; // must match backend leaderboard cap
 
 // ── Browser wallet ───────────────────────────────────────────────
 const BROWSER_KEY = 'schelling_browser_secret';
@@ -1553,13 +1557,17 @@ function renderLeaderboard(entries, myRank) {
     const provNote = myRank.provisional
       ? `<div class="provisional-note">Stats are provisional until ${remaining} more match${remaining === 1 ? '' : 'es'}</div>`
       : '';
+    const rankScopeNote = myRank.rank > LEADERBOARD_LIMIT
+      ? `<div class="provisional-note">You are outside the visible top ${LEADERBOARD_LIMIT} table, but this is still your full leaderboard rank.</div>`
+      : '';
     card.innerHTML = `
       <div style="font-size:.9rem">
-        Your rank: <strong>#${myRank.rank}</strong>
+        Your global rank: <strong>#${myRank.rank}</strong>
         | Balance: <strong>${myRank.tokenBalance}</strong>
         | Coordination: <strong>${myRank.coherentPct || 0}%</strong>
         | Streak: <strong>${myRank.currentStreak || 0}</strong> (best: ${myRank.longestStreak || 0})
       </div>
+      ${rankScopeNote}
       ${provNote}
     `;
   } else {

@@ -16,6 +16,7 @@ import {
 } from './session';
 
 const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
+const LEADERBOARD_LIMIT = 100;
 const LANDING_STATS_CACHE_TTL_SECONDS = 60;
 const LANDING_STATS_CACHE_CONTROL = `public, max-age=${LANDING_STATS_CACHE_TTL_SECONDS}, s-maxage=${LANDING_STATS_CACHE_TTL_SECONDS}`;
 const LANDING_STATS_LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -358,7 +359,7 @@ export async function handleHttpRequest(
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
         'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL ' +
         'ORDER BY a.token_balance DESC, COALESCE(s.coherent_rounds, 0) DESC, a.display_name ASC ' +
-        'LIMIT 100',
+        `LIMIT ${LEADERBOARD_LIMIT}`,
     ).all();
 
     const leaderboard = (results || []).map(
