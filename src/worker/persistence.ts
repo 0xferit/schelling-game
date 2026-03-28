@@ -270,7 +270,9 @@ export function restoreMatchesFromStorage(
           optionIndex: pr.option_index as number | null,
           salt: pr.salt as string | null,
           forfeited: !!(pr.forfeited as number),
-          forfeitedAtRound: (pr.forfeited_at_round as number | null) ?? null,
+          forfeitedAtRound:
+            (pr.forfeited_at_round as number | null) ??
+            ((pr.forfeited as number) ? (row.current_round as number) : null),
           disconnectedAt: (pr.disconnected_at as number | null) ?? now,
         });
       }

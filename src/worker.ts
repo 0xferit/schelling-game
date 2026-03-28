@@ -691,16 +691,6 @@ export class GameRoom {
       if (!playerState) continue;
       if (!alreadySettled) {
         playerState.currentBalance += pr.netDelta;
-        // Burn future-round antes as a one-time penalty for the player who
-        // forfeited this round. They are detached from all subsequent rounds,
-        // so this is the only place the penalty is applied.
-        if (
-          playerState.forfeited &&
-          playerState.forfeitedAtRound === match.currentRound
-        ) {
-          const futureRounds = match.totalRounds - match.currentRound;
-          playerState.currentBalance -= futureRounds * ROUND_ANTE;
-        }
       }
       (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
       pr.revealedOptionLabel =
@@ -1229,9 +1219,18 @@ export class GameRoom {
     player.forfeited = true;
     player.forfeitedAtRound = match.currentRound;
     player.graceTimer = null;
+
+    // Burn future-round antes immediately. The player is detached from all
+    // subsequent rounds, so this is the only place the penalty is applied.
+    // Applying here instead of in _finalizeRound avoids a timing exploit
+    // where a disconnect during the results phase would skip the penalty.
+    const futureRounds = match.totalRounds - match.currentRound;
+    player.currentBalance -= futureRounds * ROUND_ANTE;
+
     this._checkpointPlayerAction(match.matchId, accountId, {
       forfeited: true,
       forfeitedAtRound: match.currentRound,
+      currentBalance: player.currentBalance,
     });
 
     this._broadcastToMatch(match, {
