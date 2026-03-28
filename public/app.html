@@ -62,6 +62,15 @@ nav{display:flex;gap:.5rem}
 #seed-overlay .seed-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;max-width:420px;width:90%;display:flex;flex-direction:column;gap:.75rem}
 #seed-overlay .seed-phrase{font-family:monospace;font-size:.85rem;line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;word-break:break-word;color:var(--text);resize:none;width:100%;box-sizing:border-box}
 #seed-overlay .seed-warn{font-size:.75rem;color:var(--muted);line-height:1.4}
+/* Rules overlay */
+#rules-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200}
+#rules-overlay .rules-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;display:flex;flex-direction:column;gap:1rem}
+#rules-overlay .rules-header{display:flex;justify-content:space-between;align-items:center}
+#rules-overlay .rules-header h3{margin:0}
+#rules-overlay .rules-section-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin:0}
+#rules-overlay .rules-text{font-size:.85rem;color:var(--text);line-height:1.5;margin:.25rem 0 0}
+#rules-overlay .rules-example{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;font-size:.85rem;line-height:1.5;color:var(--text)}
+#rules-overlay .rules-example strong{color:var(--accent)}
 /* Queue */
 #queue-view .card{max-width:520px;margin:0 auto}
 #queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
@@ -181,6 +190,7 @@ nav{display:flex;gap:.5rem}
     </div>
     <nav>
       <a class="button-link btn-ghost" id="nav-feedback" href="https://github.com/0xferit/schelling-game/issues/new?template=feedback.md&labels=feedback&title=%5BFeedback%5D%3A%20" target="_blank" rel="noopener noreferrer">Feedback</a>
+      <button class="btn-ghost" id="nav-rules">Rules</button>
       <button class="btn-ghost" id="nav-leaderboard">Leaderboard</button>
       <button class="btn-ghost hidden" id="nav-queue">Queue</button>
     </nav>
@@ -344,6 +354,60 @@ nav{display:flex;gap:.5rem}
     <div style="display:flex;gap:.5rem">
       <button class="btn-primary" id="copy-seed-btn">Copy</button>
       <button class="btn-ghost" id="close-seed-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="rules-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="rules-dialog-title">
+  <div class="rules-card">
+    <div class="rules-header">
+      <h3 id="rules-dialog-title" style="margin:0">Rules</h3>
+      <button class="btn-ghost" id="close-rules-btn">Close</button>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Round Flow</p>
+      <p class="rules-text">Each round has three phases: Commit (30s), Reveal (15s), Results (12s). Every attached player antes 60 per round.</p>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Who Wins</p>
+      <p class="rules-text">Players on the exact-match plurality option win. If multiple options tie for the highest count, all tied groups win.</p>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Payout</p>
+      <p class="rules-text">The pot is playerCount &times; 60. Winners split it equally; losers forfeit their ante.</p>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Voided Rounds</p>
+      <p class="rules-text">If nobody reveals in time, the round is voided and all antes are refunded.</p>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Solo Revealer</p>
+      <p class="rules-text">If only one player reveals, they win the entire pot but earn no coordination credit.</p>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Coordination Credit</p>
+      <p class="rules-text">Awarded only when a winner's option was picked by at least 2 players. Solo wins and all-distinct rounds give zero coordination credit.</p>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Disconnect / Forfeit</p>
+      <p class="rules-text">A disconnected player has 15 seconds to reconnect. After that they forfeit but remain attached for pot accounting: they lose their ante each remaining round.</p>
+    </div>
+
+    <div>
+      <p class="rules-section-label">Examples</p>
+      <div class="rules-example" style="margin-bottom:.5rem">
+        <strong>2-1 split</strong> (3 players, pot = 180): Two players pick the same option. Each winner receives 90 (net +30). The lone picker gets nothing (net &minus;60).
+      </div>
+      <div class="rules-example">
+        <strong>Solo reveal</strong> (3 players, 1 valid reveal, pot = 180): That player wins the full 180 (net +120) but earns no coordination credit because only one option was revealed.
+      </div>
     </div>
   </div>
 </div>
@@ -684,6 +748,34 @@ document.addEventListener('keydown', (e) => {
 });
 $('#seed-overlay').addEventListener('click', (e) => {
   if (e.target === $('#seed-overlay')) closeSeedOverlay();
+});
+
+// ── Rules overlay ──────────────────────────────────────────────
+function closeRulesOverlay() {
+  $('#rules-overlay').classList.add('hidden');
+  $('#nav-rules').focus();
+}
+
+$('#nav-rules').addEventListener('click', () => {
+  $('#rules-overlay').classList.remove('hidden');
+  $('#close-rules-btn').focus();
+});
+
+$('#close-rules-btn').addEventListener('click', closeRulesOverlay);
+
+document.addEventListener('keydown', (e) => {
+  if ($('#rules-overlay').classList.contains('hidden')) return;
+  if (e.key === 'Escape') { closeRulesOverlay(); return; }
+  if (e.key === 'Tab') {
+    const focusable = $('#rules-overlay').querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
+$('#rules-overlay').addEventListener('click', (e) => {
+  if (e.target === $('#rules-overlay')) closeRulesOverlay();
 });
 
 function onAuthComplete() {
