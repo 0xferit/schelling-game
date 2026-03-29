@@ -580,6 +580,87 @@ describe('GameRoom async task tracking', () => {
     if (match.revealTimer) clearTimeout(match.revealTimer);
   });
 
+  it('uses a plain backfill prompt instead of coaching the model into stronger Schelling behavior', () => {
+    const { room } = createRoom();
+    const prompt = room._buildAiBotPrompt({
+      id: 1,
+      text: 'Pick a color.',
+      type: 'select',
+      category: 'aesthetics',
+      options: ['Red', 'Blue', 'Green'],
+    });
+
+    expect(prompt).toContain('most human players');
+    expect(prompt).not.toContain('Think step by step');
+    expect(prompt).not.toContain('Round numbers over odd ones');
+  });
+
+  it('does not persist AI bot rows into vote_logs', async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: (...args: unknown[]) => ({ sql, args }),
+    }));
+    const batch = vi.fn().mockResolvedValue(undefined);
+    const { room } = createRoom({
+      DB: { prepare, batch } as unknown as D1Database,
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'reveal';
+    match.currentGame = 1;
+
+    match.players.set('acct-1', {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: true,
+      revealed: true,
+      hash: createCommitHash(0, 'a'.repeat(64)),
+      optionIndex: 0,
+      salt: 'a'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('ai-bot:test', {
+      accountId: 'ai-bot:test',
+      displayName: 'AI Backfill',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: true,
+      revealed: true,
+      hash: createCommitHash(1, 'b'.repeat(64)),
+      optionIndex: 1,
+      salt: 'b'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+
+    await room._finalizeGame(match);
+
+    const statements = must(
+      batch.mock.calls[0],
+      'Expected D1 batch call',
+    )[0] as Array<{ sql: string; args: unknown[] }>;
+    const voteLogStatements = statements.filter((stmt) =>
+      stmt.sql.startsWith('INSERT INTO vote_logs'),
+    );
+
+    expect(voteLogStatements).toHaveLength(1);
+    expect(voteLogStatements[0]?.args[3]).toBe('acct-1');
+
+    if (match.resultsTimer) clearTimeout(match.resultsTimer);
+  });
+
   it('continues the match when only an AI bot remains after settlement', async () => {
     vi.useFakeTimers();
 

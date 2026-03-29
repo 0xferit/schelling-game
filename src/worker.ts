@@ -905,36 +905,38 @@ export class GameRoom {
           }
         }
 
-        stmts.push(
-          this.env.DB.prepare(
-            'INSERT INTO vote_logs (match_id, game_number, question_id, account_id, display_name_snapshot, ' +
-              'revealed_option_index, revealed_option_label, won_game, earns_coordination_credit, ' +
-              'ante_amount, game_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
-              'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
-              'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          ).bind(
-            match.matchId,
-            match.currentGame,
-            question.id,
-            pr.accountId,
-            pr.displayName,
-            pr.revealedOptionIndex,
-            pr.revealedOptionLabel,
-            pr.wonGame ? 1 : 0,
-            pr.earnsCoordinationCredit ? 1 : 0,
-            pr.antePaid,
-            pr.gamePayout,
-            pr.netDelta,
-            result.playerCount,
-            result.validRevealCount,
-            result.topCount,
-            result.winnerCount,
-            JSON.stringify(result.winningOptionIndexes),
-            result.voided ? 1 : 0,
-            result.voidReason,
-            now,
-          ),
-        );
+        if (!this._isAiBot(pr.accountId)) {
+          stmts.push(
+            this.env.DB.prepare(
+              'INSERT INTO vote_logs (match_id, game_number, question_id, account_id, display_name_snapshot, ' +
+                'revealed_option_index, revealed_option_label, won_game, earns_coordination_credit, ' +
+                'ante_amount, game_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
+                'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            ).bind(
+              match.matchId,
+              match.currentGame,
+              question.id,
+              pr.accountId,
+              pr.displayName,
+              pr.revealedOptionIndex,
+              pr.revealedOptionLabel,
+              pr.wonGame ? 1 : 0,
+              pr.earnsCoordinationCredit ? 1 : 0,
+              pr.antePaid,
+              pr.gamePayout,
+              pr.netDelta,
+              result.playerCount,
+              result.validRevealCount,
+              result.topCount,
+              result.winnerCount,
+              JSON.stringify(result.winningOptionIndexes),
+              result.voided ? 1 : 0,
+              result.voidReason,
+              now,
+            ),
+          );
+        }
       }
 
       if (stmts.length > 0) {
@@ -1276,20 +1278,10 @@ export class GameRoom {
       .map((option, index) => `${index}: ${option}`)
       .join('\n');
     return [
-      'You are playing a Schelling point coordination game.',
-      'All players see the same question and options. Nobody can communicate.',
-      'You win ONLY if you pick the same option as the majority.',
-      '',
-      'A Schelling point is the answer people gravitate to without talking:',
-      '- The most famous, default, or culturally dominant choice',
-      '- The first thing that comes to mind for most people',
-      '- Round numbers over odd ones (7 > 13, 100 > 67)',
-      '- The most stereotypical or cliche answer',
-      '',
-      'Think step by step:',
-      '1. What would the average person pick without overthinking?',
-      '2. Which option is the most obvious, common, or iconic?',
-      '3. Ignore what you personally prefer; pick what MOST people would pick.',
+      'You are filling one seat in a multiplayer coordination game.',
+      'Choose the option you expect the most human players in this match to choose.',
+      "Base the choice on an ordinary player's first instinct, not your personal preference.",
+      'Do not explain your reasoning.',
       '',
       `Question: ${question.text}`,
       'Options:',
