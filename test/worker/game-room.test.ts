@@ -290,7 +290,7 @@ describe('GameRoom Durable Object', () => {
 
   it('rejects join_queue when balance is below the allowed floor', async () => {
     const minAllowedBalance = -10 * GAME_ANTE;
-    const { ws } = await connectPlayer(57, 'LowBalance', minAllowedBalance - 1);
+    const { ws } = await connectPlayer(9, 'LowBalance', minAllowedBalance - 1);
 
     // Drain initial queue_state
     await collectMessages(ws, 200);
