@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
+import { RESULTS_DURATION } from '../../src/domain/constants';
 import type { Question } from '../../src/types/domain';
 import type { RoundResultMessage } from '../../src/types/messages';
 import type { Env } from '../../src/types/worker-env';
@@ -553,6 +554,83 @@ describe('GameRoom async task tracking', () => {
     expect(bot.revealed).toBe(true);
 
     if (match.revealTimer) clearTimeout(match.revealTimer);
+  });
+
+  it('continues the match when only an AI bot remains after settlement', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const bind = vi.fn(() => ({}));
+      const prepare = vi.fn(() => ({ bind }));
+      const batch = vi.fn().mockResolvedValue(undefined);
+      const { room } = createRoom({
+        DB: { prepare, batch } as unknown as D1Database,
+      });
+      vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+      vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+      const startCommitPhase = vi
+        .spyOn(room, '_startCommitPhase')
+        .mockImplementation(() => {});
+      const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);
+
+      const match = createMatch();
+      match.totalRounds = 3;
+      match.currentRound = 1;
+      match.phase = 'reveal';
+
+      const human = {
+        accountId: 'acct-1',
+        displayName: 'Alice',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 100,
+        committed: false,
+        revealed: false,
+        hash: null,
+        optionIndex: null,
+        salt: null,
+        forfeited: true,
+        forfeitedAtRound: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      };
+      const botSalt = 'b'.repeat(64);
+      const bot = {
+        accountId: 'ai-bot:test',
+        displayName: 'AI Backfill',
+        ws: null,
+        startingBalance: 0,
+        currentBalance: 0,
+        committed: true,
+        revealed: true,
+        hash: createCommitHash(1, botSalt),
+        optionIndex: 1,
+        salt: botSalt,
+        forfeited: false,
+        forfeitedAtRound: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      };
+      match.players.set(human.accountId, human);
+      match.players.set(bot.accountId, bot);
+
+      await room._finalizeRound(match);
+
+      expect(endMatch).not.toHaveBeenCalled();
+      expect(startCommitPhase).not.toHaveBeenCalled();
+      expect(match.resultsTimer).not.toBeNull();
+
+      vi.advanceTimersByTime(RESULTS_DURATION * 1000);
+
+      expect(startCommitPhase).toHaveBeenCalledWith(match);
+      expect(endMatch).not.toHaveBeenCalled();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('tracks match end after results with state.waitUntil', async () => {
