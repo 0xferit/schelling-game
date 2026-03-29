@@ -24,6 +24,15 @@ function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
 
 function createRoom(envOverrides: Partial<Env> = {}) {
   const waitUntil = vi.fn((_task: Promise<unknown>) => undefined);
+  const defaultDb = {
+    prepare: vi.fn(() => ({
+      bind: vi.fn(() => ({
+        first: vi.fn().mockResolvedValue({ token_balance: 0 }),
+        run: vi.fn().mockResolvedValue(undefined),
+      })),
+    })),
+    batch: vi.fn().mockResolvedValue(undefined),
+  } as unknown as D1Database;
   const state = {
     waitUntil,
     storage: {
@@ -42,7 +51,7 @@ function createRoom(envOverrides: Partial<Env> = {}) {
   } as unknown as DurableObjectState;
 
   const room = new GameRoom(state, {
-    DB: {} as D1Database,
+    DB: defaultDb,
     ...envOverrides,
   } as Env);
   return { room, waitUntil };
@@ -303,6 +312,55 @@ describe('GameRoom async task tracking', () => {
 
     // Patched result must be checkpointed so it survives DO eviction
     expect(checkpointMatch).toHaveBeenCalledWith(match);
+  });
+
+  it('clamps forfeit burn at the minimum allowed balance floor', () => {
+    const { room } = createRoom();
+    const checkpointPlayerAction = vi
+      .spyOn(room, '_checkpointPlayerAction')
+      .mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_sendTo').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'results';
+    match.currentGame = 1;
+    match.totalGames = 10;
+    const minAllowedBalance = -10 * GAME_ANTE;
+
+    const player = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: minAllowedBalance + GAME_ANTE,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    match.players.set(player.accountId, player);
+
+    room._forfeitPlayer(match, player.accountId);
+
+    expect(player.currentBalance).toBe(minAllowedBalance);
+    expect(checkpointPlayerAction).toHaveBeenCalledWith(
+      match.matchId,
+      player.accountId,
+      {
+        forfeited: true,
+        forfeitedAtGame: 1,
+        currentBalance: minAllowedBalance,
+      },
+    );
   });
 
   it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeGame)', () => {
@@ -628,7 +686,7 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('injects one bot for two humans and removes it when a third human arrives', () => {
+  it('injects one bot for two humans and removes it when a third human arrives', async () => {
     const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -636,8 +694,8 @@ describe('GameRoom async task tracking', () => {
     room.connections.set('acct-2', createConnectionState('Bob'));
     room.connections.set('acct-3', createConnectionState('Carol'));
 
-    room._handleJoinQueue('acct-1');
-    room._handleJoinQueue('acct-2');
+    await room._handleJoinQueue('acct-1');
+    await room._handleJoinQueue('acct-2');
 
     expect(room.waitingQueue).toHaveLength(0);
     expect(room.formingMatch).not.toBeNull();
@@ -648,7 +706,7 @@ describe('GameRoom async task tracking', () => {
       room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
     ).toEqual(['acct-1', 'acct-2']);
 
-    room._handleJoinQueue('acct-3');
+    await room._handleJoinQueue('acct-3');
 
     expect(room.waitingQueue).toHaveLength(0);
     expect(room.formingMatch?.players).toEqual(['acct-1', 'acct-2', 'acct-3']);
@@ -656,13 +714,13 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('injects two bots with distinct model indices for a solo human', () => {
+  it('injects two bots with distinct model indices for a solo human', async () => {
     const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
     room.connections.set('acct-1', createConnectionState('Alice'));
 
-    room._handleJoinQueue('acct-1');
+    await room._handleJoinQueue('acct-1');
 
     expect(room.formingMatch).not.toBeNull();
     const bots =
@@ -675,7 +733,7 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('does not inject a bot for six humans', () => {
+  it('does not inject a bot for six humans', async () => {
     const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -688,7 +746,7 @@ describe('GameRoom async task tracking', () => {
       ['acct-6', 'Frank'],
     ] as const) {
       room.connections.set(accountId, createConnectionState(displayName));
-      room._handleJoinQueue(accountId);
+      await room._handleJoinQueue(accountId);
     }
 
     expect(room.formingMatch).not.toBeNull();
