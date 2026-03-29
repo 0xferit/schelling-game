@@ -115,6 +115,7 @@ const FILL_TIMER_MS = 30_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
+const MIN_ALLOWED_BALANCE = -TOTAL_GAMES * GAME_ANTE;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
@@ -567,6 +568,17 @@ export class GameRoom {
     return match.aiAssisted ? 0 : GAME_ANTE;
   }
 
+  _isMatchEntryBalanceAllowed(balance: number): boolean {
+    return balance >= MIN_ALLOWED_BALANCE;
+  }
+
+  _matchEntryBalanceError(balance: number): string {
+    return (
+      `Balance too low to enter queue. Minimum allowed balance is ${MIN_ALLOWED_BALANCE}, ` +
+      `current balance is ${balance}.`
+    );
+  }
+
   _getAiBotTimeoutMs(): number {
     const parsed = Number.parseInt(this.env.AI_BOT_TIMEOUT_MS || '', 10);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -688,7 +700,7 @@ export class GameRoom {
   // Queue management
   // -------------------------------------------------------------------------
 
-  _handleJoinQueue(accountId: string): void {
+  async _handleJoinQueue(accountId: string): Promise<void> {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
@@ -711,6 +723,20 @@ export class GameRoom {
       return this._sendTo(accountId, {
         type: 'error',
         message: 'Already in forming match',
+      });
+    }
+
+    const balance = await this._fetchAccountBalance(accountId);
+    if (balance === null) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Unable to verify balance. Please try joining again.',
+      });
+    }
+    if (!this._isMatchEntryBalanceAllowed(balance)) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: this._matchEntryBalanceError(balance),
       });
     }
 
@@ -902,6 +928,15 @@ export class GameRoom {
         } catch (e) {
           console.error('D1: fetch balance for', accountId, e);
         }
+
+        if (!aiAssisted && !this._isMatchEntryBalanceAllowed(balance)) {
+          conn.startNow = false;
+          this._sendTo(accountId, {
+            type: 'error',
+            message: this._matchEntryBalanceError(balance),
+          });
+          continue;
+        }
       }
 
       playersMap.set(accountId, {
@@ -925,6 +960,21 @@ export class GameRoom {
       });
 
       this.playerMatchIndex.set(accountId, matchId);
+    }
+
+    if (playersMap.size < MIN_MATCH_SIZE) {
+      const eligibleIds = [...playersMap.keys()];
+      this._clearStartNowFlags(eligibleIds);
+      for (const accountId of eligibleIds) {
+        if (!this.waitingQueue.includes(accountId)) {
+          this.waitingQueue.push(accountId);
+        }
+        this.playerMatchIndex.delete(accountId);
+      }
+      this._ensureAiBotBackfill();
+      this._tryFormMatch();
+      this._broadcastQueueState();
+      return;
     }
 
     const match: WorkerMatchState = {
@@ -1157,6 +1207,12 @@ export class GameRoom {
       if (!playerState) continue;
       if (!alreadySettled) {
         playerState.currentBalance += pr.netDelta;
+        if (
+          !match.aiAssisted &&
+          playerState.currentBalance < MIN_ALLOWED_BALANCE
+        ) {
+          playerState.currentBalance = MIN_ALLOWED_BALANCE;
+        }
       }
       (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
     }
@@ -2317,7 +2373,10 @@ export class GameRoom {
     const futureGamesPenaltyApplied = !match.aiAssisted;
     if (futureGamesPenaltyApplied) {
       const futureGames = match.totalGames - match.currentGame;
-      player.currentBalance -= futureGames * GAME_ANTE;
+      player.currentBalance = Math.max(
+        MIN_ALLOWED_BALANCE,
+        player.currentBalance - futureGames * GAME_ANTE,
+      );
     }
 
     this._checkpointPlayerAction(match.matchId, accountId, {
@@ -2572,6 +2631,21 @@ export class GameRoom {
         .run();
     } catch (error) {
       console.error('D1: persist account balance for', accountId, error);
+    }
+  }
+
+  async _fetchAccountBalance(accountId: string): Promise<number | null> {
+    try {
+      const row = await this.env.DB.prepare(
+        'SELECT token_balance FROM accounts WHERE account_id = ?',
+      )
+        .bind(accountId)
+        .first<{ token_balance: number | null }>();
+      if (!row) return null;
+      return row.token_balance ?? 0;
+    } catch (error) {
+      console.error('D1: fetch account balance for', accountId, error);
+      return null;
     }
   }
 

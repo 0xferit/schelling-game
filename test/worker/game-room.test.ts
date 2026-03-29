@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
-import { RESULTS_DURATION } from '../../src/domain/constants';
+import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
 import {
   createTestSession,
   createTestWallet,
@@ -291,6 +291,24 @@ describe('GameRoom Durable Object', () => {
     const leaveMsgs = await collectMessages(ws, 300);
     const leaveState = leaveMsgs.find((m) => m.type === 'queue_state');
     expect(leaveState).toBeDefined();
+
+    ws.close();
+  });
+
+  it('rejects join_queue when balance is below the allowed floor', async () => {
+    const minAllowedBalance = -10 * GAME_ANTE;
+    const { ws } = await connectPlayer(9, 'LowBalance', minAllowedBalance - 1);
+
+    // Drain initial queue_state
+    await collectMessages(ws, 200);
+
+    ws.send(JSON.stringify({ type: 'join_queue' }));
+    const msgs = await collectMessages(ws, 300);
+    const errorMsg = msgs.find((m) => m.type === 'error');
+    expect(errorMsg).toBeDefined();
+    expect(
+      must(errorMsg, 'Expected error for insufficient balance').message,
+    ).toContain('Balance too low to enter queue');
 
     ws.close();
   });
