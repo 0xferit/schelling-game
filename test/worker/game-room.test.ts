@@ -138,6 +138,53 @@ describe('GameRoom Durable Object', () => {
     expect(resp.status).toBe(401);
   });
 
+  it('WebSocket auto-provisions a missing account for a valid session', async () => {
+    const wallet = createTestWallet(0);
+    const { accountId, cookie } = await createTestSession(wallet);
+
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM player_stats WHERE account_id = ?').bind(
+        accountId,
+      ),
+      env.DB.prepare('DELETE FROM accounts WHERE account_id = ?').bind(
+        accountId,
+      ),
+    ]);
+
+    const resp = await exports.default.fetch(
+      new Request(`${BASE}/ws`, {
+        headers: {
+          Upgrade: 'websocket',
+          Cookie: `session=${cookie}`,
+        },
+      }),
+    );
+
+    expect(resp.status).toBe(101);
+
+    const ws = must(resp.webSocket, 'Expected WebSocket upgrade response');
+    ws.accept();
+    const messages = await collectMessages(ws);
+    expect(messages.some((message) => message.type === 'queue_state')).toBe(
+      true,
+    );
+
+    const account = (await env.DB.prepare(
+      'SELECT account_id FROM accounts WHERE account_id = ?',
+    )
+      .bind(accountId)
+      .first()) as { account_id: string } | null;
+    const stats = (await env.DB.prepare(
+      'SELECT account_id FROM player_stats WHERE account_id = ?',
+    )
+      .bind(accountId)
+      .first()) as { account_id: string } | null;
+
+    expect(account?.account_id).toBe(accountId);
+    expect(stats?.account_id).toBe(accountId);
+    ws.close();
+  });
+
   it('WebSocket falls back to a wallet-derived display name', async () => {
     // Use wallet 5 so it does not collide with later tests.
     const wallet = createTestWallet(5);
