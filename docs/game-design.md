@@ -102,7 +102,7 @@ The commitment hash is the SHA-256 hex digest of that preimage.
 Salt rules:
 
 - `salt` must be a hex string
-- `salt` must be at least `32` hex characters long
+- `salt` must be between `32` and `128` hex characters long
 - shorter salts are invalid
 
 Reveal verification succeeds only if the recomputed hash exactly matches the committed hash.
