@@ -679,8 +679,8 @@ describe('GameRoom Durable Object', () => {
     await p1Result;
 
     // Player 1 submits a "like" rating during results phase
-    const p1Tally = waitForMessage(p1.ws, 'question_rating_tally', 3000);
-    p1.ws.send(JSON.stringify({ type: 'question_rating', rating: 'like' }));
+    const p1Tally = waitForMessage(p1.ws, 'prompt_rating_tally', 3000);
+    p1.ws.send(JSON.stringify({ type: 'prompt_rating', rating: 'like' }));
     const tally = await p1Tally;
     expect(tally.likes).toBe(1);
     expect(tally.dislikes).toBe(0);
@@ -689,13 +689,9 @@ describe('GameRoom Durable Object', () => {
     p1.ws.close();
 
     const p1r = await connectPlayer(16, 'RatingP1', 1000);
-    // Listen for both game_result and question_rating_tally on reconnect
+    // Listen for both game_result and prompt_rating_tally on reconnect
     const reconnectResult = waitForMessage(p1r.ws, 'game_result', 5000);
-    const reconnectTally = waitForMessage(
-      p1r.ws,
-      'question_rating_tally',
-      5000,
-    );
+    const reconnectTally = waitForMessage(p1r.ws, 'prompt_rating_tally', 5000);
 
     const replayedResult = await reconnectResult;
     expect(replayedResult.type).toBe('game_result');

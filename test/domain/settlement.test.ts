@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { GAME_ANTE, MIN_ESTABLISHED_MATCHES } from '../../src/domain/constants';
 import { settleGame } from '../../src/domain/settlement';
-import type { PlayerSettlementInput, Question } from '../../src/types/domain';
+import type {
+  OpenTextPrompt,
+  PlayerSettlementInput,
+  SelectPrompt,
+} from '../../src/types/domain';
 
 function must<T>(value: T | null | undefined, message: string): T {
   if (value == null) {
@@ -10,12 +14,21 @@ function must<T>(value: T | null | undefined, message: string): T {
   return value;
 }
 
-const question: Question = {
+const prompt: SelectPrompt = {
   id: 1,
   text: 'Test',
   type: 'select',
   category: 'number',
   options: ['A', 'B', 'C', 'D'],
+};
+
+const openTextPrompt: OpenTextPrompt = {
+  id: 2,
+  text: 'Type the most iconic city in England.',
+  type: 'open_text',
+  category: 'culture',
+  maxLength: 64,
+  placeholder: 'e.g. London',
 };
 
 function makePlayer(
@@ -30,9 +43,39 @@ function makePlayer(
     accountId: id,
     displayName: name,
     optionIndex,
+    inputText: null,
+    normalizedRevealText: null,
+    bucketKey:
+      validReveal && optionIndex !== null ? `option:${optionIndex}` : null,
+    bucketLabel:
+      validReveal && optionIndex !== null
+        ? (prompt.options[optionIndex] ?? null)
+        : null,
     validReveal,
     forfeited,
     attached,
+  };
+}
+
+function makeOpenTextPlayer(
+  id: string,
+  name: string,
+  inputText: string | null,
+  bucketKey: string | null,
+  bucketLabel: string | null,
+  validReveal = true,
+): PlayerSettlementInput {
+  return {
+    accountId: id,
+    displayName: name,
+    optionIndex: null,
+    inputText,
+    normalizedRevealText: inputText ? inputText.toLowerCase() : null,
+    bucketKey,
+    bucketLabel,
+    validReveal,
+    forfeited: false,
+    attached: true,
   };
 }
 
@@ -43,7 +86,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 0),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.pot).toBe(3 * GAME_ANTE);
@@ -60,7 +103,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 1),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.topCount).toBe(2);
@@ -85,7 +128,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a4', 'Dave', 1),
       makePlayer('a5', 'Eve', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(3);
     expect(result.winnerCount).toBe(3);
@@ -108,7 +151,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a6', 'Frank', 1),
       makePlayer('a7', 'Grace', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(4);
     expect(result.winnerCount).toBe(4);
@@ -125,7 +168,7 @@ describe('single valid revealer', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.validRevealCount).toBe(1);
@@ -150,7 +193,7 @@ describe('zero valid reveals = void', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(true);
     expect(result.voidReason).toBe('zero_valid_reveals');
@@ -169,7 +212,7 @@ describe('tied pluralities', () => {
       makePlayer('a4', 'Dave', 1),
       makePlayer('a5', 'Eve', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(2);
     expect(result.winningOptionIndexes).toHaveLength(2);
@@ -198,7 +241,7 @@ describe('all distinct (topCount=1)', () => {
       makePlayer('a2', 'Bob', 1),
       makePlayer('a3', 'Carol', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(1);
     expect(result.winnerCount).toBe(3);
@@ -219,7 +262,7 @@ describe('pot math', () => {
     const players = Array.from({ length: playerCount }, (_, i) =>
       makePlayer(`a${i + 1}`, String.fromCharCode(65 + i), 0),
     );
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.pot).toBe(playerCount * GAME_ANTE);
     expect(result.dustBurned).toBe(0);
@@ -235,7 +278,7 @@ describe('pot math', () => {
       makePlayer('a6', 'F', 2),
       makePlayer('a7', 'G', 3),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.payoutPerWinner).toBe(Math.floor((7 * GAME_ANTE) / 3));
     expect(result.dustBurned).toBe(0);
@@ -255,7 +298,7 @@ describe('pot math', () => {
       makePlayer('a10', 'J', 2),
       makePlayer('a11', 'K', 3),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
     const winners = result.players.filter((p) => p.wonGame);
 
     expect(result.pot).toBe(11 * GAME_ANTE);
@@ -283,7 +326,7 @@ describe('pot math', () => {
       makePlayer('a12', 'L', 1),
       makePlayer('a13', 'M', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
     const winners = result.players.filter((p) => p.wonGame);
 
     expect(result.pot).toBe(13 * GAME_ANTE);
@@ -308,12 +351,16 @@ describe('forfeited player handling', () => {
         accountId: 'a3',
         displayName: 'Carol',
         optionIndex: null,
+        inputText: null,
+        normalizedRevealText: null,
+        bucketKey: null,
+        bucketLabel: null,
         validReveal: false,
         forfeited: true,
         attached: true,
       },
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.pot).toBe(3 * GAME_ANTE);
@@ -334,13 +381,57 @@ describe('forfeited player handling', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', null, false, true, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.playerCount).toBe(2);
     expect(result.pot).toBe(2 * GAME_ANTE);
     expect(result.players.find((p) => p.accountId === 'a3')).toBeUndefined();
     expect(result.winnerCount).toBe(2);
     expect(result.payoutPerWinner).toBe(GAME_ANTE);
+  });
+});
+
+describe('open-text settlement', () => {
+  it('settles by canonical bucket rather than raw input text', () => {
+    const players = [
+      makeOpenTextPlayer(
+        'a1',
+        'Alice',
+        'Grand Central',
+        'grand central terminal',
+        'Grand Central Terminal',
+      ),
+      makeOpenTextPlayer(
+        'a2',
+        'Bob',
+        'grand central terminal',
+        'grand central terminal',
+        'Grand Central Terminal',
+      ),
+      makeOpenTextPlayer(
+        'a3',
+        'Carol',
+        'Times Square',
+        'times square',
+        'Times Square',
+      ),
+    ];
+
+    const result = settleGame(players, openTextPrompt, 'llm');
+
+    expect(result.normalizationMode).toBe('llm');
+    expect(result.winningOptionIndexes).toEqual([]);
+    expect(result.winningBucketKeys).toEqual(['grand central terminal']);
+    expect(result.topCount).toBe(2);
+    expect(result.winnerCount).toBe(2);
+
+    const alice = must(
+      result.players.find((player) => player.accountId === 'a1'),
+      'Expected Alice in open-text result',
+    );
+    expect(alice.revealedInputText).toBe('Grand Central');
+    expect(alice.revealedBucketLabel).toBe('Grand Central Terminal');
+    expect(alice.wonGame).toBe(true);
   });
 });
 
@@ -351,7 +442,7 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 1),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
     const winners = result.players.filter((p) => p.wonGame);
     const losers = result.players.filter((p) => !p.wonGame);
 
@@ -366,7 +457,7 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(1);
     const alice = must(
@@ -382,7 +473,7 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', 1),
       makePlayer('a3', 'Carol', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(1);
     expect(result.players.every((p) => !p.earnsCoordinationCredit)).toBe(true);
@@ -393,7 +484,7 @@ describe('coordination credit rules', () => {
       makePlayer('a1', 'Alice', null, false),
       makePlayer('a2', 'Bob', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(true);
     expect(result.players.every((p) => !p.earnsCoordinationCredit)).toBe(true);

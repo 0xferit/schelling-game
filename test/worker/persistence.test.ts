@@ -35,6 +35,112 @@ function createMockSql(
 const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
 describe('restoreMatchesFromStorage', () => {
+  it('restores legacy checkpoints that still use questions_json', () => {
+    const matchRows = [
+      {
+        match_id: 'match-legacy',
+        phase: 'commit',
+        current_game: 2,
+        total_games: 10,
+        questions_json: JSON.stringify([
+          {
+            id: 1,
+            text: 'Legacy prompt',
+            type: 'select',
+            category: 'number',
+            options: ['A', 'B'],
+          },
+        ]),
+        phase_entered_at: Date.now(),
+        last_settled_game: 1,
+      },
+    ];
+
+    const playerRows = [
+      {
+        match_id: 'match-legacy',
+        account_id: '0xlegacy',
+        display_name: 'Legacy',
+        starting_balance: 1000,
+        current_balance: 1000,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        salt: null,
+        forfeited: 0,
+        disconnected_at: null,
+      },
+    ];
+
+    const restored = restoreMatchesFromStorage(
+      createMockSql(matchRows, playerRows),
+      STALE_THRESHOLD_MS,
+    );
+
+    const match = must(restored[0], 'Expected restored legacy match');
+    expect(match.prompts).toHaveLength(1);
+    expect(must(match.prompts[0], 'Expected restored legacy prompt').text).toBe(
+      'Legacy prompt',
+    );
+  });
+
+  it('restores open-text answer fields from player checkpoints', () => {
+    const matchRows = [
+      {
+        match_id: 'match-open-text',
+        phase: 'reveal',
+        current_game: 1,
+        total_games: 10,
+        prompts_json: JSON.stringify([
+          {
+            id: 101,
+            text: 'Type the most iconic city in England.',
+            type: 'open_text',
+            category: 'culture',
+            maxLength: 64,
+            placeholder: 'e.g. London',
+          },
+        ]),
+        phase_entered_at: Date.now(),
+        last_settled_game: 0,
+      },
+    ];
+
+    const playerRows = [
+      {
+        match_id: 'match-open-text',
+        account_id: '0xopen',
+        display_name: 'OpenText',
+        starting_balance: 1000,
+        current_balance: 1000,
+        committed: 1,
+        revealed: 1,
+        hash: 'a'.repeat(64),
+        option_index: null,
+        answer_text: 'New York',
+        normalized_reveal_text: 'new york',
+        salt: 'b'.repeat(32),
+        forfeited: 0,
+        disconnected_at: null,
+      },
+    ];
+
+    const restored = restoreMatchesFromStorage(
+      createMockSql(matchRows, playerRows),
+      STALE_THRESHOLD_MS,
+    );
+
+    const match = must(restored[0], 'Expected restored open-text match');
+    const player = must(
+      match.players.get('0xopen'),
+      'Expected restored open-text player state',
+    );
+
+    expect(player.answerText).toBe('New York');
+    expect(player.normalizedRevealText).toBe('new york');
+  });
+
   it('sets disconnectedAt to restore time (not phaseEnteredAt) when disconnected_at is NULL', () => {
     // Simulate a match that started 20 seconds ago: long enough that
     // a player whose disconnectedAt was set to phaseEnteredAt would
@@ -47,7 +153,7 @@ describe('restoreMatchesFromStorage', () => {
         phase: 'commit',
         current_game: 1,
         total_games: 10,
-        questions_json: JSON.stringify([
+        prompts_json: JSON.stringify([
           {
             id: 1,
             text: 'Test',
@@ -135,7 +241,7 @@ describe('restoreMatchesFromStorage', () => {
         phase: 'commit',
         current_game: 1,
         total_games: 10,
-        questions_json: JSON.stringify([
+        prompts_json: JSON.stringify([
           {
             id: 1,
             text: 'Q',
@@ -200,7 +306,7 @@ describe('restoreMatchesFromStorage', () => {
         phase: 'commit',
         current_game: 5,
         total_games: 10,
-        questions_json: JSON.stringify([
+        prompts_json: JSON.stringify([
           {
             id: 1,
             text: 'Q',
@@ -273,7 +379,7 @@ describe('restoreMatchesFromStorage', () => {
       phase: 'commit',
       current_game: 1,
       total_games: 10,
-      questions_json: JSON.stringify([
+      prompts_json: JSON.stringify([
         {
           id: 1,
           text: 'Q',

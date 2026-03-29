@@ -1,4 +1,4 @@
-import type { GameResultWithBalances, Question } from './domain';
+import type { GameResultWithBalances, SchellingPrompt } from './domain';
 
 // ── Client → Server ──────────────────────────────────────────────
 
@@ -9,7 +9,8 @@ export type ClientMessage =
   | { type: 'set_start_now'; value: boolean }
   | { type: 'commit'; hash: string }
   | { type: 'reveal'; optionIndex: number; salt: string }
-  | { type: 'question_rating'; rating: 'like' | 'dislike' };
+  | { type: 'reveal'; answerText: string; salt: string }
+  | { type: 'prompt_rating'; rating: 'like' | 'dislike' };
 
 // ── Server → Client ──────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export interface MatchStartedMessage {
 export interface GameStartedMessage {
   type: 'game_started';
   game: number;
-  question: Question;
+  prompt: SchellingPrompt;
   commitDuration: number;
   gameAnte: number;
   aiAssisted: boolean;
@@ -109,12 +110,12 @@ export interface PlayerReconnectedMessage {
   displayName: string;
 }
 
-export interface QuestionRatingTallyMessage {
-  type: 'question_rating_tally';
-  questionId: number;
+export interface PromptRatingTallyMessage {
+  type: 'prompt_rating_tally';
+  promptId: number;
   likes: number;
   dislikes: number;
-  /** Present on reconnect replay: the reconnecting player's own rating for this question. */
+  /** Present on reconnect replay: the reconnecting player's own rating for this prompt. */
   yourRating?: 'like' | 'dislike' | null;
 }
 
@@ -135,5 +136,5 @@ export type ServerMessage =
   | PlayerDisconnectedMessage
   | PlayerForfeitedMessage
   | PlayerReconnectedMessage
-  | QuestionRatingTallyMessage
+  | PromptRatingTallyMessage
   | ErrorMessage;

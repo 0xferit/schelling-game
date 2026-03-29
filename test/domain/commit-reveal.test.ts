@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   createCommitHash,
+  createOpenTextCommitHash,
+  normalizeRevealText,
+  validateAnswerText,
   validateHash,
   validateOptionIndex,
   validateSalt,
   verifyCommit,
+  verifyOpenTextCommit,
 } from '../../src/domain/commitReveal';
 
 describe('commit-reveal verification', () => {
@@ -79,5 +83,41 @@ describe('validateOptionIndex', () => {
     { index: NaN, expected: false, label: 'NaN' },
   ])('$label → $expected', ({ index, expected }) => {
     expect(validateOptionIndex(index, optionCount)).toBe(expected);
+  });
+});
+
+describe('open-text commit-reveal verification', () => {
+  const salt = 'b'.repeat(32);
+  const answerText = ' New York ';
+  const hash = createOpenTextCommitHash(answerText, salt);
+
+  it('normalizes casing and whitespace before hashing', () => {
+    expect(verifyOpenTextCommit('new york', salt, hash)).toBe(true);
+  });
+
+  it('rejects a different normalized answer', () => {
+    expect(verifyOpenTextCommit('new york city', salt, hash)).toBe(false);
+  });
+
+  it('normalizes quotes and terminal punctuation', () => {
+    expect(normalizeRevealText('“Grand Central.”')).toBe('"grand central"');
+  });
+});
+
+describe('validateAnswerText', () => {
+  it('accepts a valid single-line answer', () => {
+    expect(validateAnswerText('Grand Central', 80)).toBe(true);
+  });
+
+  it('rejects empty answers after normalization', () => {
+    expect(validateAnswerText('   ...   ', 80)).toBe(false);
+  });
+
+  it('rejects multiline answers', () => {
+    expect(validateAnswerText('Grand\nCentral', 80)).toBe(false);
+  });
+
+  it('rejects answers longer than the prompt limit', () => {
+    expect(validateAnswerText('a'.repeat(81), 80)).toBe(false);
   });
 });
