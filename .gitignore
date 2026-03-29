@@ -5,4 +5,8 @@ node_modules/
 nohup.out
 .wrangler/
 .playwright-mcp/
+.mcp.json
+.dev.vars
+.env*
+*.bak
 .claude/settings.local.json
