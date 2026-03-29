@@ -15,7 +15,7 @@
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "stamp-build": "sed -i.bak -e \"s/__BUILD_HASH__/$(git rev-parse --short HEAD)/\" -e \"s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/\" public/index.html public/app.html",
     "unstamp-build": "mv public/index.html.bak public/index.html && mv public/app.html.bak public/app.html",
-    "deploy": "npm run stamp-build && CLOUDFLARE_API_TOKEN=${CLOUDFLARE_FERIT_API_TOKEN:-$CLOUDFLARE_API_TOKEN} npx wrangler deploy && npm run unstamp-build"
+    "deploy": "sh -c 'set -e; cleanup(){ npm run unstamp-build >/dev/null 2>&1 || true; }; trap cleanup EXIT; npm run stamp-build; CLOUDFLARE_API_TOKEN=${CLOUDFLARE_FERIT_API_TOKEN:-$CLOUDFLARE_API_TOKEN} npx wrangler deploy; trap - EXIT; cleanup'"
   },
   "repository": {
     "type": "git",
