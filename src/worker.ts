@@ -951,7 +951,7 @@ export class GameRoom {
     });
 
     // Check early termination: no non-forfeited players remain
-    if (!this._hasNonForfeitedHumanPlayers(match)) {
+    if (!this._hasNonForfeitedPlayers(match)) {
       match.resultsTimer = setTimeout(() => {
         match.resultsTimer = null;
         this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
@@ -1986,7 +1986,7 @@ export class GameRoom {
   _advanceAfterResults(match: WorkerMatchState): void {
     if (
       match.currentRound >= match.totalRounds ||
-      !this._hasNonForfeitedHumanPlayers(match)
+      !this._hasNonForfeitedPlayers(match)
     ) {
       this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
     } else {
@@ -1994,11 +1994,9 @@ export class GameRoom {
     }
   }
 
-  _hasNonForfeitedHumanPlayers(match: WorkerMatchState): boolean {
+  _hasNonForfeitedPlayers(match: WorkerMatchState): boolean {
     for (const p of match.players.values()) {
-      if (!p.forfeited && !this._isAiBot(p.accountId)) {
-        return true;
-      }
+      if (!p.forfeited) return true;
     }
     return false;
   }
