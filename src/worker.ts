@@ -24,6 +24,7 @@ import type {
   SchellingPrompt,
 } from './types/domain';
 import type {
+  ClientMessage,
   GameResultMessage,
   QueueStateMessage,
   ServerMessage,
@@ -52,6 +53,8 @@ interface ConnectionState {
   displayName: string;
   startNow: boolean;
   previousOpponents: Set<string>;
+  lastActivityAt: number;
+  livenessTimer: ReturnType<typeof setInterval> | null;
 }
 
 interface WorkerPlayerState extends PersistedPlayerState {
@@ -112,6 +115,7 @@ const FILL_TIMER_MS = 30_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
+const MIN_ALLOWED_BALANCE = -TOTAL_GAMES * GAME_ANTE;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
@@ -124,6 +128,8 @@ const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
 const D1_RETRY_DELAY_MS = 2_000;
+const WS_LIVENESS_CHECK_INTERVAL_MS = 10_000;
+const WS_IDLE_TIMEOUT_MS = 35_000;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -244,7 +250,9 @@ export class GameRoom {
           }
           playerState.disconnectedAt = null;
           playerState.ws = ws;
+          this._clearConnectionLivenessMonitor(accountId);
           existingConn.ws = ws;
+          existingConn.lastActivityAt = Date.now();
           this._checkpointPlayerAction(existingMatchId, accountId, {
             disconnectedAt: null,
           });
@@ -275,6 +283,8 @@ export class GameRoom {
             displayName,
             startNow: false,
             previousOpponents: new Set(),
+            lastActivityAt: Date.now(),
+            livenessTimer: null,
           });
           if (playerState.graceTimer) {
             clearTimeout(playerState.graceTimer);
@@ -313,6 +323,7 @@ export class GameRoom {
 
     // Close previous connection if any (not a match reconnect)
     if (existingConn) {
+      this._clearConnectionLivenessMonitor(accountId);
       try {
         existingConn.ws.close(1000, 'Replaced by new connection');
       } catch {}
@@ -329,6 +340,8 @@ export class GameRoom {
       previousOpponents: existingConn
         ? existingConn.previousOpponents
         : new Set(),
+      lastActivityAt: Date.now(),
+      livenessTimer: null,
     });
 
     this._setupWsListeners(ws, accountId);
@@ -337,20 +350,91 @@ export class GameRoom {
     this._sendQueueState(accountId);
   }
 
+  _noteConnectionActivity(accountId: string, ws: WebSocket): void {
+    const conn = this.connections.get(accountId);
+    if (!conn || conn.ws !== ws) return;
+    conn.lastActivityAt = Date.now();
+  }
+
+  _clearConnectionLivenessMonitor(accountId: string): void {
+    const conn = this.connections.get(accountId);
+    if (!conn?.livenessTimer) return;
+    clearInterval(conn.livenessTimer);
+    conn.livenessTimer = null;
+  }
+
+  _startConnectionLivenessMonitor(accountId: string, ws: WebSocket): void {
+    this._clearConnectionLivenessMonitor(accountId);
+    const conn = this.connections.get(accountId);
+    if (!conn || conn.ws !== ws) return;
+    conn.lastActivityAt = Date.now();
+    conn.livenessTimer = setInterval(() => {
+      const current = this.connections.get(accountId);
+      if (!current || current.ws !== ws) {
+        this._clearConnectionLivenessMonitor(accountId);
+        return;
+      }
+      if (Date.now() - current.lastActivityAt < WS_IDLE_TIMEOUT_MS) return;
+
+      this._clearConnectionLivenessMonitor(accountId);
+      try {
+        ws.close(4000, 'Heartbeat timeout');
+      } catch {}
+    }, WS_LIVENESS_CHECK_INTERVAL_MS);
+  }
+
   _setupWsListeners(ws: WebSocket, accountId: string): void {
+    this._startConnectionLivenessMonitor(accountId, ws);
+    const isCurrentConnection = (): boolean =>
+      this.connections.get(accountId)?.ws === ws;
+
     ws.addEventListener('message', (evt: MessageEvent) => {
+      if (!isCurrentConnection()) return;
+      this._noteConnectionActivity(accountId, ws);
       this._waitUntil(
         (async () => {
-          try {
-            const msg = JSON.parse(evt.data as string) as {
-              type: string;
-              [key: string]: unknown;
-            };
-            await this._handleMessage(accountId, msg);
-          } catch (e) {
+          const raw = evt.data;
+          if (typeof raw !== 'string') {
             this._sendTo(accountId, {
               type: 'error',
-              message: (e as Error).message || 'Internal error',
+              message: 'Invalid message payload.',
+            });
+            return;
+          }
+
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            this._sendTo(accountId, {
+              type: 'error',
+              message: 'Invalid message payload.',
+            });
+            return;
+          }
+
+          if (
+            !parsed ||
+            typeof parsed !== 'object' ||
+            typeof (parsed as { type?: unknown }).type !== 'string'
+          ) {
+            this._sendTo(accountId, {
+              type: 'error',
+              message: 'Invalid message payload.',
+            });
+            return;
+          }
+
+          try {
+            await this._handleMessage(accountId, parsed as ClientMessage);
+          } catch (error) {
+            console.error('WebSocket message handling failed', {
+              accountId,
+              error,
+            });
+            this._sendTo(accountId, {
+              type: 'error',
+              message: 'Unable to process message.',
             });
           }
         })(),
@@ -359,10 +443,14 @@ export class GameRoom {
     });
 
     ws.addEventListener('close', () => {
+      if (!isCurrentConnection()) return;
+      this._clearConnectionLivenessMonitor(accountId);
       this._handleDisconnect(accountId);
     });
 
     ws.addEventListener('error', () => {
+      if (!isCurrentConnection()) return;
+      this._clearConnectionLivenessMonitor(accountId);
       this._handleDisconnect(accountId);
     });
   }
@@ -390,6 +478,13 @@ export class GameRoom {
         return this._handleReveal(accountId, msg);
       case 'prompt_rating':
         return this._handlePromptRating(accountId, msg);
+      case 'ping':
+        this._sendTo(accountId, {
+          type: 'pong',
+          serverTime: Date.now(),
+          ...(typeof msg.sentAt === 'number' ? { sentAt: msg.sentAt } : {}),
+        });
+        return;
       default:
         this._sendTo(accountId, {
           type: 'error',
@@ -472,6 +567,17 @@ export class GameRoom {
 
   _getMatchGameAnte(match: Pick<PersistedMatchFields, 'aiAssisted'>): number {
     return match.aiAssisted ? 0 : GAME_ANTE;
+  }
+
+  _isMatchEntryBalanceAllowed(balance: number): boolean {
+    return balance >= MIN_ALLOWED_BALANCE;
+  }
+
+  _matchEntryBalanceError(balance: number): string {
+    return (
+      `Balance too low to enter queue. Minimum allowed balance is ${MIN_ALLOWED_BALANCE}, ` +
+      `current balance is ${balance}.`
+    );
   }
 
   _getAiBotTimeoutMs(): number {
@@ -595,7 +701,7 @@ export class GameRoom {
   // Queue management
   // -------------------------------------------------------------------------
 
-  _handleJoinQueue(accountId: string): void {
+  async _handleJoinQueue(accountId: string): Promise<void> {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
@@ -618,6 +724,20 @@ export class GameRoom {
       return this._sendTo(accountId, {
         type: 'error',
         message: 'Already in forming match',
+      });
+    }
+
+    const balance = await this._fetchAccountBalance(accountId);
+    if (balance === null) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Unable to verify balance. Please try joining again.',
+      });
+    }
+    if (!this._isMatchEntryBalanceAllowed(balance)) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: this._matchEntryBalanceError(balance),
       });
     }
 
@@ -809,6 +929,15 @@ export class GameRoom {
         } catch (e) {
           console.error('D1: fetch balance for', accountId, e);
         }
+
+        if (!aiAssisted && !this._isMatchEntryBalanceAllowed(balance)) {
+          conn.startNow = false;
+          this._sendTo(accountId, {
+            type: 'error',
+            message: this._matchEntryBalanceError(balance),
+          });
+          continue;
+        }
       }
 
       playersMap.set(accountId, {
@@ -832,6 +961,21 @@ export class GameRoom {
       });
 
       this.playerMatchIndex.set(accountId, matchId);
+    }
+
+    if (playersMap.size < MIN_MATCH_SIZE) {
+      const eligibleIds = [...playersMap.keys()];
+      this._clearStartNowFlags(eligibleIds);
+      for (const accountId of eligibleIds) {
+        if (!this.waitingQueue.includes(accountId)) {
+          this.waitingQueue.push(accountId);
+        }
+        this.playerMatchIndex.delete(accountId);
+      }
+      this._ensureAiBotBackfill();
+      this._tryFormMatch();
+      this._broadcastQueueState();
+      return;
     }
 
     const match: WorkerMatchState = {
@@ -1071,9 +1215,12 @@ export class GameRoom {
     for (const pr of result.players) {
       const playerState = match.players.get(pr.accountId);
       if (!playerState) continue;
-      const projectedBalance =
+      let projectedBalance =
         playerState.currentBalance +
         (shouldProjectSettledBalances ? pr.netDelta : 0);
+      if (!match.aiAssisted && projectedBalance < MIN_ALLOWED_BALANCE) {
+        projectedBalance = MIN_ALLOWED_BALANCE;
+      }
       projectedBalances.set(pr.accountId, projectedBalance);
       (pr as PlayerResultWithBalance).newBalance = projectedBalance;
     }
@@ -2206,6 +2353,7 @@ export class GameRoom {
   // -------------------------------------------------------------------------
 
   _handleDisconnect(accountId: string): void {
+    this._clearConnectionLivenessMonitor(accountId);
     const matchId = this.playerMatchIndex.get(accountId);
 
     if (!matchId) {
@@ -2266,7 +2414,10 @@ export class GameRoom {
     const futureGamesPenaltyApplied = !match.aiAssisted;
     if (futureGamesPenaltyApplied) {
       const futureGames = match.totalGames - match.currentGame;
-      player.currentBalance -= futureGames * GAME_ANTE;
+      player.currentBalance = Math.max(
+        MIN_ALLOWED_BALANCE,
+        player.currentBalance - futureGames * GAME_ANTE,
+      );
     }
 
     this._checkpointPlayerAction(match.matchId, accountId, {
@@ -2521,6 +2672,21 @@ export class GameRoom {
         .run();
     } catch (error) {
       console.error('D1: persist account balance for', accountId, error);
+    }
+  }
+
+  async _fetchAccountBalance(accountId: string): Promise<number | null> {
+    try {
+      const row = await this.env.DB.prepare(
+        'SELECT token_balance FROM accounts WHERE account_id = ?',
+      )
+        .bind(accountId)
+        .first<{ token_balance: number | null }>();
+      if (!row) return null;
+      return row.token_balance ?? 0;
+    } catch (error) {
+      console.error('D1: fetch account balance for', accountId, error);
+      return null;
     }
   }
 
