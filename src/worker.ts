@@ -123,6 +123,7 @@ const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
+const D1_RETRY_DELAY_MS = 2_000;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -968,11 +969,15 @@ export class GameRoom {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
     const prompt = this._getPromptForGame(match, match.currentGame);
-
-    match.phase = 'results';
-    match.phaseEnteredAt = Date.now();
-    const alreadySettled = match.currentGame <= match.lastSettledGame;
+    const recoveringSettlingWrite =
+      match.phase === 'settling' && match.currentGame > match.lastSettledGame;
+    const alreadySettled =
+      match.currentGame <= match.lastSettledGame && !recoveringSettlingWrite;
 
     // Build player array for settlement
     const settlementPlayers: PlayerSettlementInput[] = [
@@ -1057,151 +1062,178 @@ export class GameRoom {
       ? neutralizeAiAssistedResult(settledResult)
       : settledResult;
 
-    // Apply balance changes to in-memory state (always needed for correct broadcast)
+    const projectedBalances = new Map<string, number>();
+    const shouldProjectSettledBalances =
+      !alreadySettled || recoveringSettlingWrite;
+
+    // Compute post-settlement balances without mutating in-memory player state
+    // until D1 persistence is confirmed (or explicitly recovered).
     for (const pr of result.players) {
       const playerState = match.players.get(pr.accountId);
       if (!playerState) continue;
-      if (!alreadySettled) {
-        playerState.currentBalance += pr.netDelta;
-      }
-      (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
+      const projectedBalance =
+        playerState.currentBalance +
+        (shouldProjectSettledBalances ? pr.netDelta : 0);
+      projectedBalances.set(pr.accountId, projectedBalance);
+      (pr as PlayerResultWithBalance).newBalance = projectedBalance;
     }
 
     // Write to D1 only if this game hasn't been settled before (prevents duplicates after restore)
     if (!alreadySettled) {
-      match.lastSettledGame = match.currentGame;
-      // Checkpoint before D1 batch so lastSettledGame survives eviction between
-      // the D1 writes and the post-settlement checkpoint below
-      this._checkpointMatch(match);
+      let shouldWriteGame = true;
+      if (recoveringSettlingWrite) {
+        shouldWriteGame =
+          !(await this._hasPersistedVoteLogsForCurrentGame(match));
+      }
 
-      const stmts: D1PreparedStatement[] = [];
-      const now = new Date().toISOString();
+      if (shouldWriteGame) {
+        // Mark this game as in-flight before issuing D1 writes so restore can retry.
+        match.phase = 'settling';
+        match.phaseEnteredAt = Date.now();
+        this._checkpointMatch(match);
 
-      if (prompt.type === 'open_text' && normalizationRun.runId) {
-        stmts.push(
-          this.env.DB.prepare(
-            'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          ).bind(
-            normalizationRun.runId,
-            match.matchId,
-            match.currentGame,
-            prompt.id,
-            normalizationRun.mode,
-            normalizationRun.model,
-            normalizationRun.normalizerPrompt,
-            normalizationRun.requestJson,
-            normalizationRun.responseJson,
-            now,
-          ),
-        );
+        const stmts: D1PreparedStatement[] = [];
+        const now = new Date().toISOString();
 
-        for (const verdict of normalizationRun.verdicts.values()) {
+        if (prompt.type === 'open_text' && normalizationRun.runId) {
           stmts.push(
             this.env.DB.prepare(
-              'INSERT INTO normalization_verdicts (run_id, match_id, game_number, prompt_id, normalized_input_text, bucket_key, bucket_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             ).bind(
               normalizationRun.runId,
               match.matchId,
               match.currentGame,
               prompt.id,
-              verdict.normalizedInputText,
-              verdict.bucketKey,
-              verdict.bucketLabel,
+              normalizationRun.mode,
+              normalizationRun.model,
+              normalizationRun.normalizerPrompt,
+              normalizationRun.requestJson,
+              normalizationRun.responseJson,
               now,
             ),
           );
-        }
-      }
 
-      for (const pr of result.players) {
-        const playerState = match.players.get(pr.accountId);
-        if (!playerState) continue;
-
-        if (!this._isAiBot(pr.accountId)) {
-          if (!match.aiAssisted) {
+          for (const verdict of normalizationRun.verdicts.values()) {
             stmts.push(
               this.env.DB.prepare(
-                'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-              ).bind(playerState.currentBalance, pr.accountId),
+                'INSERT INTO normalization_verdicts (run_id, match_id, game_number, prompt_id, normalized_input_text, bucket_key, bucket_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              ).bind(
+                normalizationRun.runId,
+                match.matchId,
+                match.currentGame,
+                prompt.id,
+                verdict.normalizedInputText,
+                verdict.bucketKey,
+                verdict.bucketLabel,
+                now,
+              ),
             );
           }
+        }
 
-          if (!result.voided && !match.aiAssisted) {
-            stmts.push(
-              this.env.DB.prepare(
-                'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
-              ).bind(pr.accountId),
-            );
-            if (pr.earnsCoordinationCredit) {
+        for (const pr of result.players) {
+          const projectedBalance = projectedBalances.get(pr.accountId);
+          if (projectedBalance === undefined) continue;
+
+          if (!this._isAiBot(pr.accountId)) {
+            if (!match.aiAssisted) {
               stmts.push(
                 this.env.DB.prepare(
-                  'UPDATE player_stats SET coherent_games = coherent_games + 1, ' +
-                    'current_streak = current_streak + 1, ' +
-                    'longest_streak = MAX(longest_streak, current_streak + 1) ' +
-                    'WHERE account_id = ?',
-                ).bind(pr.accountId),
-              );
-            } else {
-              stmts.push(
-                this.env.DB.prepare(
-                  'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
-                ).bind(pr.accountId),
+                  'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+                ).bind(projectedBalance, pr.accountId),
               );
             }
+
+            if (!result.voided && !match.aiAssisted) {
+              stmts.push(
+                this.env.DB.prepare(
+                  'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
+                ).bind(pr.accountId),
+              );
+              if (pr.earnsCoordinationCredit) {
+                stmts.push(
+                  this.env.DB.prepare(
+                    'UPDATE player_stats SET coherent_games = coherent_games + 1, ' +
+                      'current_streak = current_streak + 1, ' +
+                      'longest_streak = MAX(longest_streak, current_streak + 1) ' +
+                      'WHERE account_id = ?',
+                  ).bind(pr.accountId),
+                );
+              } else {
+                stmts.push(
+                  this.env.DB.prepare(
+                    'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
+                  ).bind(pr.accountId),
+                );
+              }
+            }
+          }
+
+          if (!this._isAiBot(pr.accountId)) {
+            stmts.push(
+              this.env.DB.prepare(
+                'INSERT INTO vote_logs (match_id, game_number, prompt_id, account_id, display_name_snapshot, ' +
+                  'prompt_type, revealed_option_index, revealed_option_label, revealed_input_text, ' +
+                  'revealed_bucket_key, revealed_bucket_label, normalization_mode, normalization_run_id, ' +
+                  'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
+                  'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
+                  'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
+                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              ).bind(
+                match.matchId,
+                match.currentGame,
+                prompt.id,
+                pr.accountId,
+                pr.displayName,
+                prompt.type,
+                pr.revealedOptionIndex,
+                pr.revealedOptionLabel,
+                pr.revealedInputText,
+                pr.revealedBucketKey,
+                pr.revealedBucketLabel,
+                result.normalizationMode,
+                normalizationRun.runId,
+                pr.wonGame ? 1 : 0,
+                pr.earnsCoordinationCredit ? 1 : 0,
+                pr.antePaid,
+                pr.gamePayout,
+                pr.netDelta,
+                result.playerCount,
+                result.validRevealCount,
+                result.topCount,
+                result.winnerCount,
+                JSON.stringify(result.winningOptionIndexes),
+                JSON.stringify(result.winningBucketKeys),
+                result.voided ? 1 : 0,
+                result.voidReason,
+                now,
+              ),
+            );
           }
         }
 
-        if (!this._isAiBot(pr.accountId)) {
-          stmts.push(
-            this.env.DB.prepare(
-              'INSERT INTO vote_logs (match_id, game_number, prompt_id, account_id, display_name_snapshot, ' +
-                'prompt_type, revealed_option_index, revealed_option_label, revealed_input_text, ' +
-                'revealed_bucket_key, revealed_bucket_label, normalization_mode, normalization_run_id, ' +
-                'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
-                'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
-                'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            ).bind(
-              match.matchId,
-              match.currentGame,
-              prompt.id,
-              pr.accountId,
-              pr.displayName,
-              prompt.type,
-              pr.revealedOptionIndex,
-              pr.revealedOptionLabel,
-              pr.revealedInputText,
-              pr.revealedBucketKey,
-              pr.revealedBucketLabel,
-              result.normalizationMode,
-              normalizationRun.runId,
-              pr.wonGame ? 1 : 0,
-              pr.earnsCoordinationCredit ? 1 : 0,
-              pr.antePaid,
-              pr.gamePayout,
-              pr.netDelta,
-              result.playerCount,
-              result.validRevealCount,
-              result.topCount,
-              result.winnerCount,
-              JSON.stringify(result.winningOptionIndexes),
-              JSON.stringify(result.winningBucketKeys),
-              result.voided ? 1 : 0,
-              result.voidReason,
-              now,
-            ),
-          );
+        if (stmts.length > 0) {
+          try {
+            await this.env.DB.batch(stmts);
+          } catch (error) {
+            console.error('D1: batch finalizeGame for', match.matchId, error);
+            this._checkpointMatch(match);
+            this._scheduleFinalizeRetry(match);
+            return;
+          }
         }
       }
 
-      if (stmts.length > 0) {
-        try {
-          await this.env.DB.batch(stmts);
-        } catch (e) {
-          console.error('D1: batch finalizeGame for', match.matchId, e);
-        }
+      for (const [accountId, projectedBalance] of projectedBalances) {
+        const playerState = match.players.get(accountId);
+        if (!playerState) continue;
+        playerState.currentBalance = projectedBalance;
       }
+      match.lastSettledGame = match.currentGame;
     }
+
+    match.phase = 'results';
+    match.phaseEnteredAt = Date.now();
 
     // Build game result payload for broadcast and reconnect replay.
     // Read newBalance from live player state rather than the snapshot
@@ -1282,9 +1314,9 @@ export class GameRoom {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
-    match.phase = 'ended';
-    // Delete checkpoint immediately so a mid-_endMatch eviction won't resurrect this match
-    this._deleteMatchCheckpoint(match.matchId);
+    match.phase = 'ending';
+    match.phaseEnteredAt = Date.now();
+    this._checkpointMatch(match);
 
     const summary = {
       players: [...match.players.values()].map((p) => ({
@@ -1296,56 +1328,67 @@ export class GameRoom {
       })),
     };
 
+    const alreadyCompletedInD1 = await this._isMatchAlreadyCompleted(
+      match.matchId,
+    );
+
+    if (!alreadyCompletedInD1) {
+      // Batch all endMatch D1 writes
+      try {
+        const endStmts: D1PreparedStatement[] = [
+          this.env.DB.prepare(
+            'UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?',
+          ).bind(new Date().toISOString(), 'completed', match.matchId),
+        ];
+
+        for (const p of match.players.values()) {
+          if (this._isAiBot(p.accountId)) continue;
+
+          if (!match.aiAssisted) {
+            endStmts.push(
+              this.env.DB.prepare(
+                'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+              ).bind(p.currentBalance, p.accountId),
+            );
+          }
+
+          endStmts.push(
+            this.env.DB.prepare(
+              'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?',
+            ).bind(
+              p.currentBalance,
+              p.currentBalance - p.startingBalance,
+              p.forfeited ? 'forfeited' : 'completed',
+              match.matchId,
+              p.accountId,
+            ),
+          );
+
+          if (!match.aiAssisted) {
+            endStmts.push(
+              this.env.DB.prepare(
+                'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
+              ).bind(p.accountId),
+            );
+          }
+        }
+
+        await this.env.DB.batch(endStmts);
+      } catch (error) {
+        console.error('D1: endMatch writes for', match.matchId, error);
+        this._checkpointMatch(match);
+        this._scheduleEndMatchRetry(match);
+        return;
+      }
+    }
+
+    match.phase = 'ended';
+
     this._broadcastToMatch(match, {
       type: 'match_over',
       aiAssisted: match.aiAssisted,
       summary,
     });
-
-    // Batch all endMatch D1 writes
-    try {
-      const endStmts: D1PreparedStatement[] = [
-        this.env.DB.prepare(
-          'UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?',
-        ).bind(new Date().toISOString(), 'completed', match.matchId),
-      ];
-
-      for (const p of match.players.values()) {
-        if (this._isAiBot(p.accountId)) continue;
-
-        if (!match.aiAssisted) {
-          endStmts.push(
-            this.env.DB.prepare(
-              'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-            ).bind(p.currentBalance, p.accountId),
-          );
-        }
-
-        endStmts.push(
-          this.env.DB.prepare(
-            'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?',
-          ).bind(
-            p.currentBalance,
-            p.currentBalance - p.startingBalance,
-            p.forfeited ? 'forfeited' : 'completed',
-            match.matchId,
-            p.accountId,
-          ),
-        );
-
-        if (!match.aiAssisted) {
-          endStmts.push(
-            this.env.DB.prepare(
-              'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
-            ).bind(p.accountId),
-          );
-        }
-      }
-
-      await this.env.DB.batch(endStmts);
-    } catch (e) {
-      console.error('D1: endMatch writes for', match.matchId, e);
-    }
 
     // Track opponents for anti-repeat
     const matchPlayerIds = [...match.players.keys()];
@@ -1358,13 +1401,14 @@ export class GameRoom {
       }
     }
 
-    // Clean up match (checkpoint already deleted at top of _endMatch)
+    // Clean up match after persistence is confirmed.
     this.activeMatches.delete(match.matchId);
     for (const accountId of matchPlayerIds) {
       if (this.playerMatchIndex.get(accountId) === match.matchId) {
         this.playerMatchIndex.delete(accountId);
       }
     }
+    this._deleteMatchCheckpoint(match.matchId);
 
     this._ensureAiBotBackfill();
     this._tryFormMatch();
@@ -2519,6 +2563,42 @@ export class GameRoom {
     );
   }
 
+  _scheduleFinalizeRetry(
+    match: WorkerMatchState,
+    delayMs = D1_RETRY_DELAY_MS,
+  ): void {
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
+    match.resultsTimer = setTimeout(() => {
+      match.resultsTimer = null;
+      if (!this.activeMatches.has(match.matchId)) return;
+      this._waitUntil(
+        this._finalizeGame(match),
+        `retry finalize game ${match.currentGame} for ${match.matchId}`,
+      );
+    }, delayMs);
+  }
+
+  _scheduleEndMatchRetry(
+    match: WorkerMatchState,
+    delayMs = D1_RETRY_DELAY_MS,
+  ): void {
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
+    match.resultsTimer = setTimeout(() => {
+      match.resultsTimer = null;
+      if (!this.activeMatches.has(match.matchId)) return;
+      this._waitUntil(
+        this._endMatch(match),
+        `retry end match ${match.matchId}`,
+      );
+    }, delayMs);
+  }
+
   _ensureMatchTimerRunning(match: WorkerMatchState): void {
     const elapsed = Date.now() - match.phaseEnteredAt;
 
@@ -2553,6 +2633,10 @@ export class GameRoom {
         }, remaining);
         this._autoRevealAiBots(match);
       }
+    } else if (match.phase === 'settling' && !match.resultsTimer) {
+      this._scheduleFinalizeRetry(match, 0);
+    } else if (match.phase === 'ending' && !match.resultsTimer) {
+      this._scheduleEndMatchRetry(match, 0);
     } else if (match.phase === 'results' && !match.resultsTimer) {
       const remaining = Math.max(0, RESULTS_DURATION * 1000 - elapsed);
       if (remaining <= 0) {
@@ -2579,6 +2663,40 @@ export class GameRoom {
           }, remainingGrace);
         }
       }
+    }
+  }
+
+  async _hasPersistedVoteLogsForCurrentGame(
+    match: WorkerMatchState,
+  ): Promise<boolean> {
+    try {
+      const row = await this.env.DB.prepare(
+        'SELECT 1 AS found FROM vote_logs WHERE match_id = ? AND game_number = ? LIMIT 1',
+      )
+        .bind(match.matchId, match.currentGame)
+        .first<{ found: number }>();
+      return row?.found === 1;
+    } catch (error) {
+      console.error(
+        'D1: failed to check vote log persistence for',
+        match.matchId,
+        error,
+      );
+      return false;
+    }
+  }
+
+  async _isMatchAlreadyCompleted(matchId: string): Promise<boolean> {
+    try {
+      const row = await this.env.DB.prepare(
+        'SELECT status FROM matches WHERE match_id = ?',
+      )
+        .bind(matchId)
+        .first<{ status: string | null }>();
+      return row?.status === 'completed';
+    } catch (error) {
+      console.error('D1: failed to check match completion for', matchId, error);
+      return false;
     }
   }
 

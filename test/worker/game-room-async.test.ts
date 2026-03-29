@@ -1165,6 +1165,298 @@ describe('GameRoom async task tracking', () => {
       committed: [{ displayName: 'Alice', hasCommitted: false }],
     });
   });
+
+  it('keeps a match in settling phase and retries finalize when D1 batch fails', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const voteLogFirst = vi.fn().mockResolvedValue(null);
+      const prepare = vi.fn((sql: string) => ({
+        bind: (...args: unknown[]) => {
+          if (sql.includes('SELECT 1 AS found FROM vote_logs')) {
+            return { first: voteLogFirst };
+          }
+          return { sql, args };
+        },
+      }));
+      const batch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('transient finalize failure'))
+        .mockResolvedValue(undefined);
+      const { room, waitUntil } = createRoom({
+        DB: { prepare, batch } as unknown as D1Database,
+      });
+      vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+      const broadcastToMatch = vi
+        .spyOn(room, '_broadcastToMatch')
+        .mockImplementation(() => {});
+
+      const match = createMatch();
+      match.phase = 'reveal';
+      match.currentGame = 1;
+
+      const saltA = 'a'.repeat(64);
+      const saltB = 'b'.repeat(64);
+      const saltC = 'c'.repeat(64);
+      match.players.set('acct-1', {
+        accountId: 'acct-1',
+        displayName: 'Alice',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 100,
+        committed: true,
+        revealed: true,
+        hash: createCommitHash(0, saltA),
+        optionIndex: 0,
+        answerText: null,
+        normalizedRevealText: null,
+        salt: saltA,
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+      match.players.set('acct-2', {
+        accountId: 'acct-2',
+        displayName: 'Bob',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 100,
+        committed: true,
+        revealed: true,
+        hash: createCommitHash(0, saltB),
+        optionIndex: 0,
+        answerText: null,
+        normalizedRevealText: null,
+        salt: saltB,
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+      match.players.set('acct-3', {
+        accountId: 'acct-3',
+        displayName: 'Carol',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 100,
+        committed: true,
+        revealed: true,
+        hash: createCommitHash(1, saltC),
+        optionIndex: 1,
+        answerText: null,
+        normalizedRevealText: null,
+        salt: saltC,
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+
+      room.activeMatches.set(match.matchId, match);
+
+      await room._finalizeGame(match);
+
+      expect(batch).toHaveBeenCalledTimes(1);
+      expect(match.phase).toBe('settling');
+      expect(match.lastSettledGame).toBe(0);
+      expect(match.lastGameResult).toBeNull();
+      expect(
+        broadcastToMatch.mock.calls.some(
+          ([, payload]) => payload?.type === 'game_result',
+        ),
+      ).toBe(false);
+      expect(match.resultsTimer).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(waitUntil).toHaveBeenCalledTimes(1);
+      await must(waitUntil.mock.calls[0], 'Expected retry waitUntil call')[0];
+
+      expect(batch).toHaveBeenCalledTimes(2);
+      expect(match.phase).toBe('results');
+      expect(match.lastSettledGame).toBe(1);
+      expect(match.lastGameResult?.gameNum).toBe(1);
+      expect(
+        broadcastToMatch.mock.calls.some(
+          ([, payload]) => payload?.type === 'game_result',
+        ),
+      ).toBe(true);
+
+      if (match.resultsTimer) clearTimeout(match.resultsTimer);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps checkpoint state and retries end-match writes when D1 batch fails', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const statusFirst = vi.fn().mockResolvedValue({ status: 'active' });
+      const prepare = vi.fn((sql: string) => ({
+        bind: (...args: unknown[]) => {
+          if (sql.includes('SELECT status FROM matches')) {
+            return { first: statusFirst };
+          }
+          return { sql, args };
+        },
+      }));
+      const batch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('transient end-match failure'))
+        .mockResolvedValue(undefined);
+      const { room, waitUntil } = createRoom({
+        DB: { prepare, batch } as unknown as D1Database,
+      });
+      vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+      const deleteMatchCheckpoint = vi
+        .spyOn(room, '_deleteMatchCheckpoint')
+        .mockImplementation(() => {});
+      vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+      vi.spyOn(room, '_tryFormMatch').mockImplementation(() => {});
+      vi.spyOn(room, '_ensureAiBotBackfill').mockImplementation(() => {});
+      const broadcastToMatch = vi
+        .spyOn(room, '_broadcastToMatch')
+        .mockImplementation(() => {});
+
+      room.connections.set('acct-1', createConnectionState('Alice'));
+      room.connections.set('acct-2', createConnectionState('Bob'));
+      room.connections.set('acct-3', createConnectionState('Carol'));
+
+      const match = createMatch();
+      match.phase = 'results';
+      match.players.set('acct-1', {
+        accountId: 'acct-1',
+        displayName: 'Alice',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 120,
+        committed: true,
+        revealed: true,
+        hash: null,
+        optionIndex: 0,
+        answerText: null,
+        normalizedRevealText: null,
+        salt: 'a'.repeat(64),
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+      match.players.set('acct-2', {
+        accountId: 'acct-2',
+        displayName: 'Bob',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 90,
+        committed: true,
+        revealed: true,
+        hash: null,
+        optionIndex: 1,
+        answerText: null,
+        normalizedRevealText: null,
+        salt: 'b'.repeat(64),
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+      match.players.set('acct-3', {
+        accountId: 'acct-3',
+        displayName: 'Carol',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 90,
+        committed: true,
+        revealed: true,
+        hash: null,
+        optionIndex: 1,
+        answerText: null,
+        normalizedRevealText: null,
+        salt: 'c'.repeat(64),
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+      room.activeMatches.set(match.matchId, match);
+      room.playerMatchIndex.set('acct-1', match.matchId);
+      room.playerMatchIndex.set('acct-2', match.matchId);
+      room.playerMatchIndex.set('acct-3', match.matchId);
+
+      await room._endMatch(match);
+
+      expect(batch).toHaveBeenCalledTimes(1);
+      expect(match.phase).toBe('ending');
+      expect(deleteMatchCheckpoint).not.toHaveBeenCalled();
+      expect(room.activeMatches.has(match.matchId)).toBe(true);
+      expect(
+        broadcastToMatch.mock.calls.some(
+          ([, payload]) => payload?.type === 'match_over',
+        ),
+      ).toBe(false);
+      expect(match.resultsTimer).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(waitUntil).toHaveBeenCalledTimes(1);
+      await must(waitUntil.mock.calls[0], 'Expected retry waitUntil call')[0];
+
+      expect(batch).toHaveBeenCalledTimes(2);
+      expect(match.phase).toBe('ended');
+      expect(deleteMatchCheckpoint).toHaveBeenCalledWith(match.matchId);
+      expect(room.activeMatches.has(match.matchId)).toBe(false);
+      expect(room.playerMatchIndex.has('acct-1')).toBe(false);
+      expect(room.playerMatchIndex.has('acct-2')).toBe(false);
+      expect(room.playerMatchIndex.has('acct-3')).toBe(false);
+      expect(
+        broadcastToMatch.mock.calls.some(
+          ([, payload]) => payload?.type === 'match_over',
+        ),
+      ).toBe(true);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('resumes settling and ending phases after restore by scheduling immediate retries', () => {
+    vi.useFakeTimers();
+
+    try {
+      const { room } = createRoom();
+      const scheduleFinalizeRetry = vi
+        .spyOn(room, '_scheduleFinalizeRetry')
+        .mockImplementation(() => {});
+      const scheduleEndMatchRetry = vi
+        .spyOn(room, '_scheduleEndMatchRetry')
+        .mockImplementation(() => {});
+
+      const settlingMatch = createMatch();
+      settlingMatch.phase = 'settling';
+      settlingMatch.resultsTimer = null;
+
+      const endingMatch = createMatch();
+      endingMatch.phase = 'ending';
+      endingMatch.resultsTimer = null;
+
+      room._ensureMatchTimerRunning(settlingMatch);
+      room._ensureMatchTimerRunning(endingMatch);
+
+      expect(scheduleFinalizeRetry).toHaveBeenCalledWith(settlingMatch, 0);
+      expect(scheduleEndMatchRetry).toHaveBeenCalledWith(endingMatch, 0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it('tracks match end after results with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);
