@@ -13,7 +13,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-  --text:#e8e4de;--muted:#807a6f;--accent:#c9a84c;--accent2:#dfc06a;
+  --text:#e8e4de;--muted:#9a9488;--accent:#c9a84c;--accent2:#dfc06a;
   --green:#4caf50;--red:#e53935;--orange:#ff9800;--yellow:#fdd835;
   --radius:3px;--serif:'Cormorant Garamond',Georgia,serif;--sans:'Outfit',system-ui,sans-serif;
 }
@@ -27,6 +27,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
 .btn-danger{background:var(--red);color:#fff}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);font-size:.84rem;letter-spacing:.08em;font-weight:500}
 .btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--sans);font-size:.95rem;padding:.5rem .75rem;width:100%;outline:none;transition:border-color .15s}
 input:focus{border-color:var(--accent)}
 label{font-size:.92rem;color:var(--muted);display:block;margin-bottom:.3rem}
@@ -149,10 +150,11 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #off-record-banner strong{font-size:.78rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--accent2);white-space:nowrap}
 #question-text{font-family:var(--serif);font-size:1.4rem;font-weight:600;margin-bottom:1rem;line-height:1.3}
 #select-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
-.opt-btn{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:.75rem 1rem;cursor:pointer;text-align:left;font-family:var(--sans);font-size:.96rem;font-weight:400;color:var(--text);transition:border-color .2s,background .2s,color .2s;user-select:none}
+.opt-btn{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:.75rem 1rem;cursor:pointer;text-align:left;font-family:var(--sans);font-size:.96rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);transition:border-color .2s,background .2s,color .2s;user-select:none;appearance:none}
 .opt-btn:hover:not(.disabled){border-color:var(--accent);color:var(--accent)}
 .opt-btn.selected{border-color:var(--accent);background:rgba(201,168,76,.08);color:var(--accent);font-weight:500}
 .opt-btn.disabled{opacity:.4;cursor:default;pointer-events:none}
+.opt-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .text-answer-wrap{display:flex;flex-direction:column;gap:.45rem}
 .text-answer-wrap input{font-size:1rem;padding:.8rem .95rem}
 .text-answer-hint{font-size:.8rem;color:var(--muted);line-height:1.45}
@@ -181,7 +183,8 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #players-panel h3{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.25em;color:var(--accent);margin-bottom:.6rem}
 .player-row{display:flex;align-items:center;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--border);font-size:.92rem}
 .player-row:last-child{border-bottom:none}
-.player-name{display:flex;align-items:center;gap:.4rem}
+.player-name{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.player-status-text{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0}
 .dot.committed{background:var(--orange)}
 .dot.revealed{background:var(--green)}
@@ -463,10 +466,11 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   <!-- ── PLAY ──────────────────────────────────────────────────── -->
   <div id="play-view" class="view">
     <div id="play-main">
+      <div id="phase-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
       <!-- Timer -->
       <div class="timer-wrap">
         <div id="phase-timer-label" style="min-width:3.5rem;font-size:.86rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Commit</div>
-        <div class="timer-bar-outer"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
+        <div class="timer-bar-outer" id="timer-progress" role="progressbar" aria-labelledby="phase-timer-label" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30" aria-valuetext="30 seconds remaining"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
         <div class="timer-num" id="timer-num">30</div>
       </div>
 
@@ -1641,10 +1645,14 @@ function onMatchStarted(msg) {
   renderLiveReadout();
   $('#game-result-banner').classList.add('hidden');
   $('#phase-timer-label').textContent = 'Commit';
+  $('#timer-progress').setAttribute('aria-valuemax', '100');
+  $('#timer-progress').setAttribute('aria-valuenow', '0');
+  $('#timer-progress').setAttribute('aria-valuetext', 'Waiting for first game');
   $('#timer-bar').style.width = '100%';
   $('#timer-bar').style.background = 'var(--accent)';
   $('#timer-num').textContent = '';
   $('#timer-num').classList.remove('urgent');
+  announcePhase('Match started. Waiting for first game.');
   $('#question-text').textContent = 'Match started. Waiting for first game...';
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
@@ -1711,6 +1719,7 @@ function onGameStarted(msg) {
     : msg.phase === 'results' ? 'Settle'
     : msg.phase === 'commit' ? 'Commit' : '';
   $('#phase-timer-label').textContent = phaseTimerLabel;
+  announcePhase(`Game ${msg.game} of ${S.totalGames}. ${phaseLabel} phase.`);
   $('#question-text').textContent = msg.prompt.text;
   $('#game-result-banner').classList.add('hidden');
 
@@ -1772,16 +1781,16 @@ function renderPromptInput(prompt, disabled) {
 
   if (prompt.type === 'select') {
     prompt.options.forEach((opt, idx) => {
-      const btn = document.createElement('div');
+      const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'opt-btn' + (disabled ? ' disabled' : '');
       if (S.selectedOption === idx) {
         btn.classList.add('selected');
       }
       btn.textContent = opt;
       btn.dataset.idx = idx;
-      if (!disabled) {
-        btn.addEventListener('click', () => selectOption(idx));
-      }
+      btn.disabled = disabled;
+      btn.addEventListener('click', () => selectOption(idx));
       grid.appendChild(btn);
     });
     return;
@@ -1867,6 +1876,7 @@ function onPhaseChange(msg) {
     S.phase = 'reveal';
     $('#phase-label').textContent = `Game ${S.game} / ${S.totalGames} : Auto-Reveal`;
     $('#phase-timer-label').textContent = 'Auto-Reveal';
+    announcePhase(`Game ${S.game} of ${S.totalGames}. Auto-reveal phase.`);
     $('#commit-area').classList.add('hidden');
 
     const revealPayload = getCurrentRevealPayload();
@@ -1918,6 +1928,7 @@ function onGameResult(msg) {
 
   $('#phase-label').textContent = `Game ${S.game} / ${S.totalGames} : Settle`;
   $('#phase-timer-label').textContent = 'Settle';
+  announcePhase(`Game ${S.game} settled. Results phase.`);
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
 
@@ -2010,26 +2021,15 @@ function updatePlayerDots() {
   $$('.player-row .dot').forEach(dot => {
     const name = dot.dataset.name;
     if (!name) return;
-
-    // Check forfeited / disconnected first
-    if (S.playerStatuses[name] === 'forfeited') {
-      dot.className = 'dot forfeited';
-      return;
-    }
-    if (S.playerStatuses[name] === 'disconnected') {
-      dot.className = 'dot disconnected';
-      return;
-    }
-
-    // Commit/reveal status
-    const c = S.commitStatuses.find(s => s.displayName === name);
-    const r = S.revealStatuses.find(s => s.displayName === name);
-    if (r && r.hasRevealed) {
-      dot.className = 'dot revealed';
-    } else if (c && c.hasCommitted) {
-      dot.className = 'dot committed';
-    } else {
-      dot.className = 'dot';
+    const row = dot.closest('.player-row');
+    const status = getPlayerStatusInfo(name);
+    dot.className = `dot ${status.className}`.trim();
+    dot.setAttribute('aria-hidden', 'true');
+    if (row) {
+      const statusText = row.querySelector('.player-status-text');
+      const balance = row.querySelector('.balance-badge')?.textContent?.trim() ?? '';
+      if (statusText) statusText.textContent = status.label;
+      row.setAttribute('aria-label', `${name}, ${status.label}${balance ? `, balance ${balance}` : ''}`);
     }
   });
 }
@@ -2041,11 +2041,13 @@ function renderPlayers() {
     const row = document.createElement('div');
     row.className = 'player-row';
     const bal = p.currentBalance !== undefined ? p.currentBalance : p.startingBalance;
-    const statusClass = S.playerStatuses[p.displayName] || '';
+    const status = getPlayerStatusInfo(p.displayName);
+    row.setAttribute('aria-label', `${p.displayName}, ${status.label}, balance ${bal}`);
     row.innerHTML = `
       <div class="player-name">
-        <span class="dot ${statusClass}" data-name="${esc(p.displayName)}"></span>
+        <span class="dot ${status.className}" data-name="${esc(p.displayName)}" aria-hidden="true"></span>
         <span>${esc(p.displayName)}</span>
+        <span class="player-status-text">${esc(status.label)}</span>
       </div>
       <span class="balance-badge">${bal}</span>
     `;
@@ -2297,6 +2299,10 @@ function startTimer(seconds) {
   clearInterval(S.timerInterval);
   S.timerDuration = seconds;
   S.timerEnd = Date.now() + seconds * 1000;
+  const progress = $('#timer-progress');
+  progress.setAttribute('aria-valuemax', String(seconds));
+  progress.setAttribute('aria-valuenow', String(seconds));
+  progress.setAttribute('aria-valuetext', `${seconds} seconds remaining`);
   tickTimer();
   S.timerInterval = setInterval(tickTimer, 250);
 }
@@ -2306,8 +2312,12 @@ function tickTimer() {
   const pct = Math.max(0, remaining / S.timerDuration * 100);
   const bar = $('#timer-bar');
   const num = $('#timer-num');
+  const progress = $('#timer-progress');
+  const remainingSeconds = Math.ceil(remaining);
   bar.style.width = pct + '%';
-  num.textContent = Math.ceil(remaining);
+  num.textContent = remainingSeconds;
+  progress.setAttribute('aria-valuenow', String(remainingSeconds));
+  progress.setAttribute('aria-valuetext', `${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'} remaining`);
   if (remaining <= 5) {
     bar.style.background = 'var(--red)';
     num.classList.add('urgent');
@@ -2316,6 +2326,31 @@ function tickTimer() {
     num.classList.remove('urgent');
   }
   if (remaining <= 0) clearInterval(S.timerInterval);
+}
+
+function getPlayerStatusInfo(name) {
+  if (S.playerStatuses[name] === 'forfeited') {
+    return { className: 'forfeited', label: 'Forfeited' };
+  }
+  if (S.playerStatuses[name] === 'disconnected') {
+    return { className: 'disconnected', label: 'Disconnected' };
+  }
+
+  const revealed = S.revealStatuses.find((s) => s.displayName === name);
+  if (revealed && revealed.hasRevealed) {
+    return { className: 'revealed', label: 'Revealed' };
+  }
+
+  const committed = S.commitStatuses.find((s) => s.displayName === name);
+  if (committed && committed.hasCommitted) {
+    return { className: 'committed', label: 'Committed' };
+  }
+
+  return { className: '', label: 'Connected' };
+}
+
+function announcePhase(message) {
+  $('#phase-announcer').textContent = message;
 }
 
 // ── Prompt rating ───────────────────────────────────────────────
