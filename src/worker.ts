@@ -2741,7 +2741,7 @@ export class GameRoom {
   // -------------------------------------------------------------------------
 
   _checkpointMatch(match: WorkerMatchState): void {
-    checkpointMatch(this.state.storage.sql, match);
+    checkpointMatch(this.state.storage, match);
   }
 
   _checkpointPlayerAction(

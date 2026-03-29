@@ -69,6 +69,314 @@ interface SqlStorage {
   ): { toArray(): unknown[] } & Iterable<Record<string, unknown>>;
 }
 
+interface CheckpointStorage {
+  sql: SqlStorage;
+  transactionSync<T>(fn: () => T): T;
+}
+
+type SqlRow = Record<string, unknown>;
+
+function isRecord(value: unknown): value is SqlRow {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+function readString(row: SqlRow, key: string): string {
+  const value = row[key];
+  if (typeof value !== 'string') {
+    throw new Error(`Invalid checkpoint data: ${key} must be a string`);
+  }
+  return value;
+}
+
+function readNullableString(row: SqlRow, key: string): string | null {
+  const value = row[key];
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') {
+    throw new Error(`Invalid checkpoint data: ${key} must be a string or null`);
+  }
+  return value;
+}
+
+function readNumber(row: SqlRow, key: string): number {
+  const value = row[key];
+  if (!isSafeInteger(value)) {
+    throw new Error(`Invalid checkpoint data: ${key} must be a safe integer`);
+  }
+  return value;
+}
+
+function readNumberField(
+  row: SqlRow,
+  primaryKey: string,
+  fallbackKey?: string,
+): number {
+  const primaryValue = row[primaryKey];
+  if (isSafeInteger(primaryValue)) return primaryValue;
+  if (fallbackKey) {
+    const fallbackValue = row[fallbackKey];
+    if (isSafeInteger(fallbackValue)) return fallbackValue;
+  }
+  throw new Error(
+    `Invalid checkpoint data: expected ${primaryKey}${fallbackKey ? ` or ${fallbackKey}` : ''}`,
+  );
+}
+
+function readNullableNumber(row: SqlRow, key: string): number | null {
+  const value = row[key];
+  if (value === null || value === undefined) return null;
+  if (!isSafeInteger(value)) {
+    throw new Error(
+      `Invalid checkpoint data: ${key} must be a safe integer or null`,
+    );
+  }
+  return value;
+}
+
+function readBooleanLike(row: SqlRow, key: string): boolean {
+  const value = row[key];
+  if (value === 0 || value === 1) return value === 1;
+  if (value === false || value === true) return value;
+  throw new Error(
+    `Invalid checkpoint data: ${key} must be 0, 1, false, or true`,
+  );
+}
+
+function readOptionalBooleanLike(row: SqlRow, key: string): boolean {
+  const value = row[key];
+  if (value === null || value === undefined) return false;
+  return readBooleanLike(row, key);
+}
+
+function readStringField(
+  row: SqlRow,
+  primaryKey: string,
+  fallbackKey?: string,
+): string {
+  const primaryValue = row[primaryKey];
+  if (typeof primaryValue === 'string') return primaryValue;
+  if (fallbackKey) {
+    const fallbackValue = row[fallbackKey];
+    if (typeof fallbackValue === 'string') return fallbackValue;
+  }
+  throw new Error(
+    `Invalid checkpoint data: expected ${primaryKey}${fallbackKey ? ` or ${fallbackKey}` : ''}`,
+  );
+}
+
+function readNullableStringField(
+  row: SqlRow,
+  primaryKey: string,
+  fallbackKey?: string,
+): string | null {
+  const primaryValue = row[primaryKey];
+  if (primaryValue === null || primaryValue === undefined) return null;
+  if (typeof primaryValue === 'string') return primaryValue;
+  if (fallbackKey) {
+    const fallbackValue = row[fallbackKey];
+    if (fallbackValue === null || fallbackValue === undefined) return null;
+    if (typeof fallbackValue === 'string') return fallbackValue;
+  }
+  throw new Error(
+    `Invalid checkpoint data: expected ${primaryKey}${fallbackKey ? ` or ${fallbackKey}` : ''}`,
+  );
+}
+
+function parseJsonField<T>(
+  raw: string,
+  label: string,
+  validate: (value: unknown) => value is T,
+): T {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`Invalid checkpoint data: ${label} is not valid JSON`);
+  }
+  if (!validate(parsed)) {
+    throw new Error(`Invalid checkpoint data: ${label} has unexpected shape`);
+  }
+  return parsed;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === 'string')
+  );
+}
+
+function isSchellingPrompt(value: unknown): value is SchellingPrompt {
+  if (!isRecord(value)) return false;
+  if (!isSafeInteger(value.id) || typeof value.text !== 'string') return false;
+  if (typeof value.category !== 'string' || typeof value.type !== 'string') {
+    return false;
+  }
+  if (value.type === 'select') {
+    return isStringArray(value.options) && value.options.length > 0;
+  }
+  if (value.type === 'open_text') {
+    return (
+      isSafeInteger(value.maxLength) &&
+      value.maxLength > 0 &&
+      typeof value.placeholder === 'string'
+    );
+  }
+  return false;
+}
+
+function isSchellingPromptArray(value: unknown): value is SchellingPrompt[] {
+  return Array.isArray(value) && value.every(isSchellingPrompt);
+}
+
+function isMatchPhase(value: unknown): value is PersistedMatchFields['phase'] {
+  return (
+    value === 'commit' ||
+    value === 'reveal' ||
+    value === 'results' ||
+    value === 'settling' ||
+    value === 'ending'
+  );
+}
+
+function isGameResultPlayer(
+  value: unknown,
+): value is GameResultMessage['result']['players'][number] {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.accountId === 'string' &&
+    typeof value.displayName === 'string' &&
+    (value.revealedOptionIndex === null ||
+      isSafeInteger(value.revealedOptionIndex)) &&
+    (value.revealedOptionLabel === null ||
+      typeof value.revealedOptionLabel === 'string') &&
+    (value.revealedInputText === null ||
+      typeof value.revealedInputText === 'string') &&
+    (value.revealedBucketKey === null ||
+      typeof value.revealedBucketKey === 'string') &&
+    (value.revealedBucketLabel === null ||
+      typeof value.revealedBucketLabel === 'string') &&
+    typeof value.wonGame === 'boolean' &&
+    typeof value.earnsCoordinationCredit === 'boolean' &&
+    isSafeInteger(value.antePaid) &&
+    isSafeInteger(value.gamePayout) &&
+    isSafeInteger(value.netDelta) &&
+    isSafeInteger(value.newBalance)
+  );
+}
+
+function isGameResult(value: unknown): value is GameResultMessage['result'] {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.voided === 'boolean' &&
+    (value.voidReason === null || typeof value.voidReason === 'string') &&
+    isSafeInteger(value.playerCount) &&
+    isSafeInteger(value.pot) &&
+    isSafeInteger(value.dustBurned) &&
+    isSafeInteger(value.validRevealCount) &&
+    isSafeInteger(value.topCount) &&
+    Array.isArray(value.winningOptionIndexes) &&
+    value.winningOptionIndexes.every(isSafeInteger) &&
+    Array.isArray(value.winningBucketKeys) &&
+    value.winningBucketKeys.every((item) => typeof item === 'string') &&
+    isSafeInteger(value.winnerCount) &&
+    isSafeInteger(value.payoutPerWinner) &&
+    (value.normalizationMode === null ||
+      value.normalizationMode === 'llm' ||
+      value.normalizationMode === 'fallback_exact') &&
+    Array.isArray(value.players) &&
+    value.players.every(isGameResultPlayer)
+  );
+}
+
+function readMatchRow(row: SqlRow): {
+  matchId: string;
+  phase: string;
+  currentGame: number;
+  totalGames: number;
+  prompts: SchellingPrompt[];
+  phaseEnteredAt: number;
+  lastSettledGame: number;
+  lastGameResult: GameResultMessage['result'] | null;
+  aiAssisted: boolean;
+} {
+  const matchId = readString(row, 'match_id');
+  const phase = readString(row, 'phase');
+  if (!isMatchPhase(phase)) {
+    throw new Error(
+      `Invalid checkpoint data: phase must be commit, reveal, or results`,
+    );
+  }
+  const currentGame = readNumberField(row, 'current_game', 'current_round');
+  const totalGames = readNumberField(row, 'total_games', 'total_rounds');
+  const phaseEnteredAt = readNumber(row, 'phase_entered_at');
+  const lastSettledGame = readNumberField(
+    row,
+    'last_settled_game',
+    'last_settled_round',
+  );
+  const promptsJson = readStringField(row, 'prompts_json', 'questions_json');
+  const lastGameResultJson = readNullableStringField(
+    row,
+    'last_game_result_json',
+    'last_round_result_json',
+  );
+  const aiAssisted = readOptionalBooleanLike(row, 'ai_assisted');
+
+  return {
+    matchId,
+    phase,
+    currentGame,
+    totalGames,
+    prompts: parseJsonField(
+      promptsJson,
+      'prompts_json',
+      isSchellingPromptArray,
+    ),
+    phaseEnteredAt,
+    lastSettledGame,
+    lastGameResult: lastGameResultJson
+      ? parseJsonField(
+          lastGameResultJson,
+          'last_game_result_json',
+          isGameResult,
+        )
+      : null,
+    aiAssisted,
+  };
+}
+
+function readPlayerRow(
+  row: SqlRow,
+  currentGame: number,
+  now: number,
+): PersistedPlayerState {
+  return {
+    accountId: readString(row, 'account_id'),
+    displayName: readString(row, 'display_name'),
+    startingBalance: readNumber(row, 'starting_balance'),
+    currentBalance: readNumber(row, 'current_balance'),
+    committed: readBooleanLike(row, 'committed'),
+    revealed: readBooleanLike(row, 'revealed'),
+    hash: readNullableString(row, 'hash'),
+    optionIndex: readNullableNumber(row, 'option_index'),
+    answerText: readNullableStringField(row, 'answer_text'),
+    normalizedRevealText: readNullableStringField(
+      row,
+      'normalized_reveal_text',
+    ),
+    salt: readNullableString(row, 'salt'),
+    forfeited: readBooleanLike(row, 'forfeited'),
+    forfeitedAtGame:
+      readNullableNumber(row, 'forfeited_at_game') ??
+      readNullableNumber(row, 'forfeited_at_round') ??
+      (readBooleanLike(row, 'forfeited') ? currentGame - 1 : null),
+    disconnectedAt: readNullableNumber(row, 'disconnected_at') ?? now,
+  };
+}
+
 function getColumnNames(sql: SqlStorage, tableName: string): Set<string> {
   return new Set(
     [...sql.exec(`PRAGMA table_info(${tableName})`)].map(
@@ -167,12 +475,6 @@ export function initCheckpointTables(sql: SqlStorage): void {
     'forfeited_at_game',
   );
 
-  if (!getColumnNames(sql, 'match_checkpoints').has('ai_assisted')) {
-    sql.exec(
-      'ALTER TABLE match_checkpoints ADD COLUMN ai_assisted INTEGER NOT NULL DEFAULT 0',
-    );
-  }
-
   if (!getColumnNames(sql, 'player_checkpoints').has('forfeited_at_game')) {
     sql.exec(
       'ALTER TABLE player_checkpoints ADD COLUMN forfeited_at_game INTEGER',
@@ -191,13 +493,11 @@ export function initCheckpointTables(sql: SqlStorage): void {
 }
 
 export function checkpointMatch(
-  sql: SqlStorage,
+  storage: CheckpointStorage,
   match: CheckpointableMatch,
 ): void {
-  // DO storage auto-coalesces writes within a single JS turn, so explicit
-  // transactions are unnecessary. Durable Objects forbid raw BEGIN/COMMIT
-  // statements; use the JS transactionSync() API if atomicity is needed.
-  try {
+  storage.transactionSync(() => {
+    const { sql } = storage;
     sql.exec(
       `DELETE FROM player_checkpoints WHERE match_id = ?`,
       match.matchId,
@@ -240,9 +540,7 @@ export function checkpointMatch(
         p.disconnectedAt,
       );
     }
-  } catch (err) {
-    console.error('DO storage: checkpoint failed for', match.matchId, err);
-  }
+  });
 }
 
 export function checkpointPlayerAction(
@@ -322,78 +620,42 @@ export function restoreMatchesFromStorage(
   const restored: RestoredMatch[] = [];
 
   for (const row of rows) {
-    const phaseEnteredAt = row.phase_entered_at as number;
-
-    if (now - phaseEnteredAt > staleThresholdMs) {
-      deleteMatchCheckpoint(sql, row.match_id as string);
-      continue;
-    }
-
     try {
+      const matchRow = readMatchRow(row);
+
+      if (now - matchRow.phaseEnteredAt > staleThresholdMs) {
+        deleteMatchCheckpoint(sql, matchRow.matchId);
+        continue;
+      }
+
       const playerRows = [
         ...sql.exec(
           `SELECT * FROM player_checkpoints WHERE match_id = ?`,
-          row.match_id as string,
+          matchRow.matchId,
         ),
       ];
 
       const players = new Map<string, PersistedPlayerState>();
-      const currentGame =
-        (row.current_game as number | undefined) ??
-        (row.current_round as number);
-      const totalGames =
-        (row.total_games as number | undefined) ?? (row.total_rounds as number);
-      const lastSettledGame =
-        (row.last_settled_game as number | undefined) ??
-        (row.last_settled_round as number);
-
       for (const pr of playerRows) {
-        const accountId = pr.account_id as string;
-        players.set(accountId, {
-          accountId,
-          displayName: pr.display_name as string,
-          startingBalance: pr.starting_balance as number,
-          currentBalance: pr.current_balance as number,
-          committed: !!(pr.committed as number),
-          revealed: !!(pr.revealed as number),
-          hash: pr.hash as string | null,
-          optionIndex: pr.option_index as number | null,
-          answerText: pr.answer_text as string | null,
-          normalizedRevealText: pr.normalized_reveal_text as string | null,
-          salt: pr.salt as string | null,
-          forfeited: !!(pr.forfeited as number),
-          forfeitedAtGame:
-            (pr.forfeited_at_game as number | null) ??
-            (pr.forfeited_at_round as number | null) ??
-            ((pr.forfeited as number) ? currentGame - 1 : null),
-          disconnectedAt: (pr.disconnected_at as number | null) ?? now,
-        });
+        const player = readPlayerRow(pr, matchRow.currentGame, now);
+        players.set(player.accountId, player);
       }
 
-      const lastGameResultRaw =
-        (row.last_game_result_json as string | null) ??
-        (row.last_round_result_json as string | null);
-
       restored.push({
-        matchId: row.match_id as string,
+        matchId: matchRow.matchId,
         players,
-        prompts: JSON.parse(
-          ((row.prompts_json as string | null) ??
-            (row.questions_json as string | null)) as string,
-        ),
-        currentGame,
-        totalGames,
-        phase: row.phase as string,
-        phaseEnteredAt,
-        lastSettledGame,
-        lastGameResult: lastGameResultRaw
-          ? JSON.parse(lastGameResultRaw)
-          : null,
-        aiAssisted: !!(row.ai_assisted as number),
+        prompts: matchRow.prompts,
+        currentGame: matchRow.currentGame,
+        totalGames: matchRow.totalGames,
+        phase: matchRow.phase,
+        phaseEnteredAt: matchRow.phaseEnteredAt,
+        lastSettledGame: matchRow.lastSettledGame,
+        lastGameResult: matchRow.lastGameResult,
+        aiAssisted: matchRow.aiAssisted,
       });
     } catch (err) {
       console.error('DO storage: failed to restore match', row.match_id, err);
-      deleteMatchCheckpoint(sql, row.match_id as string);
+      deleteMatchCheckpoint(sql, String(row.match_id));
     }
   }
 
