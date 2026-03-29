@@ -12,6 +12,13 @@ import {
 const BASE = 'https://test.local';
 const MATCH_START_TIMEOUT_MS = 40_000;
 const GAME_START_TIMEOUT_MS = 45_000;
+const MATCH_OVER_TIMEOUT_MS = 20_000;
+
+function makeSalt(gameNum: number, playerIdx: number): string {
+  const nibbleA = (gameNum % 16).toString(16);
+  const nibbleB = (playerIdx % 16).toString(16);
+  return `${nibbleA}${nibbleB}`.repeat(32);
+}
 
 /** Helper: collect WebSocket messages into an array for a short window. */
 function collectMessages(
@@ -819,5 +826,80 @@ describe('GameRoom Durable Object', () => {
     p1r.ws.close();
     p2.ws.close();
     p3.ws.close();
+  });
+
+  it('runs a full 10-game lifecycle and emits match_over', {
+    timeout: 180_000,
+  }, async () => {
+    const p1 = await connectPlayer(25, 'FullP1', 100_000);
+    const p2 = await connectPlayer(26, 'FullP2', 100_000);
+    const p3 = await connectPlayer(27, 'FullP3', 100_000);
+    const players = [p1, p2, p3];
+
+    const matchStartedPromises = players.map((p) =>
+      waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
+    );
+    let gameStartedPromises = players.map((p) =>
+      waitForMessage(p.ws, 'game_started', GAME_START_TIMEOUT_MS),
+    );
+
+    for (const player of players) {
+      player.ws.send(JSON.stringify({ type: 'join_queue' }));
+    }
+
+    const started = await Promise.all(matchStartedPromises);
+    for (const message of started) {
+      expect(message.gameCount).toBe(10);
+      expect(message.matchId).toBe(started[0].matchId);
+    }
+
+    for (let gameNum = 1; gameNum <= 10; gameNum++) {
+      const gameStarted = await Promise.all(gameStartedPromises);
+      for (const message of gameStarted) {
+        expect(message.game).toBe(gameNum);
+        expect(message.phase).toBe('commit');
+      }
+
+      const phaseChange = waitForMessage(players[0].ws, 'phase_change', 5_000);
+      for (let i = 0; i < players.length; i++) {
+        const salt = makeSalt(gameNum, i + 1);
+        players[i].ws.send(
+          JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt) }),
+        );
+      }
+      const phase = await phaseChange;
+      expect(phase.phase).toBe('reveal');
+
+      const gameResult = waitForMessage(players[0].ws, 'game_result', 8_000);
+      for (let i = 0; i < players.length; i++) {
+        const salt = makeSalt(gameNum, i + 1);
+        players[i].ws.send(
+          JSON.stringify({ type: 'reveal', optionIndex: 0, salt }),
+        );
+      }
+
+      const result = await gameResult;
+      expect(result.type).toBe('game_result');
+      expect(result.result.gameNum).toBe(gameNum);
+
+      if (gameNum < 10) {
+        gameStartedPromises = players.map((p) =>
+          waitForMessage(p.ws, 'game_started', 15_000),
+        );
+      }
+    }
+
+    const matchOver = await waitForMessage(
+      players[0].ws,
+      'match_over',
+      MATCH_OVER_TIMEOUT_MS,
+    );
+    expect(matchOver.type).toBe('match_over');
+    expect(Array.isArray(matchOver.summary.players)).toBe(true);
+    expect(matchOver.summary.players).toHaveLength(3);
+
+    for (const player of players) {
+      player.ws.close();
+    }
   });
 });
