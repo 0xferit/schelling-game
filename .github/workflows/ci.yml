@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -13,20 +13,74 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
 
       - name: Lint
         run: npm run lint
 
+  typecheck-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
       - name: Type check (Node)
         run: npm run typecheck
+
+  typecheck-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
 
       - name: Type check (Worker)
         run: npm run typecheck:worker
 
+  domain-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
       - name: Tests
         run: npm test -- --coverage
+
+  worker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
 
       - name: Worker tests
         run: npm run test:worker
@@ -34,7 +88,12 @@ jobs:
   staging-smoke:
     name: Staging deploy + smoke
     if: github.event.pull_request.head.repo.full_name == github.repository
-    needs: check
+    needs:
+      - lint
+      - typecheck-node
+      - typecheck-worker
+      - domain-tests
+      - worker-tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -46,6 +105,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
 
