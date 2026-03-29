@@ -131,11 +131,41 @@ nav{display:flex;gap:.5rem}
 .dot.disconnected{background:var(--red);animation:pulse 1s infinite alternate}
 .balance-badge{font-family:var(--serif);font-size:.8rem;color:var(--muted)}
 /* Summary */
-#summary-view .card{max-width:620px;margin:0 auto}
+#summary-view .card{max-width:760px;margin:0 auto}
+#summary-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+#summary-headline{font-size:.92rem;color:var(--muted);margin-top:.35rem}
+#summary-placement{display:inline-flex;align-items:center;justify-content:center;padding:.35rem .75rem;border:1px solid rgba(201,168,76,.4);border-radius:999px;background:rgba(201,168,76,.08);color:var(--accent);font-size:.75rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+#summary-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin-top:1rem}
+.summary-stat{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.9rem}
+.summary-stat-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.summary-stat-value{font-family:var(--serif);font-size:1.45rem;line-height:1.1;margin-top:.35rem}
+.summary-section{margin-top:1rem}
+.summary-section-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.65rem}
+.summary-section-header h3,.summary-section h3{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:var(--accent)}
+.summary-section-note{font-size:.78rem;color:var(--muted)}
+#summary-highlights-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+.summary-highlight{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.9rem}
+.summary-highlight-title{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.summary-highlight-value{font-size:1rem;font-weight:500;line-height:1.35;margin-top:.35rem}
+.summary-highlight-copy{font-size:.82rem;color:var(--muted);line-height:1.5;margin-top:.35rem}
+#summary-timeline{display:flex;flex-direction:column;gap:.75rem}
+.summary-game{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.95rem}
+.summary-game-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+.summary-game-kicker{font-size:.7rem;color:var(--accent);text-transform:uppercase;letter-spacing:.12em}
+.summary-game-question{font-family:var(--serif);font-size:1.05rem;line-height:1.25;margin-top:.15rem}
+.summary-game-status{display:inline-flex;align-items:center;justify-content:center;padding:.28rem .65rem;border-radius:999px;border:1px solid var(--border);font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.summary-game-status.won{border-color:rgba(76,175,80,.45);color:var(--green);background:rgba(76,175,80,.08)}
+.summary-game-status.lost{border-color:rgba(229,57,53,.35);color:var(--red);background:rgba(229,57,53,.08)}
+.summary-game-status.void{border-color:rgba(255,152,0,.35);color:var(--orange);background:rgba(255,152,0,.08)}
+.summary-game-status.forfeited{border-color:rgba(229,57,53,.35);color:var(--red);background:rgba(229,57,53,.08)}
+.summary-game-delta{font-size:1rem;font-weight:700}
+.summary-game-meta{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.75rem}
+.summary-chip{display:inline-flex;align-items:center;padding:.25rem .55rem;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--border);font-size:.78rem;color:var(--muted);line-height:1.25}
 #summary-table{width:100%;border-collapse:collapse;font-size:.9rem}
 #summary-table th,#summary-table td{padding:.5rem .75rem;text-align:left;border-bottom:1px solid var(--border)}
 #summary-table th{color:var(--muted);font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}
 #summary-table tr:last-child td{border-bottom:none}
+#summary-table tr.me td{background:rgba(201,168,76,.08)}
 /* Leaderboard */
 #leaderboard-view .card{overflow-x:auto}
 #lb-table{width:100%;border-collapse:collapse;font-size:.9rem}
@@ -168,6 +198,9 @@ nav{display:flex;gap:.5rem}
   .action-row{flex-direction:column}
   .action-row button{width:100%}
   .action-row .toggle-row{margin-left:0;justify-content:center}
+}
+@media(max-width:560px){
+  #summary-stats,#summary-highlights-grid{grid-template-columns:1fr}
 }
 .mt1{margin-top:.5rem}.mt2{margin-top:1rem}
 #build-info{text-align:center;padding:2rem 1rem 1rem;font-size:.7rem;color:#444;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;display:flex;justify-content:center;align-items:center;gap:1rem}
@@ -307,13 +340,37 @@ nav{display:flex;gap:.5rem}
   <!-- ── SUMMARY ───────────────────────────────────────────────── -->
   <div id="summary-view" class="view">
     <div class="card">
-      <h2>Match Over</h2>
+      <div id="summary-header">
+        <div>
+          <h2>Match Over</h2>
+          <p id="summary-headline"></p>
+        </div>
+        <div id="summary-placement">Final</div>
+      </div>
+      <div id="summary-stats"></div>
+      <div id="summary-highlights-section" class="summary-section hidden">
+        <h3>Highlights</h3>
+        <div id="summary-highlights-grid"></div>
+      </div>
+      <div id="summary-timeline-section" class="summary-section hidden">
+        <div class="summary-section-header">
+          <h3>Game by Game</h3>
+          <span id="summary-timeline-note" class="summary-section-note"></span>
+        </div>
+        <div id="summary-timeline"></div>
+      </div>
+      <div class="summary-section">
+        <div class="summary-section-header">
+          <h3>Final Standings</h3>
+          <span class="summary-section-note">Sorted by ending balance.</span>
+        </div>
       <table id="summary-table">
         <thead><tr>
           <th>Player</th><th>Start</th><th>End</th><th>Net</th><th>Status</th>
         </tr></thead>
         <tbody id="summary-tbody"></tbody>
       </table>
+      </div>
       <div class="action-row" style="align-items:center">
         <button class="btn-primary" id="requeue-btn">Back to Queue</button>
         <button class="btn-ghost" id="summary-lb-btn">Leaderboard</button>
@@ -463,6 +520,7 @@ const S = {
   timerInterval: null,
   // summary
   summary: null,
+  gameHistory: [],
   // leaderboard
   previousView: 'queue',
   // ws
@@ -970,7 +1028,7 @@ function onQueueState(msg) {
   updateNavigation();
 
   // ensure we are on queue view if we aren't playing
-  if (S.view === 'auth' || S.view === 'summary') {
+  if (S.view === 'auth') {
     showView('queue');
   }
 
@@ -1029,6 +1087,8 @@ function onMatchStarted(msg) {
   S.players = msg.players;
   S.game = 0;
   S.phase = null;
+  S.summary = null;
+  S.gameHistory = [];
   S.playerStatuses = {};
   S.players.forEach(p => { S.playerStatuses[p.displayName] = 'connected'; });
 
@@ -1270,6 +1330,7 @@ function onGameResult(msg) {
     if (sp) sp.currentBalance = rp.newBalance;
   });
 
+  storeGameHistoryEntry(r);
   renderGameResult(r);
   renderPlayers();
 }
@@ -1477,12 +1538,54 @@ function onMatchOver(msg) {
 }
 
 function renderSummary(summary) {
+  const standings = [...summary.players].sort((a, b) =>
+    b.endingBalance - a.endingBalance
+    || b.netDelta - a.netDelta
+    || a.displayName.localeCompare(b.displayName)
+  );
+  const capturedRounds = S.gameHistory.filter(Boolean).length;
+  const me = standings.find(p => p.displayName === S.displayName) || null;
+  const placement = me ? getPlacement(standings, me) : null;
+  const wins = countMyGameResults((p) => p.wonGame);
+  const coordinationHits = countMyGameResults((p) => p.earnsCoordinationCredit);
+  const rawBestRound = getMyExtremeRound((a, b) => b.netDelta - a.netDelta);
+  const rawRoughestRound = getMyExtremeRound((a, b) => a.netDelta - b.netDelta);
+  const bestRound = rawBestRound && rawBestRound.netDelta > 0 ? rawBestRound : null;
+  const roughestRound = rawRoughestRound && rawRoughestRound.netDelta < 0 ? rawRoughestRound : null;
+
+  $('#summary-placement').textContent = placement
+    ? `${placement.tied ? 'T-' : ''}${ordinal(placement.rank)}`
+    : 'Final';
+  $('#summary-headline').textContent = me
+    ? `You finished ${placement && placement.tied ? 'tied ' : ''}${placement ? ordinal(placement.rank) : 'in the match'} with ${me.endingBalance} tokens (${formatDelta(me.netDelta)} net).`
+    : 'Final balances settled. Queue again when you want another ten-game run.';
+
+  const statCards = [
+    { label: 'Final Balance', value: me ? `${me.endingBalance}` : '—', className: '' },
+    { label: 'Match Net', value: me ? formatDelta(me.netDelta) : '—', className: me ? deltaClassName(me.netDelta) : '' },
+    { label: 'Games Won', value: capturedRounds ? `${wins} / ${capturedRounds}` : '—', className: '' },
+    { label: 'Coordination Hits', value: capturedRounds ? `${coordinationHits}` : '—', className: '' },
+  ];
+  $('#summary-stats').innerHTML = statCards.map((card) => `
+    <div class="summary-stat">
+      <div class="summary-stat-label">${esc(card.label)}</div>
+      <div class="summary-stat-value ${card.className}">${esc(card.value)}</div>
+    </div>
+  `).join('');
+
+  renderSummaryHighlights(standings, {
+    bestRound,
+    roughestRound,
+  });
+  renderSummaryTimeline();
+
   const tbody = $('#summary-tbody');
   tbody.innerHTML = '';
-  summary.players.forEach(p => {
+  standings.forEach(p => {
     const tr = document.createElement('tr');
+    if (p.displayName === S.displayName) tr.classList.add('me');
     const deltaClass = p.netDelta > 0 ? 'delta-pos' : (p.netDelta < 0 ? 'delta-neg' : 'delta-zero');
-    const deltaStr = p.netDelta > 0 ? '+' + p.netDelta : String(p.netDelta);
+    const deltaStr = formatDelta(p.netDelta);
     tr.innerHTML = `
       <td>${esc(p.displayName)}</td>
       <td>${p.startingBalance}</td>
@@ -1492,6 +1595,221 @@ function renderSummary(summary) {
     `;
     tbody.appendChild(tr);
   });
+}
+
+function renderSummaryHighlights(standings, rounds) {
+  const section = $('#summary-highlights-section');
+  if (!S.gameHistory.length) {
+    section.classList.add('hidden');
+    $('#summary-highlights-grid').innerHTML = '';
+    return;
+  }
+
+  const leaders = getLeaders(standings);
+  const tightestConvergence = getTightestConvergence();
+
+  const highlights = [
+    {
+      title: 'Top Stack',
+      value: leaders.names,
+      copy: `${leaders.balance} tokens at the buzzer.`,
+    },
+    {
+      title: 'Best Round',
+      value: rounds.bestRound ? `Game ${rounds.bestRound.gameNum} ${formatDelta(rounds.bestRound.netDelta)}` : 'No breakout round',
+      copy: rounds.bestRound
+        ? `You picked ${quoteLabel(rounds.bestRound.revealedOptionLabel || 'no valid reveal')} and ${rounds.bestRound.wonGame ? 'won' : 'missed'} that pot.`
+        : 'No completed round data was available on this client.',
+    },
+    {
+      title: 'Roughest Miss',
+      value: rounds.roughestRound ? `Game ${rounds.roughestRound.gameNum} ${formatDelta(rounds.roughestRound.netDelta)}` : 'No losing round',
+      copy: rounds.roughestRound
+        ? `You picked ${quoteLabel(rounds.roughestRound.revealedOptionLabel || 'no valid reveal')} there.`
+        : 'No negative round delta was recorded on this client.',
+    },
+    {
+      title: 'Sharpest Convergence',
+      value: tightestConvergence
+        ? `Game ${tightestConvergence.gameNum}`
+        : 'No valid reveals',
+      copy: tightestConvergence
+        ? `${tightestConvergence.topCount} players landed on ${quoteLabel(tightestConvergence.winningOptions.join(', '))}.`
+        : 'Every visible round on this client was voided.',
+    },
+  ];
+
+  $('#summary-highlights-grid').innerHTML = highlights.map((item) => `
+    <div class="summary-highlight">
+      <div class="summary-highlight-title">${esc(item.title)}</div>
+      <div class="summary-highlight-value">${esc(item.value)}</div>
+      <div class="summary-highlight-copy">${esc(item.copy)}</div>
+    </div>
+  `).join('');
+  section.classList.remove('hidden');
+}
+
+function renderSummaryTimeline() {
+  const section = $('#summary-timeline-section');
+  const timeline = $('#summary-timeline');
+  const note = $('#summary-timeline-note');
+
+  if (!S.gameHistory.length) {
+    section.classList.add('hidden');
+    timeline.innerHTML = '';
+    note.textContent = '';
+    return;
+  }
+
+  const visibleRounds = S.gameHistory.filter(Boolean);
+  note.textContent = visibleRounds.length === 10
+    ? 'All ten rounds captured.'
+    : `${visibleRounds.length} round${visibleRounds.length === 1 ? '' : 's'} captured in this tab.`;
+
+  timeline.innerHTML = visibleRounds.map((game) => {
+    const me = getMyRound(game);
+    const status = game.voided
+      ? 'void'
+      : me?.wonGame
+        ? 'won'
+        : me?.result === 'forfeited'
+          ? 'forfeited'
+          : 'lost';
+    const statusLabel = status === 'won'
+      ? 'Won'
+      : status === 'void'
+        ? 'Void'
+        : status === 'forfeited'
+          ? 'Forfeited'
+          : 'Missed';
+    const winningOptions = game.voided
+      ? (game.voidReason || 'all antes refunded')
+      : quoteLabel(game.winningOptions.length ? game.winningOptions.join(', ') : 'none');
+    const chips = [
+      me ? `You picked ${quoteLabel(me.revealedOptionLabel || 'no valid reveal')}` : null,
+      game.voided ? `Reason: ${game.voidReason || 'voided'}` : `Winning answer ${winningOptions}`,
+      `Valid reveals ${game.validRevealCount}`,
+      game.voided ? null : `Top count ${game.topCount}`,
+      me ? `Net ${formatDelta(me.netDelta)}` : null,
+    ].filter(Boolean);
+
+    return `
+      <div class="summary-game">
+        <div class="summary-game-top">
+          <div>
+            <div class="summary-game-kicker">Game ${game.gameNum}</div>
+            <div class="summary-game-question">${esc(game.questionText)}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end">
+            ${me ? `<div class="summary-game-delta ${deltaClassName(me.netDelta)}">${esc(formatDelta(me.netDelta))}</div>` : ''}
+            <div class="summary-game-status ${status}">${statusLabel}</div>
+          </div>
+        </div>
+        <div class="summary-game-meta">
+          ${chips.map((chip) => `<span class="summary-chip">${esc(chip)}</span>`).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+  section.classList.remove('hidden');
+}
+
+function storeGameHistoryEntry(result) {
+  const winningOptions = (result.winningOptionIndexes || []).map((idx) =>
+    result.players.find((player) => player.revealedOptionIndex === idx)?.revealedOptionLabel
+    || S.question?.options?.[idx]
+    || `Option ${idx + 1}`
+  );
+
+  S.gameHistory[result.gameNum - 1] = {
+    gameNum: result.gameNum,
+    questionText: S.question?.text || `Game ${result.gameNum}`,
+    validRevealCount: result.validRevealCount,
+    topCount: result.topCount,
+    dustBurned: result.dustBurned,
+    voided: result.voided,
+    voidReason: result.voidReason,
+    winningOptions,
+    players: result.players.map((player) => ({
+      displayName: player.displayName,
+      revealedOptionLabel: player.revealedOptionLabel,
+      wonGame: player.wonGame,
+      earnsCoordinationCredit: player.earnsCoordinationCredit,
+      netDelta: player.netDelta,
+      result: S.playerStatuses[player.displayName] === 'forfeited' ? 'forfeited' : 'completed',
+    })),
+  };
+}
+
+function getPlacement(standings, player) {
+  const higherStacks = standings.filter((entry) => entry.endingBalance > player.endingBalance).length;
+  const tiedStacks = standings.filter((entry) => entry.endingBalance === player.endingBalance).length;
+  return {
+    rank: higherStacks + 1,
+    tied: tiedStacks > 1,
+  };
+}
+
+function getLeaders(standings) {
+  if (!standings.length) {
+    return { names: 'No players', balance: 0 };
+  }
+  const topBalance = standings[0].endingBalance;
+  const leaders = standings.filter((player) => player.endingBalance === topBalance);
+  return {
+    names: leaders.map((player) => player.displayName).join(', '),
+    balance: topBalance,
+  };
+}
+
+function getTightestConvergence() {
+  return S.gameHistory
+    .filter((game) => game && !game.voided && game.validRevealCount > 0)
+    .sort((a, b) => b.topCount - a.topCount || b.validRevealCount - a.validRevealCount || a.gameNum - b.gameNum)[0] || null;
+}
+
+function countMyGameResults(predicate) {
+  return S.gameHistory.reduce((count, game) => {
+    const mine = getMyRound(game);
+    return mine && predicate(mine) ? count + 1 : count;
+  }, 0);
+}
+
+function getMyExtremeRound(sorter) {
+  return S.gameHistory
+    .map((game) => {
+      const mine = getMyRound(game);
+      return game && mine ? { gameNum: game.gameNum, ...mine } : null;
+    })
+    .filter(Boolean)
+    .sort(sorter)[0] || null;
+}
+
+function getMyRound(game) {
+  if (!game) return null;
+  return game.players.find((player) => player.displayName === S.displayName) || null;
+}
+
+function deltaClassName(delta) {
+  return delta > 0 ? 'delta-pos' : (delta < 0 ? 'delta-neg' : 'delta-zero');
+}
+
+function formatDelta(delta) {
+  return delta > 0 ? `+${delta}` : String(delta);
+}
+
+function ordinal(value) {
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+  const mod10 = value % 10;
+  if (mod10 === 1) return `${value}st`;
+  if (mod10 === 2) return `${value}nd`;
+  if (mod10 === 3) return `${value}rd`;
+  return `${value}th`;
+}
+
+function quoteLabel(label) {
+  return `"${label}"`;
 }
 
 $('#requeue-btn').addEventListener('click', () => {
