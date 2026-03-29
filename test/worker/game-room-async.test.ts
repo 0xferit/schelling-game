@@ -457,7 +457,7 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('injects a synthetic AI bot for a two-human queue and removes it when a third human arrives', () => {
+  it('injects one bot for two humans and removes it when a third human arrives', () => {
     const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -470,21 +470,36 @@ describe('GameRoom async task tracking', () => {
 
     expect(room.waitingQueue).toHaveLength(0);
     expect(room.formingMatch).not.toBeNull();
+    const bots =
+      room.formingMatch?.players.filter((id) => room._isAiBot(id)) ?? [];
+    expect(bots).toHaveLength(1);
     expect(
-      room.formingMatch?.players.filter((accountId) =>
-        room._isAiBot(accountId),
-      ),
-    ).toHaveLength(1);
-    expect(
-      room.formingMatch?.players.filter(
-        (accountId) => !room._isAiBot(accountId),
-      ),
+      room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
     ).toEqual(['acct-1', 'acct-2']);
 
     room._handleJoinQueue('acct-3');
 
     expect(room.waitingQueue).toHaveLength(0);
     expect(room.formingMatch?.players).toEqual(['acct-1', 'acct-2', 'acct-3']);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('injects two bots with distinct model indices for a solo human', () => {
+    const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+
+    room._handleJoinQueue('acct-1');
+
+    expect(room.formingMatch).not.toBeNull();
+    const bots =
+      room.formingMatch?.players.filter((id) => room._isAiBot(id)) ?? [];
+    expect(bots).toHaveLength(2);
+
+    const indices = bots.map((id) => room._getBotModelIndex(id));
+    expect(new Set(indices).size).toBe(2);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
@@ -527,7 +542,7 @@ describe('GameRoom async task tracking', () => {
       pendingAiCommit: false,
     };
     const bot = {
-      accountId: 'ai-bot:test',
+      accountId: 'ai-bot:0:test',
       displayName: 'AI Backfill',
       ws: null,
       startingBalance: 0,
@@ -607,7 +622,7 @@ describe('GameRoom async task tracking', () => {
       };
       const botSalt = 'b'.repeat(64);
       const bot = {
-        accountId: 'ai-bot:test',
+        accountId: 'ai-bot:0:test',
         displayName: 'AI Backfill',
         ws: null,
         startingBalance: 0,

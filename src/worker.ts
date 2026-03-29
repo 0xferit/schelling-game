@@ -75,7 +75,10 @@ const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
-const DEFAULT_AI_BOT_MODEL = '@cf/nvidia/nemotron-3-120b-a12b';
+const DEFAULT_AI_BOT_MODELS = [
+  '@cf/nvidia/nemotron-3-120b-a12b',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+];
 const DEFAULT_AI_BOT_TIMEOUT_MS = 5_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 
@@ -354,19 +357,40 @@ export class GameRoom {
     return accountId.startsWith(AI_BOT_ACCOUNT_PREFIX);
   }
 
-  _createAiBotId(): string {
-    return `${AI_BOT_ACCOUNT_PREFIX}${crypto.randomUUID()}`;
+  _createAiBotId(modelIndex: number): string {
+    return `${AI_BOT_ACCOUNT_PREFIX}${modelIndex}:${crypto.randomUUID()}`;
   }
 
-  _getAiBotDisplayName(): string {
-    const model = this._getAiBotModel();
-    const lastSegment = model.split('/').pop() || model;
-    return lastSegment;
+  _getBotModelIndex(accountId: string): number {
+    const afterPrefix = accountId.slice(AI_BOT_ACCOUNT_PREFIX.length);
+    const colonPos = afterPrefix.indexOf(':');
+    if (colonPos === -1) return 0;
+    return Number.parseInt(afterPrefix.slice(0, colonPos), 10) || 0;
+  }
+
+  _getAiBotModels(): string[] {
+    const raw = this.env.AI_BOT_MODELS?.trim();
+    if (raw) {
+      const models = raw
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean);
+      if (models.length > 0) return models;
+    }
+    return DEFAULT_AI_BOT_MODELS;
+  }
+
+  _getAiBotModel(accountId: string): string {
+    const models = this._getAiBotModels();
+    const index = this._getBotModelIndex(accountId);
+    // models is guaranteed non-empty by _getAiBotModels
+    return models[index % models.length] as string;
   }
 
   _getDisplayName(accountId: string): string {
     if (this._isAiBot(accountId)) {
-      return this._getAiBotDisplayName();
+      const model = this._getAiBotModel(accountId);
+      return model.split('/').pop() || model;
     }
     return this.connections.get(accountId)?.displayName || 'unknown';
   }
@@ -377,11 +401,6 @@ export class GameRoom {
       return DEFAULT_AI_BOT_TIMEOUT_MS;
     }
     return parsed;
-  }
-
-  _getAiBotModel(): string {
-    const model = this.env.AI_BOT_MODEL?.trim();
-    return model || DEFAULT_AI_BOT_MODEL;
   }
 
   _countQueuedHumans(): number {
@@ -428,14 +447,29 @@ export class GameRoom {
       return;
     }
 
-    const needBot = this._countQueuedHumans() === 2;
-    if (needBot) {
-      if (queuedBotIds.length === 0) {
-        this.waitingQueue.push(this._createAiBotId());
-      } else {
-        for (const botId of queuedBotIds.slice(1)) {
-          this._removeFromQueue(botId);
-        }
+    const humanCount = this._countQueuedHumans();
+    const botsNeeded =
+      humanCount >= 1 && humanCount < MIN_MATCH_SIZE
+        ? MIN_MATCH_SIZE - humanCount
+        : 0;
+
+    if (botsNeeded > 0) {
+      // Remove excess bots
+      while (queuedBotIds.length > botsNeeded) {
+        const excess = queuedBotIds.pop();
+        if (excess) this._removeFromQueue(excess);
+      }
+      // Add missing bots, each with a distinct model index
+      const usedIndices = new Set(
+        queuedBotIds.map((id) => this._getBotModelIndex(id)),
+      );
+      let nextIndex = 0;
+      while (queuedBotIds.length < botsNeeded) {
+        while (usedIndices.has(nextIndex)) nextIndex++;
+        this.waitingQueue.push(this._createAiBotId(nextIndex));
+        usedIndices.add(nextIndex);
+        queuedBotIds.push(''); // track count
+        nextIndex++;
       }
       return;
     }
@@ -1132,7 +1166,11 @@ export class GameRoom {
 
     player.pendingAiCommit = true;
     try {
-      const optionIndex = await this._selectAiBotOption(match, question);
+      const optionIndex = await this._selectAiBotOption(
+        match,
+        question,
+        accountId,
+      );
       if (
         match.phase !== 'commit' ||
         match.currentGame !== gameAtDispatch ||
@@ -1180,6 +1218,7 @@ export class GameRoom {
   async _selectAiBotOption(
     match: WorkerMatchState,
     question: Question,
+    accountId: string,
   ): Promise<number> {
     if (!this.env.AI) {
       return this._pickAiBotFallbackOption(question);
@@ -1196,7 +1235,7 @@ export class GameRoom {
 
     try {
       const output = await Promise.race([
-        this.env.AI.run(this._getAiBotModel(), {
+        this.env.AI.run(this._getAiBotModel(accountId), {
           prompt: this._buildAiBotPrompt(question),
           guided_json: {
             type: 'object',
