@@ -672,7 +672,7 @@ export class GameRoom {
     try {
       const createStmts: D1PreparedStatement[] = [
         this.env.DB.prepare(
-          'INSERT INTO matches (match_id, started_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO matches (match_id, started_at, game_count, player_count, status) VALUES (?, ?, ?, ?, ?)',
         ).bind(
           matchId,
           new Date().toISOString(),
@@ -844,13 +844,13 @@ export class GameRoom {
           if (!result.voided) {
             stmts.push(
               this.env.DB.prepare(
-                'UPDATE player_stats SET rounds_played = rounds_played + 1 WHERE account_id = ?',
+                'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
               ).bind(pr.accountId),
             );
             if (pr.earnsCoordinationCredit) {
               stmts.push(
                 this.env.DB.prepare(
-                  'UPDATE player_stats SET coherent_rounds = coherent_rounds + 1, ' +
+                  'UPDATE player_stats SET coherent_games = coherent_games + 1, ' +
                     'current_streak = current_streak + 1, ' +
                     'longest_streak = MAX(longest_streak, current_streak + 1) ' +
                     'WHERE account_id = ?',
@@ -868,9 +868,9 @@ export class GameRoom {
 
         stmts.push(
           this.env.DB.prepare(
-            'INSERT INTO vote_logs (match_id, round_number, question_id, account_id, display_name_snapshot, ' +
-              'revealed_option_index, revealed_option_label, won_round, earns_coordination_credit, ' +
-              'ante_amount, round_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
+            'INSERT INTO vote_logs (match_id, game_number, question_id, account_id, display_name_snapshot, ' +
+              'revealed_option_index, revealed_option_label, won_game, earns_coordination_credit, ' +
+              'ante_amount, game_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
               'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           ).bind(
@@ -1027,7 +1027,7 @@ export class GameRoom {
 
         endStmts.push(
           this.env.DB.prepare(
-            'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
+            'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
           ).bind(p.accountId),
         );
       }
@@ -1542,7 +1542,7 @@ export class GameRoom {
 
     try {
       await this.env.DB.prepare(`
-        INSERT INTO question_ratings (question_id, account_id, match_id, round_number, rating)
+        INSERT INTO question_ratings (question_id, account_id, match_id, game_number, rating)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(question_id, account_id, match_id) DO UPDATE SET rating = excluded.rating
       `)

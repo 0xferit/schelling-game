@@ -11,16 +11,16 @@ export interface AccountWithStats {
   token_balance: number;
   leaderboard_eligible: number;
   created_at: string;
+  matches_played: number | null;
   games_played: number | null;
-  rounds_played: number | null;
-  coherent_rounds: number | null;
+  coherent_games: number | null;
   current_streak: number | null;
   longest_streak: number | null;
 }
 
 const ACCOUNT_WITH_STATS_SQL =
   'SELECT a.account_id, a.display_name, a.token_balance, a.leaderboard_eligible, a.created_at, ' +
-  's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
+  's.matches_played, s.games_played, s.coherent_games, s.current_streak, s.longest_streak ' +
   'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
   'WHERE a.account_id = ?';
 
@@ -42,10 +42,10 @@ export interface LeaderboardEntry {
   displayName: string | null;
   tokenBalance: number;
   leaderboardEligible: boolean;
+  matchesPlayed: number;
+  avgNetTokensPerMatch: number;
   gamesPlayed: number;
-  avgNetTokensPerGame: number;
-  roundsPlayed: number;
-  coherentRounds: number;
+  coherentGames: number;
   coherentPct: number;
   currentStreak: number;
   longestStreak: number;
@@ -59,9 +59,9 @@ export type LeaderboardEntryInput = Pick<
   | 'display_name'
   | 'token_balance'
   | 'leaderboard_eligible'
+  | 'matches_played'
   | 'games_played'
-  | 'rounds_played'
-  | 'coherent_rounds'
+  | 'coherent_games'
   | 'current_streak'
   | 'longest_streak'
 >;
@@ -69,9 +69,9 @@ export type LeaderboardEntryInput = Pick<
 export function shapeLeaderboardEntry(
   row: LeaderboardEntryInput,
 ): LeaderboardEntry {
+  const mp = row.matches_played || 0;
   const gp = row.games_played || 0;
-  const rp = row.rounds_played || 0;
-  const cr = row.coherent_rounds || 0;
+  const cg = row.coherent_games || 0;
   const balance = row.token_balance ?? 0;
 
   return {
@@ -79,14 +79,14 @@ export function shapeLeaderboardEntry(
     tokenBalance: balance,
     leaderboardEligible:
       row.leaderboard_eligible === 1 && row.display_name !== null,
+    matchesPlayed: mp,
+    avgNetTokensPerMatch: mp > 0 ? Math.round((balance / mp) * 100) / 100 : 0,
     gamesPlayed: gp,
-    avgNetTokensPerGame: gp > 0 ? Math.round((balance / gp) * 100) / 100 : 0,
-    roundsPlayed: rp,
-    coherentRounds: cr,
-    coherentPct: rp > 0 ? Math.round((cr / rp) * 100) : 0,
+    coherentGames: cg,
+    coherentPct: gp > 0 ? Math.round((cg / gp) * 100) : 0,
     currentStreak: row.current_streak || 0,
     longestStreak: row.longest_streak || 0,
-    provisional: gp < MIN_ESTABLISHED_MATCHES,
+    provisional: mp < MIN_ESTABLISHED_MATCHES,
   };
 }
 

@@ -45,8 +45,8 @@ describe('restoreMatchesFromStorage', () => {
       {
         match_id: 'match-1',
         phase: 'commit',
-        current_round: 1,
-        total_rounds: 10,
+        current_game: 1,
+        total_games: 10,
         questions_json: JSON.stringify([
           {
             id: 1,
@@ -57,7 +57,7 @@ describe('restoreMatchesFromStorage', () => {
           },
         ]),
         phase_entered_at: phaseEnteredAt,
-        last_settled_round: 0,
+        last_settled_game: 0,
       },
     ];
 
@@ -133,8 +133,8 @@ describe('restoreMatchesFromStorage', () => {
       {
         match_id: 'match-1',
         phase: 'commit',
-        current_round: 1,
-        total_rounds: 10,
+        current_game: 1,
+        total_games: 10,
         questions_json: JSON.stringify([
           {
             id: 1,
@@ -145,7 +145,7 @@ describe('restoreMatchesFromStorage', () => {
           },
         ]),
         phase_entered_at: phaseEnteredAt,
-        last_settled_round: 0,
+        last_settled_game: 0,
       },
     ];
 
@@ -198,8 +198,8 @@ describe('restoreMatchesFromStorage', () => {
       {
         match_id: 'match-1',
         phase: 'commit',
-        current_round: 5,
-        total_rounds: 10,
+        current_game: 5,
+        total_games: 10,
         questions_json: JSON.stringify([
           {
             id: 1,
@@ -210,7 +210,7 @@ describe('restoreMatchesFromStorage', () => {
           },
         ]),
         phase_entered_at: Date.now(),
-        last_settled_round: 4,
+        last_settled_game: 4,
       },
     ];
 
@@ -227,7 +227,7 @@ describe('restoreMatchesFromStorage', () => {
         option_index: null,
         salt: null,
         forfeited: 0,
-        // No forfeited_at_round column: legacy row
+        // No forfeited_at_game column: legacy row
         disconnected_at: null,
       },
       {
@@ -242,7 +242,7 @@ describe('restoreMatchesFromStorage', () => {
         option_index: null,
         salt: null,
         forfeited: 1,
-        // No forfeited_at_round column: legacy row
+        // No forfeited_at_game column: legacy row
         disconnected_at: Date.now() - 30_000,
       },
     ];

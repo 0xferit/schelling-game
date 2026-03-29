@@ -262,7 +262,7 @@ export async function handleHttpRequest(
 
     // Upsert player_stats
     await env.DB.prepare(
-      'INSERT INTO player_stats (account_id, games_played, rounds_played, coherent_rounds, current_streak, longest_streak) ' +
+      'INSERT INTO player_stats (account_id, matches_played, games_played, coherent_games, current_streak, longest_streak) ' +
         'VALUES (?, 0, 0, 0, 0, 0) ON CONFLICT(account_id) DO NOTHING',
     )
       .bind(normalized)
@@ -362,10 +362,10 @@ export async function handleHttpRequest(
   if (url.pathname === '/api/leaderboard' && method === 'GET') {
     const { results } = await env.DB.prepare(
       'SELECT a.account_id, a.display_name, a.token_balance, a.leaderboard_eligible, ' +
-        's.games_played, s.rounds_played, s.coherent_rounds, s.current_streak, s.longest_streak ' +
+        's.matches_played, s.games_played, s.coherent_games, s.current_streak, s.longest_streak ' +
         'FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
         'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL ' +
-        'ORDER BY a.token_balance DESC, COALESCE(s.coherent_rounds, 0) DESC, a.display_name ASC ' +
+        'ORDER BY a.token_balance DESC, COALESCE(s.coherent_games, 0) DESC, a.display_name ASC ' +
         `LIMIT ${LEADERBOARD_LIMIT}`,
     ).all();
 
@@ -436,7 +436,7 @@ export async function handleHttpRequest(
     const account = await fetchAccountWithStats(env.DB, accountId);
     if (!account) return errorResponse('Account not found', 404);
 
-    const cr = account.coherent_rounds || 0;
+    const cg = account.coherent_games || 0;
     const eligible =
       account.leaderboard_eligible === 1 && account.display_name !== null;
 
@@ -446,16 +446,16 @@ export async function handleHttpRequest(
         'SELECT COUNT(*) as rank FROM accounts a LEFT JOIN player_stats s ON a.account_id = s.account_id ' +
           'WHERE a.leaderboard_eligible = 1 AND a.display_name IS NOT NULL AND (' +
           'a.token_balance > ? OR ' +
-          '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) > ?) OR ' +
-          '(a.token_balance = ? AND COALESCE(s.coherent_rounds, 0) = ? AND a.display_name < ?)' +
+          '(a.token_balance = ? AND COALESCE(s.coherent_games, 0) > ?) OR ' +
+          '(a.token_balance = ? AND COALESCE(s.coherent_games, 0) = ? AND a.display_name < ?)' +
           ')',
       )
         .bind(
           account.token_balance ?? 0,
           account.token_balance ?? 0,
-          cr,
+          cg,
           account.token_balance ?? 0,
-          cr,
+          cg,
           account.display_name ?? '',
         )
         .first()) as { rank: number } | null;
@@ -504,16 +504,16 @@ export async function handleHttpRequest(
     const columns = [
       'id',
       'match_id',
-      'round_number',
+      'game_number',
       'question_id',
       'account_id',
       'display_name_snapshot',
       'revealed_option_index',
       'revealed_option_label',
-      'won_round',
+      'won_game',
       'earns_coordination_credit',
       'ante_amount',
-      'round_payout',
+      'game_payout',
       'net_delta',
       'player_count',
       'valid_reveal_count',

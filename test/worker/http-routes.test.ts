@@ -18,7 +18,7 @@ interface SeedLeaderboardAccountInput {
   accountId: string;
   displayName: string | null;
   balance: number;
-  coherentRounds?: number;
+  coherentGames?: number;
   leaderboardEligible?: boolean;
 }
 
@@ -26,7 +26,7 @@ interface LeaderboardResponseEntry {
   rank: number;
   displayName: string;
   tokenBalance: number;
-  coherentRounds: number;
+  coherentGames: number;
 }
 
 function compareLeaderboardEntries(
@@ -35,7 +35,7 @@ function compareLeaderboardEntries(
 ): number {
   return (
     b.tokenBalance - a.tokenBalance ||
-    b.coherentRounds - a.coherentRounds ||
+    b.coherentGames - a.coherentGames ||
     a.displayName.localeCompare(b.displayName)
   );
 }
@@ -46,7 +46,7 @@ async function seedLeaderboardAccounts(
 ): Promise<void> {
   await db.batch(
     accounts.flatMap((account) => {
-      const coherentRounds = account.coherentRounds ?? 0;
+      const coherentGames = account.coherentGames ?? 0;
       const leaderboardEligible = account.leaderboardEligible ?? true;
       return [
         db
@@ -61,9 +61,9 @@ async function seedLeaderboardAccounts(
           ),
         db
           .prepare(
-            'INSERT INTO player_stats (account_id, games_played, rounds_played, coherent_rounds, current_streak, longest_streak) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET games_played = excluded.games_played, rounds_played = excluded.rounds_played, coherent_rounds = excluded.coherent_rounds, current_streak = excluded.current_streak, longest_streak = excluded.longest_streak',
+            'INSERT INTO player_stats (account_id, matches_played, games_played, coherent_games, current_streak, longest_streak) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET matches_played = excluded.matches_played, games_played = excluded.games_played, coherent_games = excluded.coherent_games, current_streak = excluded.current_streak, longest_streak = excluded.longest_streak',
           )
-          .bind(account.accountId, 10, 10, coherentRounds, 0, 0),
+          .bind(account.accountId, 10, 10, coherentGames, 0, 0),
       ];
     }),
   );
@@ -132,56 +132,56 @@ describe('HTTP routes', () => {
         accountId: 'leader-zulu',
         displayName: 'Zulu',
         balance: 1000,
-        coherentRounds: 5,
+        coherentGames: 5,
       },
       {
         accountId: 'leader-alpha',
         displayName: 'Alpha',
         balance: 950,
-        coherentRounds: 9,
+        coherentGames: 9,
       },
       {
         accountId: 'leader-tie-high',
         displayName: 'TieHigh',
         balance: 900,
-        coherentRounds: 9,
+        coherentGames: 9,
       },
       {
         accountId: 'leader-tie-low',
         displayName: 'TieLow',
         balance: 900,
-        coherentRounds: 3,
+        coherentGames: 3,
       },
       {
         accountId: 'leader-aaron',
         displayName: 'Aaron',
         balance: 850,
-        coherentRounds: 7,
+        coherentGames: 7,
       },
       {
         accountId: 'leader-beatrice',
         displayName: 'Beatrice',
         balance: 850,
-        coherentRounds: 7,
+        coherentGames: 7,
       },
       {
         accountId: 'excluded-ineligible',
         displayName: 'ShouldBeHidden',
         balance: 5000,
-        coherentRounds: 99,
+        coherentGames: 99,
         leaderboardEligible: false,
       },
       {
         accountId: 'excluded-nameless',
         displayName: null,
         balance: 4000,
-        coherentRounds: 88,
+        coherentGames: 88,
       },
       ...Array.from({ length: 96 }, (_, index) => ({
         accountId: `filler-${index}`,
         displayName: `Player${String(index).padStart(3, '0')}`,
         balance: 800 - index,
-        coherentRounds: index % 5,
+        coherentGames: index % 5,
       })),
     ];
 
@@ -231,10 +231,10 @@ describe('HTTP routes', () => {
 
     await env.DB.batch([
       env.DB.prepare(
-        'INSERT INTO matches (match_id, started_at, ended_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO matches (match_id, started_at, ended_at, game_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
       ).bind('match-recent', recent, recent, 10, 3, 'completed'),
       env.DB.prepare(
-        'INSERT INTO matches (match_id, started_at, ended_at, round_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO matches (match_id, started_at, ended_at, game_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
       ).bind('match-stale', stale, stale, 10, 2, 'completed'),
       env.DB.prepare(
         'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
@@ -512,13 +512,13 @@ describe('HTTP routes', () => {
         accountId,
         displayName: 'TargetPlayer',
         balance: 100000,
-        coherentRounds: 1,
+        coherentGames: 1,
       },
       ...Array.from({ length: LEADERBOARD_LIMIT }, (_, index) => ({
         accountId: `ahead-${index}`,
         displayName: `Ahead${String(index).padStart(3, '0')}`,
         balance: 200000 - index,
-        coherentRounds: index % 7,
+        coherentGames: index % 7,
       })),
     ]);
 

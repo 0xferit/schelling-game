@@ -64,28 +64,62 @@ interface SqlStorage {
   ): { toArray(): unknown[] } & Iterable<Record<string, unknown>>;
 }
 
+function getColumnNames(sql: SqlStorage, tableName: string): Set<string> {
+  return new Set(
+    [...sql.exec(`PRAGMA table_info(${tableName})`)].map(
+      (column) => (column as Record<string, unknown>).name as string,
+    ),
+  );
+}
+
+function renameColumnIfNeeded(
+  sql: SqlStorage,
+  tableName: string,
+  oldName: string,
+  newName: string,
+): void {
+  const columns = getColumnNames(sql, tableName);
+  if (!columns.has(oldName) || columns.has(newName)) return;
+  sql.exec(`ALTER TABLE ${tableName} RENAME COLUMN ${oldName} TO ${newName}`);
+}
+
 export function initCheckpointTables(sql: SqlStorage): void {
   sql.exec(`
     CREATE TABLE IF NOT EXISTS match_checkpoints (
       match_id        TEXT PRIMARY KEY,
       phase           TEXT NOT NULL,
-      current_round   INTEGER NOT NULL,
-      total_rounds    INTEGER NOT NULL,
+      current_game    INTEGER NOT NULL,
+      total_games     INTEGER NOT NULL,
       questions_json  TEXT NOT NULL,
       phase_entered_at INTEGER NOT NULL,
-      last_settled_round INTEGER NOT NULL DEFAULT 0,
-      last_round_result_json TEXT,
+      last_settled_game INTEGER NOT NULL DEFAULT 0,
+      last_game_result_json TEXT,
       created_at      INTEGER NOT NULL
     )
   `);
-  // Migrate existing tables that lack the last_round_result_json column.
-  const columns = [...sql.exec('PRAGMA table_info(match_checkpoints)')];
-  const hasLastGameResult = columns.some(
-    (c) => (c as Record<string, unknown>).name === 'last_round_result_json',
+  renameColumnIfNeeded(
+    sql,
+    'match_checkpoints',
+    'current_round',
+    'current_game',
   );
-  if (!hasLastGameResult) {
+  renameColumnIfNeeded(sql, 'match_checkpoints', 'total_rounds', 'total_games');
+  renameColumnIfNeeded(
+    sql,
+    'match_checkpoints',
+    'last_settled_round',
+    'last_settled_game',
+  );
+  renameColumnIfNeeded(
+    sql,
+    'match_checkpoints',
+    'last_round_result_json',
+    'last_game_result_json',
+  );
+
+  if (!getColumnNames(sql, 'match_checkpoints').has('last_game_result_json')) {
     sql.exec(
-      'ALTER TABLE match_checkpoints ADD COLUMN last_round_result_json TEXT',
+      'ALTER TABLE match_checkpoints ADD COLUMN last_game_result_json TEXT',
     );
   }
 
@@ -102,19 +136,21 @@ export function initCheckpointTables(sql: SqlStorage): void {
       option_index     INTEGER,
       salt             TEXT,
       forfeited        INTEGER NOT NULL DEFAULT 0,
-      forfeited_at_round INTEGER,
+      forfeited_at_game INTEGER,
       disconnected_at  INTEGER,
       PRIMARY KEY (match_id, account_id)
     )
   `);
-  // Migrate existing player_checkpoints tables that lack forfeited_at_round.
-  const playerColumns = [...sql.exec('PRAGMA table_info(player_checkpoints)')];
-  const hasForfeitedAtGame = playerColumns.some(
-    (c) => (c as Record<string, unknown>).name === 'forfeited_at_round',
+  renameColumnIfNeeded(
+    sql,
+    'player_checkpoints',
+    'forfeited_at_round',
+    'forfeited_at_game',
   );
-  if (!hasForfeitedAtGame) {
+
+  if (!getColumnNames(sql, 'player_checkpoints').has('forfeited_at_game')) {
     sql.exec(
-      'ALTER TABLE player_checkpoints ADD COLUMN forfeited_at_round INTEGER',
+      'ALTER TABLE player_checkpoints ADD COLUMN forfeited_at_game INTEGER',
     );
   }
 }
@@ -133,7 +169,7 @@ export function checkpointMatch(
     );
     sql.exec(
       `INSERT OR REPLACE INTO match_checkpoints
-        (match_id, phase, current_round, total_rounds, questions_json, phase_entered_at, last_settled_round, last_round_result_json, created_at)
+        (match_id, phase, current_game, total_games, questions_json, phase_entered_at, last_settled_game, last_game_result_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       match.matchId,
       match.phase,
@@ -149,7 +185,7 @@ export function checkpointMatch(
       sql.exec(
         `INSERT INTO player_checkpoints
           (match_id, account_id, display_name, starting_balance, current_balance,
-           committed, revealed, hash, option_index, salt, forfeited, forfeited_at_round, disconnected_at)
+           committed, revealed, hash, option_index, salt, forfeited, forfeited_at_game, disconnected_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         match.matchId,
         p.accountId,
@@ -204,7 +240,7 @@ export function checkpointPlayerAction(
     vals.push(fields.forfeited ? 1 : 0);
   }
   if (fields.forfeitedAtGame !== undefined) {
-    sets.push('forfeited_at_round = ?');
+    sets.push('forfeited_at_game = ?');
     vals.push(fields.forfeitedAtGame);
   }
   if (fields.currentBalance !== undefined) {
@@ -256,6 +292,14 @@ export function restoreMatchesFromStorage(
       ];
 
       const players = new Map<string, PersistedPlayerState>();
+      const currentGame =
+        (row.current_game as number | undefined) ??
+        (row.current_round as number);
+      const totalGames =
+        (row.total_games as number | undefined) ?? (row.total_rounds as number);
+      const lastSettledGame =
+        (row.last_settled_game as number | undefined) ??
+        (row.last_settled_round as number);
 
       for (const pr of playerRows) {
         const accountId = pr.account_id as string;
@@ -271,25 +315,26 @@ export function restoreMatchesFromStorage(
           salt: pr.salt as string | null,
           forfeited: !!(pr.forfeited as number),
           forfeitedAtGame:
+            (pr.forfeited_at_game as number | null) ??
             (pr.forfeited_at_round as number | null) ??
-            ((pr.forfeited as number)
-              ? (row.current_round as number) - 1
-              : null),
+            ((pr.forfeited as number) ? currentGame - 1 : null),
           disconnectedAt: (pr.disconnected_at as number | null) ?? now,
         });
       }
 
-      const lastGameResultRaw = row.last_round_result_json as string | null;
+      const lastGameResultRaw =
+        (row.last_game_result_json as string | null) ??
+        (row.last_round_result_json as string | null);
 
       restored.push({
         matchId: row.match_id as string,
         players,
         questions: JSON.parse(row.questions_json as string),
-        currentGame: row.current_round as number,
-        totalGames: row.total_rounds as number,
+        currentGame,
+        totalGames,
         phase: row.phase as string,
         phaseEnteredAt,
-        lastSettledGame: row.last_settled_round as number,
+        lastSettledGame,
         lastGameResult: lastGameResultRaw
           ? JSON.parse(lastGameResultRaw)
           : null,

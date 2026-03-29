@@ -1535,8 +1535,8 @@ function renderLeaderboard(entries, myRank) {
       <td>${e.rank}</td>
       <td>${esc(e.displayName)}</td>
       <td>${e.tokenBalance}</td>
-      <td>${e.gamesPlayed}</td>
-      <td class="stat-metric"${provTip}>${e.avgNetTokensPerGame !== undefined ? e.avgNetTokensPerGame.toFixed(1) : '-'}</td>
+      <td>${e.matchesPlayed}</td>
+      <td class="stat-metric"${provTip}>${e.avgNetTokensPerMatch !== undefined ? e.avgNetTokensPerMatch.toFixed(1) : '-'}</td>
       <td class="stat-metric"${provTip}>${e.coherentPct !== undefined ? e.coherentPct + '%' : '-'}</td>
       <td class="stat-metric"${provTip}>${e.currentStreak || 0}</td>
       <td class="stat-metric"${provTip}>${e.longestStreak || 0}</td>
@@ -1548,7 +1548,7 @@ function renderLeaderboard(entries, myRank) {
   const card = $('#my-rank-card');
   if (myRank && myRank.rank != null && myRank.leaderboardEligible) {
     card.classList.remove('hidden');
-    const remaining = MIN_ESTABLISHED - myRank.gamesPlayed;
+    const remaining = MIN_ESTABLISHED - myRank.matchesPlayed;
     const provNote = myRank.provisional
       ? `<div class="provisional-note">Stats are provisional until ${remaining} more match${remaining === 1 ? '' : 'es'}</div>`
       : '';

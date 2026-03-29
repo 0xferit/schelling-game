@@ -24,10 +24,10 @@ function createRoom(envOverrides: Partial<Env> = {}) {
       sql: {
         exec: vi.fn((query: string) => {
           if (query.includes('PRAGMA table_info(match_checkpoints)')) {
-            return makeSqlResult([{ name: 'last_round_result_json' }]);
+            return makeSqlResult([{ name: 'last_game_result_json' }]);
           }
           if (query.includes('PRAGMA table_info(player_checkpoints)')) {
-            return makeSqlResult([{ name: 'forfeited_at_round' }]);
+            return makeSqlResult([{ name: 'forfeited_at_game' }]);
           }
           return makeSqlResult();
         }),
@@ -115,7 +115,7 @@ describe('GameRoom async task tracking', () => {
 
   it('tracks reveal-triggered game finalization with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
-    const finalizeRound = vi
+    const finalizeGame = vi
       .spyOn(room, '_finalizeGame')
       .mockResolvedValue(undefined);
     vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
@@ -151,7 +151,7 @@ describe('GameRoom async task tracking', () => {
 
     expect(waitUntil).toHaveBeenCalledTimes(1);
     await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
-    expect(finalizeRound).toHaveBeenCalledWith(match);
+    expect(finalizeGame).toHaveBeenCalledWith(match);
     expect(player.revealed).toBe(true);
     expect(player.optionIndex).toBe(0);
     expect(player.salt).toBe(salt);
