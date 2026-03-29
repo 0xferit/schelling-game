@@ -2241,6 +2241,14 @@ export class GameRoom {
       players: playersInfo,
     });
 
+    if (player.forfeited) {
+      this._sendTo(accountId, {
+        type: 'player_forfeited',
+        displayName: player.displayName,
+        futureGamesPenaltyApplied: !match.aiAssisted,
+      });
+    }
+
     // Replay peer disconnected/forfeited status so the client renders badges
     for (const peer of match.players.values()) {
       if (peer.accountId === accountId) continue;

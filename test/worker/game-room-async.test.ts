@@ -1011,6 +1011,54 @@ describe('GameRoom async task tracking', () => {
     expect(waitUntil).not.toHaveBeenCalled();
     expect(prepare).not.toHaveBeenCalled();
   });
+
+  it('replays self-forfeited status before the current game snapshot on reconnect', () => {
+    const { room } = createRoom();
+    room.connections.set('acct-1', createConnectionState('Alice'));
+
+    const match = createMatch();
+    match.phase = 'commit';
+    match.players.set('acct-1', {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: true,
+      forfeitedAtGame: 1,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+
+    room._sendMatchStateToPlayer(match, 'acct-1');
+
+    const connection = must(
+      room.connections.get('acct-1'),
+      'Expected Alice connection',
+    ) as {
+      ws: { send: ReturnType<typeof vi.fn> };
+    };
+    const sentMessages = connection.ws.send.mock.calls.map(([payload]) =>
+      JSON.parse(payload as string),
+    );
+
+    expect(sentMessages.map((msg) => msg.type)).toEqual([
+      'match_started',
+      'player_forfeited',
+      'game_started',
+    ]);
+    expect(sentMessages[1]).toMatchObject({
+      type: 'player_forfeited',
+      displayName: 'Alice',
+      futureGamesPenaltyApplied: true,
+    });
+  });
   it('tracks match end after results with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);

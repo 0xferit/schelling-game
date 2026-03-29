@@ -94,7 +94,10 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
 .queue-stat-label{font-size:.68rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .queue-stat-value{font-family:var(--serif);font-size:clamp(2.4rem,5vw,3.4rem);font-weight:600;line-height:.88}
 .queue-flow{display:flex;flex-direction:column;gap:1rem;max-width:48rem}
-#active-match-banner{background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:var(--radius);padding:.85rem 1rem;font-size:.92rem;color:var(--text)}
+#active-match-banner{display:flex;flex-direction:column;gap:.35rem;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:var(--radius);padding:.85rem 1rem;font-size:.92rem;color:var(--text)}
+#active-match-banner strong{font-size:.72rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+#active-match-banner.is-forfeited{background:rgba(229,57,53,.08);border-color:rgba(229,57,53,.35)}
+#active-match-banner.is-forfeited strong{color:#f09a97}
 #forming-banner{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'main side' 'foot foot';gap:1rem 1.5rem;align-items:start;background:linear-gradient(135deg,rgba(201,168,76,.08),rgba(255,152,0,.05));border:1px solid rgba(201,168,76,.48);border-radius:var(--radius);padding:1rem 1.1rem;font-size:.92rem;color:var(--text);text-align:left;margin-top:0;position:relative;overflow:hidden;transition:border-color .2s ease,background .2s ease,transform .2s ease}
 #forming-banner.is-armed{border-color:rgba(201,168,76,.72);background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(255,152,0,.08));transform:translateY(-1px)}
 #forming-banner::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:linear-gradient(to bottom,transparent,rgba(201,168,76,.65),transparent)}
@@ -423,9 +426,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
           </div>
         </div>
         <div class="queue-flow">
-          <div id="active-match-banner" class="hidden">
-            Active match in progress. Return to the game to keep committing and revealing on time.
-          </div>
+          <div id="active-match-banner" class="hidden"></div>
           <div id="forming-banner" class="hidden">
             <div class="forming-main">
               <div class="forming-label">Forming Match</div>
@@ -488,7 +489,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
           </div>
         </div>
         <div id="forfeit-status-banner" class="danger-banner hidden" style="margin-bottom:1rem">
-          <strong>Forfeit locked in.</strong> The rest of this run will settle without you. Final standings appear when the match closes.
+          <strong>Forfeit locked in.</strong> You're out of this run. Wait in the lobby or stay here to watch until final standings land.
         </div>
         <div id="question-text">Waiting for game...</div>
         <div id="select-grid"></div>
@@ -1137,6 +1138,12 @@ function openForfeitOverlay() {
   $('#cancel-forfeit-btn').focus();
 }
 
+function syncReturnToMatchUi() {
+  const label = hasSelfForfeited() ? 'Watch Match' : 'Back to Game';
+  $('#return-to-game-btn').textContent = label;
+  $('#nav-return-game').textContent = label;
+}
+
 function syncForfeitUi() {
   const activeMatch = hasActiveMatch();
   const selfForfeited = hasSelfForfeited();
@@ -1153,6 +1160,7 @@ function syncForfeitUi() {
   button.textContent = selfForfeited
     ? 'Forfeit Locked In'
     : 'Forfeit Match';
+  syncReturnToMatchUi();
 
   if (!activeMatch || selfForfeited) {
     closeForfeitOverlay({ restoreFocus: false });
@@ -1395,8 +1403,19 @@ function onQueueState(msg) {
 
 function renderQueue() {
   const activeMatch = hasActiveMatch();
+  const selfForfeited = hasSelfForfeited();
+  const activeMatchBanner = $('#active-match-banner');
   $('#queue-count').textContent = S.queuedPlayers.length;
-  $('#active-match-banner').classList.toggle('hidden', !activeMatch);
+  activeMatchBanner.classList.toggle('hidden', !activeMatch);
+  activeMatchBanner.classList.toggle('is-forfeited', activeMatch && selfForfeited);
+  if (activeMatch) {
+    activeMatchBanner.innerHTML = selfForfeited
+      ? '<strong>Forfeit locked in.</strong><span>You can stay in the lobby while the run finishes. Final standings will open automatically when the match ends. Use Watch Match only if you want to keep an eye on the board.</span>'
+      : 'Active match in progress. Return to the game to keep committing and revealing on time.';
+  } else {
+    activeMatchBanner.innerHTML = '';
+  }
+  syncReturnToMatchUi();
 
   const list = $('#queue-players');
   list.innerHTML = '';
@@ -1535,7 +1554,10 @@ function onGameStarted(msg) {
   S.revealStatuses = [];
   S.gameResult = null;
 
-  if (S.view !== 'play') showView('play');
+  if (S.view !== 'play' && !hasSelfForfeited()) {
+    // Reconnect replay should not yank a forfeited player back into the frozen play view.
+    showView('play');
+  }
 
   // UI: use server-provided phase for labels
   const phaseLabel = msg.phase === 'reveal' ? 'Auto-Reveal'
@@ -2069,8 +2091,8 @@ function onPlayerForfeited(msg) {
     $('#timer-num').classList.remove('urgent');
     notify(
       msg.futureGamesPenaltyApplied
-        ? 'You forfeited the match. Final standings will appear when the run ends.'
-        : 'You forfeited this AI-assisted match. Final standings will appear when the run ends.',
+        ? 'You forfeited the match. Final standings will open automatically when the run ends.'
+        : 'You forfeited this AI-assisted match. Final standings will open automatically when the run ends.',
       'warn',
     );
   } else if (msg.futureGamesPenaltyApplied) {
@@ -2081,6 +2103,9 @@ function onPlayerForfeited(msg) {
   renderPlayers();
   renderLiveReadout();
   syncForfeitUi();
+  if (msg.displayName === S.displayName && S.view === 'play') {
+    showView('queue');
+  }
 }
 
 // ── Timer ────────────────────────────────────────────────────────
