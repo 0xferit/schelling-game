@@ -20,8 +20,8 @@ remote = true
 
 [vars]
 AI_BOT_ENABLED = "true"
-AI_BOT_MODEL = "@cf/meta/llama-3.2-3b-instruct"
-AI_BOT_TIMEOUT_MS = "2500"
+AI_BOT_MODEL = "@cf/nvidia/nemotron-3-120b-a12b"
+AI_BOT_TIMEOUT_MS = "5000"
 
 [env.staging]
 name = "schelling-game-staging"
@@ -42,8 +42,8 @@ remote = true
 
 [env.staging.vars]
 AI_BOT_ENABLED = "true"
-AI_BOT_MODEL = "@cf/meta/llama-3.2-3b-instruct"
-AI_BOT_TIMEOUT_MS = "2500"
+AI_BOT_MODEL = "@cf/nvidia/nemotron-3-120b-a12b"
+AI_BOT_TIMEOUT_MS = "5000"
 
 [assets]
 directory = "./public"
