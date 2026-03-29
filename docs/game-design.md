@@ -270,7 +270,6 @@ In a `5`-player game where all five players reveal the same option:
 - every player's net delta is `0`
 - every player earns coordination credit because `topCount = 5`
 
-### Forfeited Player in a Later Game
 ### Burned Dust
 
 In a `13`-player game where `11` players share the winning option:
