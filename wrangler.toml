@@ -14,6 +14,27 @@ database_name = "schelling-game-db"
 database_id = "ccf25d5a-0c4e-4520-9e08-e3f2a02b78d1"
 migrations_dir = "d1-migrations"
 
+[env.staging]
+name = "schelling-game-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "schelling-game-staging"
+database_id = "bfb6e799-80bc-4e0b-bf92-99250555806b"
+migrations_dir = "d1-migrations"
+
+[env.staging.ai]
+binding = "AI"
+
+[env.staging.vars]
+AI_BOT_ENABLED = "true"
+AI_BOT_MODEL = "@cf/meta/llama-3.2-3b-instruct"
+AI_BOT_TIMEOUT_MS = "2500"
+
 [assets]
 directory = "./public"
 run_worker_first = ["/ws*", "/api/*"]
