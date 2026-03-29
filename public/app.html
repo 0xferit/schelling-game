@@ -375,7 +375,7 @@ nav{display:flex;gap:.5rem}
 
     <div>
       <p class="rules-section-label">Game Flow</p>
-      <p class="rules-text">Each game has three phases: Commit (60s), automatic Reveal, Results (20s). Every attached player antes 2520 per game.</p>
+      <p class="rules-text">Each game flows through Commit (60s), auto-reveal, and Settle (20s). Every attached player antes 2520 per game.</p>
     </div>
 
     <div>
@@ -1083,10 +1083,11 @@ function onGameStarted(msg) {
   if (S.view !== 'play') showView('play');
 
   // UI: use server-provided phase for labels
-  const phaseLabel = msg.phase === 'reveal' ? 'Reveal Phase'
-    : msg.phase === 'results' ? 'Results Phase' : 'Commit Phase';
+  const phaseLabel = msg.phase === 'reveal' ? 'Auto-Reveal'
+    : msg.phase === 'results' ? 'Settle' : 'Commit';
   $('#phase-label').textContent = `Game ${msg.game} / 10 : ${phaseLabel}`;
-  const phaseTimerLabel = msg.phase === 'reveal' ? 'Reveal'
+  const phaseTimerLabel = msg.phase === 'reveal' ? 'Auto-Reveal'
+    : msg.phase === 'results' ? 'Settle'
     : msg.phase === 'commit' ? 'Commit' : '';
   $('#phase-timer-label').textContent = phaseTimerLabel;
   $('#question-text').textContent = msg.question.text;
@@ -1202,8 +1203,8 @@ function onCommitStatus(msg) {
 function onPhaseChange(msg) {
   if (msg.phase === 'reveal') {
     S.phase = 'reveal';
-    $('#phase-label').textContent = `Game ${S.game} / 10 : Reveal Phase`;
-    $('#phase-timer-label').textContent = 'Reveal';
+    $('#phase-label').textContent = `Game ${S.game} / 10 : Auto-Reveal`;
+    $('#phase-timer-label').textContent = 'Auto-Reveal';
     $('#commit-area').classList.add('hidden');
 
     if (S.committed && !S.revealed && S.selectedOption !== null && S.salt) {
@@ -1250,8 +1251,8 @@ function onGameResult(msg) {
   S.gameResult = r;
   S.phase = 'results';
 
-  $('#phase-label').textContent = `Game ${S.game} / 10 : Results`;
-  $('#phase-timer-label').textContent = 'Results';
+  $('#phase-label').textContent = `Game ${S.game} / 10 : Settle`;
+  $('#phase-timer-label').textContent = 'Settle';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
 
