@@ -612,7 +612,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
   S.tokenBalance = result.tokenBalance;
   S.isBrowserWallet = isBrowserWallet;
 
-  S.displayName = result.displayName || (address.slice(0, 6) + '..' + address.slice(-4));
+  S.displayName = result.displayName || (result.accountId.slice(0, 6) + '..' + result.accountId.slice(-4));
   onAuthComplete();
 }
 
@@ -842,7 +842,7 @@ async function checkSession() {
       try { localStorage.removeItem(BROWSER_KEY); } catch (_e) {}
     }
     if (!S.displayName) {
-      S.displayName = S.walletAddress.slice(0, 6) + '..' + S.walletAddress.slice(-4);
+      S.displayName = S.accountId.slice(0, 6) + '..' + S.accountId.slice(-4);
     }
     onAuthComplete();
   } catch (_) {
