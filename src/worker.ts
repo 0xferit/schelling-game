@@ -1262,6 +1262,7 @@ export class GameRoom {
         if (cached) {
           cached.newBalance = player.currentBalance;
         }
+        this._checkpointMatch(match);
       }
     }
 

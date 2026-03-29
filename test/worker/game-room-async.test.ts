@@ -152,6 +152,9 @@ describe('GameRoom async task tracking', () => {
     const checkpointPlayerAction = vi
       .spyOn(room, '_checkpointPlayerAction')
       .mockImplementation(() => {});
+    const checkpointMatch = vi
+      .spyOn(room, '_checkpointMatch')
+      .mockImplementation(() => {});
     vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
 
     const match = createMatch();
@@ -207,6 +210,9 @@ describe('GameRoom async task tracking', () => {
       (p) => p.accountId === 'acct-1',
     );
     expect(cached?.newBalance).toBe(520);
+
+    // Patched result must be checkpointed so it survives DO eviction
+    expect(checkpointMatch).toHaveBeenCalledWith(match);
   });
 
   it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeRound)', () => {
