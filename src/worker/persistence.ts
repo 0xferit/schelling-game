@@ -272,7 +272,9 @@ export function restoreMatchesFromStorage(
           forfeited: !!(pr.forfeited as number),
           forfeitedAtRound:
             (pr.forfeited_at_round as number | null) ??
-            ((pr.forfeited as number) ? (row.current_round as number) : null),
+            ((pr.forfeited as number)
+              ? (row.current_round as number) - 1
+              : null),
           disconnectedAt: (pr.disconnected_at as number | null) ?? now,
         });
       }

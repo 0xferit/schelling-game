@@ -1252,6 +1252,17 @@ export class GameRoom {
         this._persistAccountBalance(accountId, player.currentBalance),
         `persist forfeited balance for ${accountId}`,
       );
+
+      // Patch the cached round result so reconnect replay reflects the
+      // burned balance instead of the stale pre-forfeit value.
+      if (match.lastRoundResult) {
+        const cached = match.lastRoundResult.players.find(
+          (p) => p.accountId === accountId,
+        );
+        if (cached) {
+          cached.newBalance = player.currentBalance;
+        }
+      }
     }
 
     this._broadcastToMatch(match, {

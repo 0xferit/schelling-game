@@ -161,6 +161,7 @@ describe('GameRoom async task tracking', () => {
     match.lastSettledRound = 3;
     match.lastRoundResult = {
       roundNum: 3,
+      players: [{ accountId: 'acct-1', newBalance: 940 }],
     } as RoundResultMessage['result'];
 
     const player = {
@@ -200,6 +201,12 @@ describe('GameRoom async task tracking', () => {
     );
     expect(bind).toHaveBeenCalledWith(520, 'acct-1');
     expect(run).toHaveBeenCalledTimes(1);
+
+    // Cached round result must reflect burned balance for reconnect replay
+    const cached = match.lastRoundResult?.players.find(
+      (p) => p.accountId === 'acct-1',
+    );
+    expect(cached?.newBalance).toBe(520);
   });
 
   it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeRound)', () => {
@@ -232,6 +239,25 @@ describe('GameRoom async task tracking', () => {
       graceTimer: null,
     };
     match.players.set(player.accountId, player);
+
+    // A second non-forfeited player who hasn't committed prevents
+    // auto-advance from firing inside _forfeitPlayer.
+    match.players.set('acct-2', {
+      accountId: 'acct-2',
+      displayName: 'Bob',
+      ws: null,
+      startingBalance: 1000,
+      currentBalance: 940,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtRound: null,
+      disconnectedAt: null,
+      graceTimer: null,
+    });
 
     room._forfeitPlayer(match, player.accountId);
 

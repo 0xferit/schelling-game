@@ -192,4 +192,78 @@ describe('restoreMatchesFromStorage', () => {
     // calling Date.now() per player.
     expect(p1.disconnectedAt).toBe(p2.disconnectedAt);
   });
+
+  it('legacy checkpoint: forfeited player is detached (forfeitedAtRound < currentRound)', () => {
+    const matchRows = [
+      {
+        match_id: 'match-1',
+        phase: 'commit',
+        current_round: 5,
+        total_rounds: 10,
+        questions_json: JSON.stringify([
+          {
+            id: 1,
+            text: 'Q',
+            type: 'select',
+            category: 'number',
+            options: ['A', 'B'],
+          },
+        ]),
+        phase_entered_at: Date.now(),
+        last_settled_round: 4,
+      },
+    ];
+
+    const playerRows = [
+      {
+        match_id: 'match-1',
+        account_id: '0xactive',
+        display_name: 'Active',
+        starting_balance: 1000,
+        current_balance: 760,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        salt: null,
+        forfeited: 0,
+        // No forfeited_at_round column: legacy row
+        disconnected_at: null,
+      },
+      {
+        match_id: 'match-1',
+        account_id: '0xquitter',
+        display_name: 'Quitter',
+        starting_balance: 1000,
+        current_balance: 400,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        salt: null,
+        forfeited: 1,
+        // No forfeited_at_round column: legacy row
+        disconnected_at: Date.now() - 30_000,
+      },
+    ];
+
+    const sql = createMockSql(matchRows, playerRows);
+    const restored = restoreMatchesFromStorage(sql, STALE_THRESHOLD_MS);
+
+    const match = must(restored[0], 'Expected restored match');
+    const quitter = must(
+      match.players.get('0xquitter'),
+      'Expected quitter state',
+    );
+    expect(quitter.forfeited).toBe(true);
+    // Must be less than currentRound so settlement treats them as detached
+    expect(quitter.forfeitedAtRound).toBe(4);
+    expect(quitter.forfeitedAtRound).toBeLessThan(match.currentRound);
+
+    const active = must(
+      match.players.get('0xactive'),
+      'Expected active player state',
+    );
+    expect(active.forfeitedAtRound).toBeNull();
+  });
 });
