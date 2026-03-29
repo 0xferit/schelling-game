@@ -232,7 +232,13 @@ function isSchellingPromptArray(value: unknown): value is SchellingPrompt[] {
 }
 
 function isMatchPhase(value: unknown): value is PersistedMatchFields['phase'] {
-  return value === 'commit' || value === 'reveal' || value === 'results';
+  return (
+    value === 'commit' ||
+    value === 'reveal' ||
+    value === 'results' ||
+    value === 'settling' ||
+    value === 'ending'
+  );
 }
 
 function isGameResultPlayer(

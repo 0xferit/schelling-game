@@ -239,6 +239,92 @@ describe('restoreMatchesFromStorage', () => {
     );
   });
 
+  it('restores in-flight settling and ending checkpoints', () => {
+    const matchRows = [
+      {
+        match_id: 'match-settling',
+        phase: 'settling',
+        current_game: 3,
+        total_games: 10,
+        prompts_json: JSON.stringify([
+          {
+            id: 1,
+            text: 'Prompt',
+            type: 'select',
+            category: 'number',
+            options: ['A', 'B'],
+          },
+        ]),
+        phase_entered_at: Date.now(),
+        last_settled_game: 2,
+      },
+      {
+        match_id: 'match-ending',
+        phase: 'ending',
+        current_game: 10,
+        total_games: 10,
+        prompts_json: JSON.stringify([
+          {
+            id: 2,
+            text: 'Prompt',
+            type: 'select',
+            category: 'number',
+            options: ['A', 'B'],
+          },
+        ]),
+        phase_entered_at: Date.now(),
+        last_settled_game: 10,
+      },
+    ];
+
+    const playerRows = [
+      {
+        match_id: 'match-settling',
+        account_id: '0xsettling',
+        display_name: 'Settling',
+        starting_balance: 1000,
+        current_balance: 1000,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        answer_text: null,
+        normalized_reveal_text: null,
+        salt: null,
+        forfeited: 0,
+        disconnected_at: null,
+      },
+      {
+        match_id: 'match-ending',
+        account_id: '0xending',
+        display_name: 'Ending',
+        starting_balance: 1000,
+        current_balance: 1000,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        answer_text: null,
+        normalized_reveal_text: null,
+        salt: null,
+        forfeited: 0,
+        disconnected_at: null,
+      },
+    ];
+
+    const restored = restoreMatchesFromStorage(
+      createMockSql(matchRows, playerRows),
+      STALE_THRESHOLD_MS,
+    );
+
+    expect(restored.find((match) => match.matchId === 'match-settling')?.phase).toBe(
+      'settling',
+    );
+    expect(restored.find((match) => match.matchId === 'match-ending')?.phase).toBe(
+      'ending',
+    );
+  });
+
   it('restores open-text answer fields from player checkpoints', () => {
     const matchRows = [
       {
