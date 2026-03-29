@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCommitHash } from '../../src/domain/commitReveal';
+import {
+  createCommitHash,
+  createOpenTextCommitHash,
+} from '../../src/domain/commitReveal';
 import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
 import type { SchellingPrompt } from '../../src/types/domain';
 import type {
@@ -160,6 +163,71 @@ describe('GameRoom async task tracking', () => {
     expect(player.revealed).toBe(true);
     expect(player.optionIndex).toBe(0);
     expect(player.salt).toBe(salt);
+  });
+
+  it('accepts open-text reveal payloads and stores normalized reveal text', () => {
+    const { room } = createRoom();
+    const checkpointPlayerAction = vi
+      .spyOn(room, '_checkpointPlayerAction')
+      .mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastRevealStatus').mockImplementation(() => {});
+
+    const salt = 'c'.repeat(64);
+    const player = {
+      accountId: 'acct-open',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: true,
+      revealed: false,
+      hash: createOpenTextCommitHash('New York', salt),
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    const match = createMatch();
+    match.prompts = [
+      {
+        id: 101,
+        text: 'Type the most iconic city.',
+        type: 'open_text',
+        category: 'culture',
+        maxLength: 64,
+        placeholder: 'e.g. New York',
+      },
+    ];
+    match.players.set(player.accountId, player);
+
+    room.playerMatchIndex.set(player.accountId, match.matchId);
+    room.activeMatches.set(match.matchId, match);
+
+    room._handleReveal(player.accountId, {
+      type: 'reveal',
+      answerText: ' new york ',
+      salt,
+    });
+
+    expect(player.revealed).toBe(true);
+    expect(player.answerText).toBe(' new york ');
+    expect(player.normalizedRevealText).toBe('new york');
+    expect(checkpointPlayerAction).toHaveBeenCalledWith(
+      match.matchId,
+      'acct-open',
+      {
+        revealed: true,
+        optionIndex: null,
+        answerText: ' new york ',
+        normalizedRevealText: 'new york',
+        salt,
+      },
+    );
   });
 
   it('tracks settled results-phase forfeit balance persistence with state.waitUntil', async () => {
@@ -983,9 +1051,10 @@ describe('GameRoom async task tracking', () => {
       stmt.sql.includes('INSERT INTO vote_logs'),
     );
     expect(voteLog).toBeDefined();
-    expect(voteLog?.args[9]).toBe(0);
-    expect(voteLog?.args[10]).toBe(0);
-    expect(voteLog?.args[11]).toBe(0);
+    expect(voteLog?.args[5]).toBe('select');
+    expect(voteLog?.args[15]).toBe(0);
+    expect(voteLog?.args[16]).toBe(0);
+    expect(voteLog?.args[17]).toBe(0);
 
     expect(match.lastGameResult?.pot).toBe(0);
     expect(match.lastGameResult?.payoutPerWinner).toBe(0);

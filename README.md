@@ -1,6 +1,6 @@
 # The Schelling Game
 
-The Schelling Game is a wallet-authenticated multiplayer coordination game built on Cloudflare Workers. Players commit answers privately, reveal them later, and try to match the option they expect the most other players to pick. This repository contains the production Worker, the singleton Durable Object that runs the lobby and matches, D1-backed persistence, and the static frontend served at `schelling.games`.
+The Schelling Game is a wallet-authenticated multiplayer coordination game built on Cloudflare Workers. Players commit answers privately, reveal them later, and try to match the answer they expect the most other players to pick. The public product now uses a literature-rooted Schelling prompt pool with both `select` and controlled `open_text` prompts. This repository contains the production Worker, the singleton Durable Object that runs the lobby and matches, D1-backed persistence, and the static frontend served at `schelling.games`.
 
 ## Live Links And Docs
 
@@ -22,7 +22,7 @@ The Schelling Game is a wallet-authenticated multiplayer coordination game built
 - `public/` contains the static landing page, app shell, and shared frontend assets served by Workers Assets.
 - `src/worker.ts` is the Worker entrypoint and defines the singleton `GameRoom` Durable Object that manages queueing, match formation, reconnects, and match settlement orchestration.
 - `src/worker/httpHandler.ts` handles HTTP routes for auth, profile updates, leaderboard reads, exports, admin actions, and game config. WebSocket gameplay connects through `/ws` and is delegated into `GameRoom`.
-- `src/domain/` contains runtime-agnostic game logic such as commit/reveal validation, question selection, and settlement.
+- `src/domain/` contains runtime-agnostic game logic such as commit/reveal validation, prompt selection, and settlement.
 - `d1-migrations/` contains the D1 schema and schema changes for accounts, player stats, auth challenges, vote logs, example votes, and related data.
 - `test/domain/` covers pure domain logic under Node/Vitest. `test/worker/` covers Worker, Durable Object, D1, and HTTP behavior with Cloudflare's Vitest worker pool.
 
@@ -140,6 +140,12 @@ GitHub Actions workflows currently do the following:
 - [Subversion via Focal Points: Investigating Collusion in LLM Monitoring](https://arxiv.org/abs/2507.03010)
 
 Use the underlying papers rather than only secondary summaries when making concrete product or threat-model decisions.
+
+## LLM Usage Note
+
+This repo's optional Workers AI backfill bot is a queue-fill and availability aid, not canonical evidence about human focal points. Keep bot-influenced matches separate from prompt-pool calibration and any claims about human coordination quality.
+
+The prompt pool should be described as a playable, literature-rooted adaptation of focal-point tasks, not as a direct replication of any single academic experiment.
 
 ## License
 

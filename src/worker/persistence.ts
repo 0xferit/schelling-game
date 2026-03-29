@@ -19,6 +19,8 @@ export interface PersistedPlayerState {
   revealed: boolean;
   hash: string | null;
   optionIndex: number | null;
+  answerText: string | null;
+  normalizedRevealText: string | null;
   salt: string | null;
   forfeited: boolean;
   forfeitedAtGame: number | null;
@@ -50,6 +52,8 @@ export type PlayerActionFields = Partial<
     | 'revealed'
     | 'hash'
     | 'optionIndex'
+    | 'answerText'
+    | 'normalizedRevealText'
     | 'salt'
     | 'forfeited'
     | 'forfeitedAtGame'
@@ -147,6 +151,8 @@ export function initCheckpointTables(sql: SqlStorage): void {
       revealed         INTEGER NOT NULL DEFAULT 0,
       hash             TEXT,
       option_index     INTEGER,
+      answer_text      TEXT,
+      normalized_reveal_text TEXT,
       salt             TEXT,
       forfeited        INTEGER NOT NULL DEFAULT 0,
       forfeited_at_game INTEGER,
@@ -170,6 +176,16 @@ export function initCheckpointTables(sql: SqlStorage): void {
   if (!getColumnNames(sql, 'player_checkpoints').has('forfeited_at_game')) {
     sql.exec(
       'ALTER TABLE player_checkpoints ADD COLUMN forfeited_at_game INTEGER',
+    );
+  }
+  if (!getColumnNames(sql, 'player_checkpoints').has('answer_text')) {
+    sql.exec('ALTER TABLE player_checkpoints ADD COLUMN answer_text TEXT');
+  }
+  if (
+    !getColumnNames(sql, 'player_checkpoints').has('normalized_reveal_text')
+  ) {
+    sql.exec(
+      'ALTER TABLE player_checkpoints ADD COLUMN normalized_reveal_text TEXT',
     );
   }
 }
@@ -205,8 +221,8 @@ export function checkpointMatch(
       sql.exec(
         `INSERT INTO player_checkpoints
           (match_id, account_id, display_name, starting_balance, current_balance,
-           committed, revealed, hash, option_index, salt, forfeited, forfeited_at_game, disconnected_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           committed, revealed, hash, option_index, answer_text, normalized_reveal_text, salt, forfeited, forfeited_at_game, disconnected_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         match.matchId,
         p.accountId,
         p.displayName,
@@ -216,6 +232,8 @@ export function checkpointMatch(
         p.revealed ? 1 : 0,
         p.hash,
         p.optionIndex,
+        p.answerText,
+        p.normalizedRevealText,
         p.salt,
         p.forfeited ? 1 : 0,
         p.forfeitedAtGame,
@@ -250,6 +268,14 @@ export function checkpointPlayerAction(
   if (fields.optionIndex !== undefined) {
     sets.push('option_index = ?');
     vals.push(fields.optionIndex);
+  }
+  if (fields.answerText !== undefined) {
+    sets.push('answer_text = ?');
+    vals.push(fields.answerText);
+  }
+  if (fields.normalizedRevealText !== undefined) {
+    sets.push('normalized_reveal_text = ?');
+    vals.push(fields.normalizedRevealText);
   }
   if (fields.salt !== undefined) {
     sets.push('salt = ?');
@@ -332,6 +358,8 @@ export function restoreMatchesFromStorage(
           revealed: !!(pr.revealed as number),
           hash: pr.hash as string | null,
           optionIndex: pr.option_index as number | null,
+          answerText: pr.answer_text as string | null,
+          normalizedRevealText: pr.normalized_reveal_text as string | null,
           salt: pr.salt as string | null,
           forfeited: !!(pr.forfeited as number),
           forfeitedAtGame:

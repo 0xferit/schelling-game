@@ -7,20 +7,36 @@ export type PromptCategory =
   | 'philosophy'
   | 'aesthetics';
 
-export interface SchellingPrompt {
+interface BasePrompt {
   id: number;
   text: string;
-  type: 'select';
   category: PromptCategory;
+}
+
+export interface SelectPrompt extends BasePrompt {
+  type: 'select';
   options: string[];
 }
 
+export interface OpenTextPrompt extends BasePrompt {
+  type: 'open_text';
+  maxLength: number;
+  placeholder: string;
+}
+
+export type SchellingPrompt = SelectPrompt | OpenTextPrompt;
+
 export type GamePhase = 'commit' | 'reveal' | 'results';
+export type NormalizationMode = 'llm' | 'fallback_exact' | null;
 
 export interface PlayerSettlementInput {
   accountId: string;
   displayName: string;
   optionIndex: number | null;
+  inputText: string | null;
+  normalizedRevealText: string | null;
+  bucketKey: string | null;
+  bucketLabel: string | null;
   validReveal: boolean;
   forfeited: boolean;
   attached: boolean;
@@ -31,6 +47,9 @@ export interface PlayerResult {
   displayName: string;
   revealedOptionIndex: number | null;
   revealedOptionLabel: string | null;
+  revealedInputText: string | null;
+  revealedBucketKey: string | null;
+  revealedBucketLabel: string | null;
   wonGame: boolean;
   earnsCoordinationCredit: boolean;
   antePaid: number;
@@ -47,8 +66,10 @@ export interface GameResult {
   validRevealCount: number;
   topCount: number;
   winningOptionIndexes: number[];
+  winningBucketKeys: string[];
   winnerCount: number;
   payoutPerWinner: number;
+  normalizationMode: NormalizationMode;
   players: PlayerResult[];
 }
 

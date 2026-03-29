@@ -156,6 +156,9 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 .opt-btn:hover:not(.disabled){border-color:var(--accent);color:var(--accent)}
 .opt-btn.selected{border-color:var(--accent);background:rgba(201,168,76,.08);color:var(--accent);font-weight:500}
 .opt-btn.disabled{opacity:.4;cursor:default;pointer-events:none}
+.text-answer-wrap{display:flex;flex-direction:column;gap:.45rem}
+.text-answer-wrap input{font-size:1rem;padding:.8rem .95rem}
+.text-answer-hint{font-size:.8rem;color:var(--muted);line-height:1.45}
 #commit-area{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
 #commit-btn{flex:1;min-width:140px}
 #commit-status{font-size:.9rem;color:var(--muted)}
@@ -515,7 +518,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
         </table>
         <div id="result-note" style="font-size:.88rem;color:var(--muted);margin-top:.5rem"></div>
         <div id="rating-row" class="hidden">
-          <span>Rate this question:</span>
+          <span>Rate this prompt:</span>
           <button id="rating-like" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128077; <span id="rating-likes">0</span></button>
           <button id="rating-dislike" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128078; <span id="rating-dislikes">0</span></button>
         </div>
@@ -647,7 +650,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 
     <div>
       <p class="rules-section-label">Who Wins</p>
-      <p class="rules-text">Players on the exact-match plurality option win. If multiple options tie for the highest count, all tied groups win.</p>
+      <p class="rules-text">Players on the plurality answer win. For select prompts that means the exact option. For open-text prompts that means the canonical answer bucket. If multiple answers tie for the highest count, all tied groups win.</p>
     </div>
 
     <div>
@@ -737,8 +740,9 @@ const S = {
   game: 0,
   totalGames: 10,
   phase: null,       // 'commit' | 'reveal' | 'results' | null
-  question: null,
+  prompt: null,
   selectedOption: null,
+  selectedAnswerText: '',
   salt: null,
   commitHash: null,
   committed: false,
@@ -892,6 +896,78 @@ function updateNavigation() {
   );
   // hide logout during active matches
   $('#logout-btn').classList.toggle('hidden', S.view === 'play');
+}
+
+function normalizeRevealText(answerText) {
+  return answerText
+    .normalize('NFKC')
+    .replace(/[‘’`´]/g, "'")
+    .replace(/[“”]/g, '"')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .replace(/[.!?,;:]+(?=(?:['"])?$)/g, '')
+    .trim();
+}
+
+function validateOpenTextAnswer(answerText, maxLength) {
+  if (typeof answerText !== 'string') return false;
+  if (!answerText.trim()) return false;
+  if (answerText.length > maxLength) return false;
+  if (/[\r\n]/.test(answerText)) return false;
+  return normalizeRevealText(answerText).length > 0;
+}
+
+function hasRevealPreimageForPrompt(prompt = S.prompt) {
+  if (!prompt || !S.salt) return false;
+  if (prompt.type === 'select') return S.selectedOption !== null;
+  return validateOpenTextAnswer(S.selectedAnswerText, prompt.maxLength);
+}
+
+function getCurrentRevealPayload() {
+  if (!S.prompt || !S.salt || !hasRevealPreimageForPrompt(S.prompt)) return null;
+  if (S.prompt.type === 'select') {
+    return { type: 'reveal', optionIndex: S.selectedOption, salt: S.salt };
+  }
+  return { type: 'reveal', answerText: S.selectedAnswerText, salt: S.salt };
+}
+
+function updateCommitButtonState() {
+  if (!S.prompt || S.committed || S.phase !== 'commit') {
+    $('#commit-btn').disabled = true;
+    return;
+  }
+  if (S.prompt.type === 'select') {
+    $('#commit-btn').disabled = S.selectedOption === null;
+    return;
+  }
+  $('#commit-btn').disabled = !validateOpenTextAnswer(
+    S.selectedAnswerText,
+    S.prompt.maxLength,
+  );
+}
+
+function getRevealLabel(player) {
+  if (player.revealedBucketLabel) {
+    if (
+      player.revealedInputText &&
+      normalizeRevealText(player.revealedInputText) !==
+        normalizeRevealText(player.revealedBucketLabel)
+    ) {
+      return `${player.revealedBucketLabel} (${player.revealedInputText})`;
+    }
+    return player.revealedBucketLabel;
+  }
+  if (player.revealedOptionLabel) return player.revealedOptionLabel;
+  if (
+    player.revealedOptionIndex !== null &&
+    player.revealedOptionIndex !== undefined &&
+    S.prompt &&
+    S.prompt.type === 'select'
+  ) {
+    return S.prompt.options[player.revealedOptionIndex] || '?';
+  }
+  return '-';
 }
 
 // ── View switching ──────────────────────────────────────────────
@@ -1394,7 +1470,7 @@ function handleMessage(msg) {
     case 'player_disconnected': onPlayerDisconnected(msg); break;
     case 'player_reconnected': onPlayerReconnected(msg); break;
     case 'player_forfeited': onPlayerForfeited(msg); break;
-    case 'question_rating_tally': onQuestionRatingTally(msg); break;
+    case 'prompt_rating_tally': onPromptRatingTally(msg); break;
     case 'error': notify(msg.message, 'error'); break;
     default: break;
   }
@@ -1582,6 +1658,13 @@ function onMatchStarted(msg) {
   S.players = msg.players;
   S.game = 0;
   S.phase = null;
+  S.prompt = null;
+  S.selectedOption = null;
+  S.selectedAnswerText = '';
+  S.salt = null;
+  S.commitHash = null;
+  S.committed = false;
+  S.revealed = false;
   S.summary = null;
   S.gameHistory = loadPersistedGameHistory(msg.matchId);
   S.playerStatuses = {};
@@ -1612,15 +1695,15 @@ function onMatchStarted(msg) {
 function onGameStarted(msg) {
   // Detect reconnect replay with recoverable preimage.
   // Cannot rely on S.game here: onMatchStarted() resets it to 0 before
-  // this handler runs during reconnect replay. Use question.id as a
+  // this handler runs during reconnect replay. Use prompt.id as a
   // stable game identifier and verify we still hold the preimage.
-  const hasLocalPreimage = S.selectedOption !== null && !!S.salt;
-  const isSameGame = S.question && S.question.id === msg.question.id;
+  const hasLocalPreimage = hasRevealPreimageForPrompt(msg.prompt);
+  const isSameGame = S.prompt && S.prompt.id === msg.prompt.id;
   const hasPreimage = !!msg.yourCommitted && isSameGame && hasLocalPreimage;
 
   S.game = msg.game;
   S.phase = msg.phase;
-  S.question = msg.question;
+  S.prompt = msg.prompt;
   S.aiAssistedMatch = !!msg.aiAssisted;
   syncAiAssistedUi();
 
@@ -1632,6 +1715,7 @@ function onGameStarted(msg) {
     // Server says we committed but preimage is gone (page reload, etc.).
     // Can't reveal, but reflect the server-authoritative committed state.
     S.selectedOption = null;
+    S.selectedAnswerText = '';
     S.salt = null;
     S.commitHash = null;
     S.committed = true;
@@ -1639,6 +1723,7 @@ function onGameStarted(msg) {
   } else {
     // Fresh game start (not a reconnect)
     S.selectedOption = null;
+    S.selectedAnswerText = '';
     S.salt = null;
     S.commitHash = null;
     S.committed = false;
@@ -1662,31 +1747,25 @@ function onGameStarted(msg) {
     : msg.phase === 'results' ? 'Settle'
     : msg.phase === 'commit' ? 'Commit' : '';
   $('#phase-timer-label').textContent = phaseTimerLabel;
-  $('#question-text').textContent = msg.question.text;
+  $('#question-text').textContent = msg.prompt.text;
   $('#game-result-banner').classList.add('hidden');
 
   // Disable options if already committed or no longer in commit phase
   const alreadyCommitted = !!msg.yourCommitted;
   const optionsDisabled = alreadyCommitted || msg.phase !== 'commit';
-  renderOptions(msg.question.options, optionsDisabled);
-  if (hasPreimage && S.selectedOption !== null) {
-    // Re-highlight the previously selected option
-    $$('.opt-btn').forEach(b =>
-      b.classList.toggle('selected', parseInt(b.dataset.idx) === S.selectedOption)
-    );
-  }
+  renderPromptInput(msg.prompt, optionsDisabled);
 
   // Only show commit controls during commit phase; for reveal/results the
   // subsequent phase_change message drives the UI.
   if (msg.phase === 'commit') {
     $('#commit-area').classList.remove('hidden');
-    $('#commit-btn').disabled = true;
     if (alreadyCommitted) {
       $('#commit-status').textContent = hasPreimage
         ? 'Committed. Waiting for others...'
         : 'Committed, but reveal key was lost (page reload). Cannot reveal this game.';
     } else {
       $('#commit-status').textContent = '';
+      updateCommitButtonState();
     }
     $('#reveal-area').classList.add('hidden');
   } else {
@@ -1723,38 +1802,84 @@ function onGameStarted(msg) {
   renderLiveReadout();
 }
 
-function renderOptions(options, disabled) {
+function renderPromptInput(prompt, disabled) {
   const grid = $('#select-grid');
   grid.innerHTML = '';
-  options.forEach((opt, idx) => {
-    const btn = document.createElement('div');
-    btn.className = 'opt-btn' + (disabled ? ' disabled' : '');
-    btn.textContent = opt;
-    btn.dataset.idx = idx;
-    if (!disabled) {
-      btn.addEventListener('click', () => selectOption(idx));
-    }
-    grid.appendChild(btn);
+
+  if (prompt.type === 'select') {
+    prompt.options.forEach((opt, idx) => {
+      const btn = document.createElement('div');
+      btn.className = 'opt-btn' + (disabled ? ' disabled' : '');
+      if (S.selectedOption === idx) {
+        btn.classList.add('selected');
+      }
+      btn.textContent = opt;
+      btn.dataset.idx = idx;
+      if (!disabled) {
+        btn.addEventListener('click', () => selectOption(idx));
+      }
+      grid.appendChild(btn);
+    });
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'text-answer-wrap';
+  wrap.style.gridColumn = '1 / -1';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = prompt.placeholder;
+  input.maxLength = prompt.maxLength;
+  input.value = S.selectedAnswerText;
+  input.disabled = disabled;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.autocapitalize = 'none';
+  input.autocorrect = 'off';
+  input.addEventListener('input', (event) => {
+    if (S.committed || S.phase !== 'commit') return;
+    S.selectedAnswerText = event.target.value;
+    updateCommitButtonState();
   });
+
+  const hint = document.createElement('div');
+  hint.className = 'text-answer-hint';
+  hint.textContent = `One short answer only. Max ${prompt.maxLength} characters.`;
+
+  wrap.appendChild(input);
+  wrap.appendChild(hint);
+  grid.appendChild(wrap);
 }
 
 function selectOption(idx) {
   if (S.committed || S.phase !== 'commit') return;
   S.selectedOption = idx;
+  S.selectedAnswerText = '';
   $$('.opt-btn').forEach(b => b.classList.toggle('selected', parseInt(b.dataset.idx) === idx));
-  $('#commit-btn').disabled = false;
+  updateCommitButtonState();
 }
 
 // ── Commit ───────────────────────────────────────────────────────
 $('#commit-btn').addEventListener('click', async () => {
-  if (S.selectedOption === null || S.committed) return;
+  if (!S.prompt || S.committed) return;
+  if (S.prompt.type === 'select' && S.selectedOption === null) return;
+  if (
+    S.prompt.type === 'open_text' &&
+    !validateOpenTextAnswer(S.selectedAnswerText, S.prompt.maxLength)
+  ) {
+    return;
+  }
 
   // Generate salt
   S.salt = Array.from(crypto.getRandomValues(new Uint8Array(16)))
     .map(b => b.toString(16).padStart(2, '0')).join('');
 
   // Create hash
-  const preimage = `${S.selectedOption}:${S.salt}`;
+  const commitValue = S.prompt.type === 'select'
+    ? String(S.selectedOption)
+    : normalizeRevealText(S.selectedAnswerText);
+  const preimage = `${commitValue}:${S.salt}`;
   const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(preimage));
   S.commitHash = Array.from(new Uint8Array(hashBuf))
     .map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1780,9 +1905,10 @@ function onPhaseChange(msg) {
     $('#phase-timer-label').textContent = 'Auto-Reveal';
     $('#commit-area').classList.add('hidden');
 
-    if (S.committed && !S.revealed && S.selectedOption !== null && S.salt) {
+    const revealPayload = getCurrentRevealPayload();
+    if (S.committed && !S.revealed && revealPayload) {
       // Auto-reveal: centralized server, no reason to hold back
-      wsSend({ type: 'reveal', optionIndex: S.selectedOption, salt: S.salt });
+      wsSend(revealPayload);
       S.revealed = true;
       $('#commit-area').classList.remove('hidden');
       $('#commit-status').textContent = 'Revealed. Waiting for others...';
@@ -1807,8 +1933,9 @@ function onPhaseChange(msg) {
 
 // ── Reveal ───────────────────────────────────────────────────────
 $('#reveal-btn').addEventListener('click', () => {
-  if (S.revealed || S.selectedOption === null || !S.salt) return;
-  wsSend({ type: 'reveal', optionIndex: S.selectedOption, salt: S.salt });
+  const revealPayload = getCurrentRevealPayload();
+  if (S.revealed || !revealPayload) return;
+  wsSend(revealPayload);
   S.revealed = true;
   $('#reveal-btn').disabled = true;
   $('#reveal-status').textContent = 'Revealed. Waiting for others...';
@@ -1883,15 +2010,13 @@ function renderGameResult(r) {
   tbody.innerHTML = '';
   r.players.forEach(p => {
     const tr = document.createElement('tr');
-    const optLabel = p.revealedOptionIndex !== null && p.revealedOptionIndex !== undefined && S.question
-      ? (S.question.options[p.revealedOptionIndex] || '?')
-      : '-';
+    const revealLabel = getRevealLabel(p);
     const deltaClass = p.netDelta > 0 ? 'delta-pos' : (p.netDelta < 0 ? 'delta-neg' : 'delta-zero');
     const deltaStr = p.netDelta > 0 ? '+' + p.netDelta : String(p.netDelta);
 
     tr.innerHTML = `
       <td>${esc(p.displayName)}</td>
-      <td>${esc(optLabel)}</td>
+      <td>${esc(revealLabel)}</td>
       <td class="${p.wonGame ? 'won-yes' : 'won-no'}">${p.wonGame ? 'Yes' : 'No'}</td>
       <td class="${p.earnsCoordinationCredit ? 'credit-yes' : ''}">${p.earnsCoordinationCredit ? 'Yes' : 'No'}</td>
       <td class="${deltaClass}">${deltaStr}</td>
@@ -2229,17 +2354,17 @@ function tickTimer() {
   if (remaining <= 0) clearInterval(S.timerInterval);
 }
 
-// ── Question rating ──────────────────────────────────────────────
+// ── Prompt rating ───────────────────────────────────────────────
 function sendRating(rating) {
   if (S.myRating === rating) return; // already voted this
   S.myRating = rating;
-  wsSend({ type: 'question_rating', rating });
+  wsSend({ type: 'prompt_rating', rating });
   // Optimistic highlight
   $('#rating-like').classList.toggle('btn-primary', rating === 'like');
   $('#rating-dislike').classList.toggle('btn-primary', rating === 'dislike');
 }
 
-function onQuestionRatingTally(msg) {
+function onPromptRatingTally(msg) {
   $('#rating-likes').textContent = msg.likes ?? 0;
   $('#rating-dislikes').textContent = msg.dislikes ?? 0;
   // Restore player's own rating on reconnect replay
@@ -2366,14 +2491,14 @@ function renderSummaryHighlights(standings, rounds) {
       title: 'Best Round',
       value: rounds.bestRound ? `Game ${rounds.bestRound.gameNum} ${formatDelta(rounds.bestRound.netDelta)}` : 'No breakout round',
       copy: rounds.bestRound
-        ? `You picked ${quoteLabel(rounds.bestRound.revealedOptionLabel || 'no valid reveal')} and ${rounds.bestRound.wonGame ? 'won' : 'missed'} that pot.`
+        ? `You picked ${quoteLabel(rounds.bestRound.revealedChoiceLabel || 'no valid reveal')} and ${rounds.bestRound.wonGame ? 'won' : 'missed'} that pot.`
         : 'No completed round data was available on this client.',
     },
     {
       title: 'Roughest Miss',
       value: rounds.roughestRound ? `Game ${rounds.roughestRound.gameNum} ${formatDelta(rounds.roughestRound.netDelta)}` : 'No losing round',
       copy: rounds.roughestRound
-        ? `You picked ${quoteLabel(rounds.roughestRound.revealedOptionLabel || 'no valid reveal')} there.`
+        ? `You picked ${quoteLabel(rounds.roughestRound.revealedChoiceLabel || 'no valid reveal')} there.`
         : 'No negative round delta was recorded on this client.',
     },
     {
@@ -2434,10 +2559,11 @@ function renderSummaryTimeline() {
       ? (game.voidReason || 'all antes refunded')
       : quoteLabel(game.winningOptions.length ? game.winningOptions.join(', ') : 'none');
     const chips = [
-      me ? `You picked ${quoteLabel(me.revealedOptionLabel || 'no valid reveal')}` : null,
+      me ? `You picked ${quoteLabel(me.revealedChoiceLabel || 'no valid reveal')}` : null,
       game.voided ? `Reason: ${game.voidReason || 'voided'}` : `Winning answer ${winningOptions}`,
       `Valid reveals ${game.validRevealCount}`,
       game.voided ? null : `Top count ${game.topCount}`,
+      game.normalizationMode ? `Normalization ${game.normalizationMode}` : null,
       me ? `Net ${formatDelta(me.netDelta)}` : null,
     ].filter(Boolean);
 
@@ -2446,7 +2572,7 @@ function renderSummaryTimeline() {
         <div class="summary-game-top">
           <div>
             <div class="summary-game-kicker">Game ${game.gameNum}</div>
-            <div class="summary-game-question">${esc(game.questionText)}</div>
+            <div class="summary-game-question">${esc(game.promptText)}</div>
           </div>
           <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end">
             ${me ? `<div class="summary-game-delta ${deltaClassName(me.netDelta)}">${esc(formatDelta(me.netDelta))}</div>` : ''}
@@ -2463,24 +2589,34 @@ function renderSummaryTimeline() {
 }
 
 function storeGameHistoryEntry(result) {
-  const winningOptions = (result.winningOptionIndexes || []).map((idx) =>
-    result.players.find((player) => player.revealedOptionIndex === idx)?.revealedOptionLabel
-    || S.question?.options?.[idx]
-    || `Option ${idx + 1}`
-  );
+  const winningOptions = result.winningBucketKeys && result.winningBucketKeys.length
+    ? Array.from(
+        new Set(
+          result.players
+            .filter((player) => result.winningBucketKeys.includes(player.revealedBucketKey))
+            .map((player) => player.revealedBucketLabel || player.revealedOptionLabel || player.revealedInputText)
+            .filter(Boolean)
+        ),
+      )
+    : (result.winningOptionIndexes || []).map((idx) =>
+        result.players.find((player) => player.revealedOptionIndex === idx)?.revealedOptionLabel
+        || (S.prompt && S.prompt.type === 'select' ? S.prompt.options[idx] : null)
+        || `Option ${idx + 1}`
+      );
 
   S.gameHistory[result.gameNum - 1] = {
     gameNum: result.gameNum,
-    questionText: S.question?.text || `Game ${result.gameNum}`,
+    promptText: S.prompt?.text || `Game ${result.gameNum}`,
     validRevealCount: result.validRevealCount,
     topCount: result.topCount,
     dustBurned: result.dustBurned,
     voided: result.voided,
     voidReason: result.voidReason,
+    normalizationMode: result.normalizationMode,
     winningOptions,
     players: result.players.map((player) => ({
       displayName: player.displayName,
-      revealedOptionLabel: player.revealedOptionLabel,
+      revealedChoiceLabel: getRevealLabel(player),
       wonGame: player.wonGame,
       earnsCoordinationCredit: player.earnsCoordinationCredit,
       netDelta: player.netDelta,

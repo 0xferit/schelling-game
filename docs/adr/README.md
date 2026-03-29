@@ -20,3 +20,4 @@ Format:
 | [0006](./0006-generalize-public-match-sizes.md) | Generalize public match sizes to odd counts up to 21 | Accepted | 2026-03-27 |
 | [0007](./0007-unanimous-start-now-for-forming-public-matches.md) | Unanimous start-now override for forming public matches | Accepted | 2026-03-29 |
 | [0008](./0008-remove-public-odd-match-requirement.md) | Remove public odd-match requirement | Accepted | 2026-03-29 |
+| [0009](./0009-hybrid-prompt-public-mode.md) | Hybrid prompt public mode | Accepted | 2026-03-29 |

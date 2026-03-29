@@ -1,19 +1,65 @@
 import crypto from 'node:crypto';
-import type { SchellingPrompt } from '../types/domain';
+import type {
+  OpenTextPrompt,
+  PromptCategory,
+  SchellingPrompt,
+  SelectPrompt,
+} from '../types/domain';
 
-const COARSE_COLOR_OPTIONS = [
-  'Red',
-  'Orange',
-  'Yellow',
-  'Green',
-  'Blue',
-  'Purple',
-  'White',
-  'Black',
-  'Gray',
-  'Gold',
-  'Silver',
-] as const;
+export type PromptSourceSet = 'classic' | 'later_experiment';
+export type PromptAudienceScope = 'broad_anglophone';
+export type PromptRoot =
+  | 'day_of_week'
+  | 'coin_side'
+  | 'positive_number'
+  | 'flower'
+  | 'colour'
+  | 'year'
+  | 'city_in_england'
+  | 'nyc_meeting_place'
+  | 'nyc_meeting_time'
+  | 'fair_split'
+  | 'fruits'
+  | 'sports'
+  | 'furniture'
+  | 'car_manufacturers'
+  | 'fast_food_chains'
+  | 'animals'
+  | 'metals'
+  | 'means_of_transport'
+  | 'drinks'
+  | 'superheroes'
+  | 'fruit'
+  | 'animal'
+  | 'car_manufacturer';
+
+export interface PromptCatalogRecord {
+  prompt: SchellingPrompt;
+  root: PromptRoot;
+  sourceSet: PromptSourceSet;
+  frame: string;
+  audienceScope: PromptAudienceScope;
+  calibration: boolean;
+}
+
+interface SelectRootConfig {
+  root: PromptRoot;
+  sourceSet: PromptSourceSet;
+  category: PromptCategory;
+  options: string[];
+  texts: string[];
+  calibrationIndexes?: number[];
+}
+
+interface OpenTextRootConfig {
+  root: PromptRoot;
+  sourceSet: PromptSourceSet;
+  category: PromptCategory;
+  texts: string[];
+  maxLength: number;
+  placeholder: string;
+  calibrationIndexes?: number[];
+}
 
 const FAMILY_ROOTS = new Set([
   'red',
@@ -35,627 +81,455 @@ const FAMILY_ROOTS = new Set([
   'winter',
 ]);
 
-const PROMPT_POOL: SchellingPrompt[] = [
+const SELECT_ROOTS: SelectRootConfig[] = [
   {
-    id: 1,
-    text: 'Pick a number.',
-    type: 'select',
-    category: 'number',
-    options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
-  },
-  {
-    id: 2,
-    text: 'Pick a Fibonacci number.',
-    type: 'select',
-    category: 'number',
-    options: ['1', '2', '3', '5', '8', '13', '21', '34', '55', '89'],
-  },
-  {
-    id: 3,
-    text: 'Pick a perfect square.',
-    type: 'select',
-    category: 'number',
-    options: ['1', '4', '9', '16', '25', '36', '49', '64', '81', '100'],
-  },
-  {
-    id: 4,
-    text: 'Pick a prime number.',
-    type: 'select',
-    category: 'number',
-    options: [
-      '2',
-      '3',
-      '5',
-      '7',
-      '11',
-      '13',
-      '17',
-      '19',
-      '23',
-      '29',
-      '31',
-      '37',
-    ],
-  },
-  {
-    id: 5,
-    text: 'Pick a multiple of ten.',
-    type: 'select',
-    category: 'number',
-    options: ['10', '20', '30', '40', '50', '60', '70', '80', '90', '100'],
-  },
-  {
-    id: 6,
-    text: 'Pick a digit.',
-    type: 'select',
-    category: 'number',
-    options: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
-  },
-  {
-    id: 7,
-    text: 'Pick a number.',
-    type: 'select',
-    category: 'number',
-    options: [
-      '3',
-      '7',
-      '12',
-      '22',
-      '35',
-      '42',
-      '58',
-      '69',
-      '77',
-      '88',
-      '91',
-      '100',
-    ],
-  },
-  {
-    id: 8,
-    text: 'Pick a probability.',
-    type: 'select',
-    category: 'number',
-    options: [
-      '0.01',
-      '0.05',
-      '0.10',
-      '0.25',
-      '0.33',
-      '0.50',
-      '0.67',
-      '0.75',
-      '0.90',
-      '0.95',
-      '0.99',
-    ],
-  },
-  {
-    id: 9,
-    text: 'Pick a power of two.',
-    type: 'select',
-    category: 'number',
-    options: [
-      '1',
-      '2',
-      '4',
-      '8',
-      '16',
-      '32',
-      '64',
-      '128',
-      '256',
-      '512',
-      '1024',
-    ],
-  },
-  {
-    id: 10,
-    text: 'Pick a number.',
-    type: 'select',
-    category: 'number',
-    options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '1000'],
-  },
-  {
-    id: 11,
-    text: 'Pick a number.',
-    type: 'select',
-    category: 'number',
-    options: ['-50', '-20', '-10', '-5', '-1', '0', '1', '5', '10', '20', '50'],
-  },
-  {
-    id: 12,
-    text: 'Pick a repeating number.',
-    type: 'select',
-    category: 'number',
-    options: ['11', '22', '33', '44', '55', '66', '77', '88', '99', '111'],
-  },
-  {
-    id: 13,
-    text: 'Pick a decimal.',
-    type: 'select',
-    category: 'number',
-    options: [
-      '0.0',
-      '0.1',
-      '0.2',
-      '0.3',
-      '0.4',
-      '0.5',
-      '0.6',
-      '0.7',
-      '0.8',
-      '0.9',
-      '1.0',
-    ],
-  },
-  {
-    id: 14,
-    text: 'Pick a constant.',
-    type: 'select',
-    category: 'number',
-    options: [
-      '0',
-      '1',
-      'e (2.72)',
-      'pi (3.14)',
-      'phi (1.62)',
-      'sqrt2 (1.41)',
-      'ln2 (0.69)',
-      '42',
-      'infinity',
-      '-1',
-    ],
-  },
-  {
-    id: 15,
-    text: 'Pick a percentage.',
-    type: 'select',
-    category: 'number',
-    options: [
-      '0%',
-      '10%',
-      '20%',
-      '30%',
-      '40%',
-      '50%',
-      '60%',
-      '70%',
-      '80%',
-      '90%',
-      '100%',
-    ],
-  },
-  {
-    id: 16,
-    text: 'Pick the best age to be.',
-    type: 'select',
+    root: 'day_of_week',
+    sourceSet: 'classic',
     category: 'lifestyle',
-    options: ['5', '10', '16', '18', '21', '25', '30', '40', '50', '65', '80'],
-  },
-  {
-    id: 17,
-    text: 'Pick the best time of day.',
-    type: 'select',
-    category: 'lifestyle',
-    options: [
-      '06:00',
-      '07:00',
-      '08:00',
-      '10:00',
-      '12:00',
-      '14:00',
-      '17:00',
-      '19:00',
-      '20:00',
-      '22:00',
-      '00:00',
+    options: ['Monday', 'Friday', 'Saturday', 'Sunday'],
+    texts: [
+      'Pick the best day of the week.',
+      'Pick the most iconic day of the week.',
+      'Pick the day of the week people mention first.',
+      'Pick the most typical answer for the best day of the week.',
     ],
   },
   {
-    id: 18,
-    text: 'Pick the best month.',
-    type: 'select',
-    category: 'lifestyle',
-    options: [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
+    root: 'coin_side',
+    sourceSet: 'classic',
+    category: 'culture',
+    options: ['Heads', 'Tails'],
+    texts: [
+      'Pick one side of a coin.',
+      'Pick the side of a coin most people say first.',
+      'Pick the most iconic side of a coin.',
+      'Pick the default side of a coin.',
+    ],
+    calibrationIndexes: [0],
+  },
+  {
+    root: 'positive_number',
+    sourceSet: 'classic',
+    category: 'number',
+    options: ['1', '2', '3', '5', '10', '100'],
+    texts: [
+      'Pick the best positive number.',
+      'Pick the most iconic positive number.',
+      'Pick the positive number people mention first.',
+      'Pick the most typical positive number.',
+    ],
+    calibrationIndexes: [0],
+  },
+  {
+    root: 'flower',
+    sourceSet: 'classic',
+    category: 'aesthetics',
+    options: ['Rose', 'Tulip', 'Lily', 'Sunflower', 'Daisy', 'Orchid'],
+    texts: [
+      'Pick the most iconic flower.',
+      'Pick the best-known flower.',
+      'Pick the most typical flower.',
+      'Pick the favourite flower.',
     ],
   },
   {
-    id: 19,
-    text: 'Pick the best day of the week.',
-    type: 'select',
-    category: 'lifestyle',
-    options: [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
+    root: 'colour',
+    sourceSet: 'classic',
+    category: 'aesthetics',
+    options: ['Red', 'Blue', 'Green', 'Yellow', 'Black', 'White'],
+    texts: [
+      'Pick the most iconic color.',
+      'Pick the best-known color.',
+      'Pick the most typical color.',
+      'Pick the favourite color.',
     ],
   },
   {
-    id: 20,
-    text: 'Pick the decade with the best music.',
-    type: 'select',
+    root: 'year',
+    sourceSet: 'classic',
+    category: 'culture',
+    options: ['1900', '1914', '1945', '1969', '2000', '2020'],
+    texts: [
+      'Pick the most iconic year.',
+      'Pick the year people mention first.',
+      'Pick the most memorable year.',
+      'Pick the most typical answer for a famous year.',
+    ],
+  },
+  {
+    root: 'city_in_england',
+    sourceSet: 'classic',
     category: 'culture',
     options: [
-      '1920s',
-      '1930s',
-      '1940s',
-      '1950s',
-      '1960s',
-      '1970s',
-      '1980s',
-      '1990s',
-      '2000s',
-      '2010s',
-      '2020s',
+      'London',
+      'Manchester',
+      'Liverpool',
+      'Birmingham',
+      'Oxford',
+      'Cambridge',
+    ],
+    texts: [
+      'Pick the most iconic city in England.',
+      'Pick the best-known city in England.',
+      'Pick the city in England people mention first.',
+      'Pick the most typical answer for a city in England.',
     ],
   },
   {
-    id: 21,
-    text: 'How long should a perfect vacation last?',
-    type: 'select',
+    root: 'nyc_meeting_place',
+    sourceSet: 'classic',
+    category: 'culture',
+    options: [
+      'Grand Central Terminal',
+      'Times Square',
+      'Central Park',
+      'Empire State Building',
+      'Penn Station',
+    ],
+    texts: [
+      'Pick where two strangers should meet in New York City.',
+      'Pick the most obvious meeting place in New York City.',
+      'Pick the New York City landmark strangers would coordinate on.',
+      'Pick the default place to meet a stranger in New York City.',
+    ],
+    calibrationIndexes: [0],
+  },
+  {
+    root: 'nyc_meeting_time',
+    sourceSet: 'classic',
+    category: 'culture',
+    options: ['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM', '9:00 PM'],
+    texts: [
+      'Pick the best time to meet a stranger.',
+      'Pick the most obvious time to meet a stranger.',
+      'Pick the time strangers would coordinate on first.',
+      'Pick the default time to meet a stranger.',
+    ],
+  },
+  {
+    root: 'fair_split',
+    sourceSet: 'classic',
+    category: 'philosophy',
+    options: ['40/60', '45/55', '50/50', '55/45', '60/40'],
+    texts: [
+      'Pick the fairest way to split 100.',
+      'Pick the most natural way to split 100.',
+      'Pick the split strangers would coordinate on first.',
+      'Pick the default split of 100.',
+    ],
+    calibrationIndexes: [0],
+  },
+  {
+    root: 'fruits',
+    sourceSet: 'later_experiment',
     category: 'lifestyle',
-    options: [
-      '1 day',
-      '3 days',
-      '1 week',
-      '2 weeks',
-      '1 month',
-      '3 months',
-      '6 months',
-      '1 year',
-      '5 years',
-      'Forever',
+    options: ['Apple', 'Orange', 'Banana', 'Mango', 'Pear'],
+    texts: [
+      'Pick the most iconic fruit.',
+      'Pick the best-known fruit.',
+      'Pick the most typical fruit.',
+      'Pick the favourite fruit.',
     ],
   },
   {
-    id: 22,
-    text: 'Pick the most powerful human emotion.',
-    type: 'select',
-    category: 'psychology',
-    options: [
-      'Joy',
-      'Sadness',
-      'Anger',
-      'Fear',
-      'Surprise',
-      'Disgust',
-      'Love',
-      'Hope',
-      'Curiosity',
-      'Peace',
+    root: 'sports',
+    sourceSet: 'later_experiment',
+    category: 'culture',
+    options: ['Football', 'Swimming', 'Cricket', 'Tennis', 'Rugby'],
+    texts: [
+      'Pick the most iconic sport.',
+      'Pick the best-known sport.',
+      'Pick the most typical sport.',
+      'Pick the favourite sport.',
     ],
   },
   {
-    id: 23,
-    text: 'Pick the best superpower.',
-    type: 'select',
+    root: 'furniture',
+    sourceSet: 'later_experiment',
+    category: 'lifestyle',
+    options: ['Bed', 'Sofa', 'Table', 'Chair', 'Desk'],
+    texts: [
+      'Pick the most iconic piece of furniture.',
+      'Pick the best-known piece of furniture.',
+      'Pick the most typical piece of furniture.',
+      'Pick the favourite piece of furniture.',
+    ],
+  },
+  {
+    root: 'car_manufacturers',
+    sourceSet: 'later_experiment',
+    category: 'culture',
+    options: ['Ferrari', 'Ford', 'Mercedes', 'BMW', 'Honda'],
+    texts: [
+      'Pick the most iconic car manufacturer.',
+      'Pick the best-known car manufacturer.',
+      'Pick the most typical car manufacturer.',
+      'Pick the favourite car manufacturer.',
+    ],
+  },
+  {
+    root: 'fast_food_chains',
+    sourceSet: 'later_experiment',
+    category: 'lifestyle',
+    options: ["McDonald's", 'Subway', 'Burger King', 'Pizza Hut', 'KFC'],
+    texts: [
+      'Pick the most iconic fast-food chain.',
+      'Pick the best-known fast-food chain.',
+      'Pick the most typical fast-food chain.',
+      'Pick the favourite fast-food chain.',
+    ],
+  },
+  {
+    root: 'animals',
+    sourceSet: 'later_experiment',
+    category: 'lifestyle',
+    options: ['Dog', 'Cat', 'Lion', 'Tiger', 'Monkey'],
+    texts: [
+      'Pick the most iconic animal.',
+      'Pick the best-known animal.',
+      'Pick the most typical animal.',
+      'Pick the favourite animal.',
+    ],
+  },
+  {
+    root: 'metals',
+    sourceSet: 'later_experiment',
+    category: 'aesthetics',
+    options: ['Gold', 'Steel', 'Aluminium', 'Silver', 'Iron'],
+    texts: [
+      'Pick the most iconic metal.',
+      'Pick the best-known metal.',
+      'Pick the most typical metal.',
+      'Pick the favourite metal.',
+    ],
+  },
+  {
+    root: 'means_of_transport',
+    sourceSet: 'later_experiment',
+    category: 'lifestyle',
+    options: ['Car', 'Bus', 'Aeroplane', 'Bike', 'Train'],
+    texts: [
+      'Pick the most iconic means of transport.',
+      'Pick the best-known means of transport.',
+      'Pick the most typical means of transport.',
+      'Pick the favourite means of transport.',
+    ],
+  },
+  {
+    root: 'drinks',
+    sourceSet: 'later_experiment',
+    category: 'lifestyle',
+    options: ['Beer', 'Tea', 'Water', 'Coke', 'Juice'],
+    texts: [
+      'Pick the most iconic drink.',
+      'Pick the best-known drink.',
+      'Pick the most typical drink.',
+      'Pick the favourite drink.',
+    ],
+  },
+  {
+    root: 'superheroes',
+    sourceSet: 'later_experiment',
     category: 'fantasy',
-    options: [
-      'Flight',
-      'Invisibility',
-      'Teleportation',
-      'Time travel',
-      'Mind reading',
-      'Super strength',
-      'Immortality',
-      'Shapeshifting',
-      'Telekinesis',
-      'Healing others',
-    ],
-  },
-  {
-    id: 24,
-    text: 'If you could eat only one food forever, which?',
-    type: 'select',
-    category: 'lifestyle',
-    options: [
-      'Rice',
-      'Bread',
-      'Potato',
-      'Pasta',
-      'Corn',
-      'Chicken',
-      'Beef',
-      'Fish',
-      'Eggs',
-      'Cheese',
-    ],
-  },
-  {
-    id: 25,
-    text: 'Which sense is most important?',
-    type: 'select',
-    category: 'psychology',
-    options: ['Smell', 'Taste', 'Touch', 'Hearing', 'Sight'],
-  },
-  {
-    id: 26,
-    text: 'Pick the most interesting number.',
-    type: 'select',
-    category: 'number',
-    options: [
-      'Zero',
-      'One',
-      'Two',
-      'Three',
-      'Five',
-      'Seven',
-      'Ten',
-      'Twelve',
-      'Thirteen',
-      'Forty-two',
-      'Hundred',
-      'Infinity',
-    ],
-  },
-  {
-    id: 27,
-    text: 'Pick the most important virtue.',
-    type: 'select',
-    category: 'philosophy',
-    options: [
-      'Courage',
-      'Wisdom',
-      'Justice',
-      'Temperance',
-      'Honesty',
-      'Compassion',
-      'Loyalty',
-      'Humility',
-      'Patience',
-      'Gratitude',
-    ],
-  },
-  {
-    id: 28,
-    text: 'Pick the most universal human fear.',
-    type: 'select',
-    category: 'psychology',
-    options: [
-      'Heights',
-      'Darkness',
-      'Spiders',
-      'Snakes',
-      'Death',
-      'Loneliness',
-      'Failure',
-      'Deep water',
-      'Public speaking',
-      'The unknown',
-    ],
-  },
-  {
-    id: 31,
-    text: 'Pick the most beautiful-sounding instrument.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Piano',
-      'Guitar',
-      'Violin',
-      'Cello',
-      'Flute',
-      'Trumpet',
-      'Saxophone',
-      'Harp',
-      'Drums',
-      'Human voice',
-    ],
-  },
-  {
-    id: 32,
-    text: 'Pick the word that best describes life.',
-    type: 'select',
-    category: 'philosophy',
-    options: [
-      'Always',
-      'Never',
-      'Sometimes',
-      'Maybe',
-      'Definitely',
-      'Probably',
-      'Rarely',
-      'Often',
-      'Impossible',
-      'Unpredictable',
-    ],
-  },
-  {
-    id: 33,
-    text: 'Pick what matters most.',
-    type: 'select',
-    category: 'philosophy',
-    options: [
-      'Freedom',
-      'Security',
-      'Love',
-      'Power',
-      'Knowledge',
-      'Peace',
-      'Wealth',
-      'Health',
-      'Truth',
-      'Beauty',
-    ],
-  },
-  {
-    id: 34,
-    text: 'Pick the fundamental principle of the universe.',
-    type: 'select',
-    category: 'philosophy',
-    options: [
-      'Order',
-      'Chaos',
-      'Balance',
-      'Change',
-      'Stillness',
-      'Growth',
-      'Decay',
-      'Cycles',
-      'Entropy',
-      'Emergence',
-    ],
-  },
-  {
-    id: 35,
-    text: 'Pick the most important concept.',
-    type: 'select',
-    category: 'philosophy',
-    options: [
-      'Past',
-      'Present',
-      'Future',
-      'Moment',
-      'Eternity',
-      'Memory',
-      'Dream',
-      'Now',
-      'Change',
-      'Permanence',
-    ],
-  },
-  {
-    id: 46,
-    text: 'Pick the best season.',
-    type: 'select',
-    category: 'aesthetics',
-    options: ['Spring', 'Summer', 'Autumn', 'Winter'],
-  },
-  {
-    id: 47,
-    text: 'Pick the most beautiful color.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [...COARSE_COLOR_OPTIONS],
-  },
-  {
-    id: 48,
-    text: 'Pick the color of trust.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [...COARSE_COLOR_OPTIONS],
-  },
-  {
-    id: 49,
-    text: 'Pick the color of danger.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [...COARSE_COLOR_OPTIONS],
-  },
-  {
-    id: 50,
-    text: 'Pick the color most associated with money in English-speaking culture.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [...COARSE_COLOR_OPTIONS],
-  },
-  {
-    id: 51,
-    text: 'Pick the most comforting weather.',
-    type: 'select',
-    category: 'aesthetics',
-    options: ['Sunny', 'Rainy', 'Snowy', 'Cloudy', 'Breezy', 'Foggy', 'Stormy'],
-  },
-  {
-    id: 52,
-    text: 'Pick the most dramatic weather.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Sunshine',
-      'Rain',
-      'Snow',
-      'Thunderstorm',
-      'Fog',
-      'Strong wind',
-      'Hail',
-    ],
-  },
-  {
-    id: 53,
-    text: 'Pick the best pet.',
-    type: 'select',
-    category: 'lifestyle',
-    options: ['Dog', 'Cat', 'Bird', 'Fish', 'Rabbit', 'Turtle', 'Horse'],
-  },
-  {
-    id: 54,
-    text: 'Pick the most relaxing natural sound.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Rain',
-      'Ocean waves',
-      'Wind in trees',
-      'Crackling fire',
-      'Birds at dawn',
-      'Flowing river',
-      'Silence',
-    ],
-  },
-  {
-    id: 55,
-    text: 'Pick the most iconic flower.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Rose',
-      'Tulip',
-      'Lily',
-      'Sunflower',
-      'Daisy',
-      'Orchid',
-      'Cherry blossom',
-    ],
-  },
-  {
-    id: 56,
-    text: 'Pick the clearest symbol of peace.',
-    type: 'select',
-    category: 'philosophy',
-    options: [
-      'Dove',
-      'Olive branch',
-      'White flag',
-      'Handshake',
-      'Candle',
-      'Rainbow',
-      'Open hands',
-    ],
-  },
-  {
-    id: 57,
-    text: 'Pick the most iconic fruit.',
-    type: 'select',
-    category: 'lifestyle',
-    options: [
-      'Apple',
-      'Banana',
-      'Orange',
-      'Strawberry',
-      'Watermelon',
-      'Grapes',
-      'Mango',
+    options: ['Superman', 'Batman', 'Spider-Man', 'Hulk', 'Iron Man'],
+    texts: [
+      'Pick the most iconic superhero.',
+      'Pick the best-known superhero.',
+      'Pick the most typical superhero.',
+      'Pick the favourite superhero.',
     ],
   },
 ];
+
+const OPEN_TEXT_ROOTS: OpenTextRootConfig[] = [
+  {
+    root: 'day_of_week',
+    sourceSet: 'classic',
+    category: 'lifestyle',
+    texts: [
+      'Type the answer most players will type first for the best day of the week.',
+      'Type the most iconic answer for the best day of the week.',
+    ],
+    maxLength: 32,
+    placeholder: 'e.g. Monday',
+  },
+  {
+    root: 'positive_number',
+    sourceSet: 'classic',
+    category: 'number',
+    texts: [
+      'Type the answer most players will type first for the best positive number.',
+      'Type the most iconic positive number.',
+    ],
+    maxLength: 32,
+    placeholder: 'e.g. 1',
+  },
+  {
+    root: 'year',
+    sourceSet: 'classic',
+    category: 'culture',
+    texts: [
+      'Type the answer most players will type first for the most iconic year.',
+      'Type the most iconic year.',
+    ],
+    maxLength: 32,
+    placeholder: 'e.g. 2000',
+  },
+  {
+    root: 'flower',
+    sourceSet: 'classic',
+    category: 'aesthetics',
+    texts: [
+      'Type the answer most players will type first for the most iconic flower.',
+      'Type the most iconic flower.',
+    ],
+    maxLength: 48,
+    placeholder: 'e.g. Rose',
+  },
+  {
+    root: 'colour',
+    sourceSet: 'classic',
+    category: 'aesthetics',
+    texts: [
+      'Type the answer most players will type first for the most iconic color.',
+      'Type the most iconic color.',
+    ],
+    maxLength: 32,
+    placeholder: 'e.g. Red',
+  },
+  {
+    root: 'city_in_england',
+    sourceSet: 'classic',
+    category: 'culture',
+    texts: [
+      'Type the answer most players will type first for the most iconic city in England.',
+      'Type the most iconic city in England.',
+    ],
+    maxLength: 64,
+    placeholder: 'e.g. London',
+  },
+  {
+    root: 'fruit',
+    sourceSet: 'later_experiment',
+    category: 'lifestyle',
+    texts: [
+      'Type the answer most players will type first for the most iconic fruit.',
+      'Type the most iconic fruit.',
+    ],
+    maxLength: 48,
+    placeholder: 'e.g. Apple',
+  },
+  {
+    root: 'animal',
+    sourceSet: 'later_experiment',
+    category: 'lifestyle',
+    texts: [
+      'Type the answer most players will type first for the most iconic animal.',
+      'Type the most iconic animal.',
+    ],
+    maxLength: 48,
+    placeholder: 'e.g. Dog',
+  },
+  {
+    root: 'car_manufacturer',
+    sourceSet: 'later_experiment',
+    category: 'culture',
+    texts: [
+      'Type the answer most players will type first for the most iconic car manufacturer.',
+      'Type the most iconic car manufacturer.',
+    ],
+    maxLength: 64,
+    placeholder: 'e.g. Ford',
+  },
+  {
+    root: 'nyc_meeting_place',
+    sourceSet: 'classic',
+    category: 'culture',
+    texts: [
+      'Type the answer most players will type first for where two strangers should meet in New York City.',
+      'Type the most iconic meeting place in New York City.',
+    ],
+    maxLength: 80,
+    placeholder: 'e.g. Grand Central Terminal',
+    calibrationIndexes: [0],
+  },
+];
+
+function createSelectPrompt(
+  id: number,
+  config: SelectRootConfig,
+  frameIndex: number,
+): PromptCatalogRecord {
+  const prompt: SelectPrompt = {
+    id,
+    text: config.texts[frameIndex] || config.texts[0] || 'Pick one.',
+    type: 'select',
+    category: config.category,
+    options: [...config.options],
+  };
+
+  return {
+    prompt,
+    root: config.root,
+    sourceSet: config.sourceSet,
+    frame: config.texts[frameIndex] || config.texts[0] || '',
+    audienceScope: 'broad_anglophone',
+    calibration: !!config.calibrationIndexes?.includes(frameIndex),
+  };
+}
+
+function createOpenTextPrompt(
+  id: number,
+  config: OpenTextRootConfig,
+  frameIndex: number,
+): PromptCatalogRecord {
+  const prompt: OpenTextPrompt = {
+    id,
+    text: config.texts[frameIndex] || config.texts[0] || 'Type one answer.',
+    type: 'open_text',
+    category: config.category,
+    maxLength: config.maxLength,
+    placeholder: config.placeholder,
+  };
+
+  return {
+    prompt,
+    root: config.root,
+    sourceSet: config.sourceSet,
+    frame: config.texts[frameIndex] || config.texts[0] || '',
+    audienceScope: 'broad_anglophone',
+    calibration: !!config.calibrationIndexes?.includes(frameIndex),
+  };
+}
+
+function buildCatalog(): PromptCatalogRecord[] {
+  const records: PromptCatalogRecord[] = [];
+  let nextId = 101;
+
+  for (const root of SELECT_ROOTS) {
+    for (let frameIndex = 0; frameIndex < root.texts.length; frameIndex += 1) {
+      records.push(createSelectPrompt(nextId, root, frameIndex));
+      nextId += 1;
+    }
+  }
+
+  for (const root of OPEN_TEXT_ROOTS) {
+    for (let frameIndex = 0; frameIndex < root.texts.length; frameIndex += 1) {
+      records.push(createOpenTextPrompt(nextId, root, frameIndex));
+      nextId += 1;
+    }
+  }
+
+  return records;
+}
+
+const CANONICAL_PROMPT_RECORDS = buildCatalog();
+const PUBLIC_PROMPT_POOL = CANONICAL_PROMPT_RECORDS.map(
+  (record) => JSON.parse(JSON.stringify(record.prompt)) as SchellingPrompt,
+);
+const PROMPT_RECORDS_BY_ID = new Map(
+  CANONICAL_PROMPT_RECORDS.map((record) => [record.prompt.id, record]),
+);
 
 function normalizeOptionIdentity(value: string): string {
   return value.trim().toLowerCase().replace(/['’]/g, '').replace(/\s+/g, ' ');
@@ -671,118 +545,154 @@ function normalizeWords(value: string): string {
     .trim();
 }
 
-function getFamilyRoot(normalized: string): string | null {
-  if (FAMILY_ROOTS.has(normalized)) {
-    return normalized;
-  }
-
-  const tokens = normalized.split(' ');
-  const lastToken = tokens.at(-1);
-  if (!lastToken) {
-    return null;
-  }
-
-  return FAMILY_ROOTS.has(lastToken) ? lastToken : null;
-}
-
-function getFamilyFragmentationIssues(prompt: SchellingPrompt): string[] {
-  const familyOptions = new Map<string, string[]>();
+function getFamilyFragmentationIssues(prompt: SelectPrompt): string[] {
+  const optionRoots = new Map<string, string[]>();
 
   for (const option of prompt.options) {
-    const normalized = normalizeWords(option);
-    const root = getFamilyRoot(normalized);
-    if (!root) continue;
-
-    const existing = familyOptions.get(root) ?? [];
-    existing.push(option);
-    familyOptions.set(root, existing);
+    const words = normalizeWords(option).split(' ').filter(Boolean);
+    for (const word of words) {
+      const canonicalRoot =
+        word === 'grey' ? 'gray' : word === 'fall' ? 'autumn' : word;
+      if (!FAMILY_ROOTS.has(canonicalRoot)) continue;
+      optionRoots.set(canonicalRoot, [
+        ...(optionRoots.get(canonicalRoot) || []),
+        option,
+      ]);
+    }
   }
 
   const issues: string[] = [];
-  for (const [root, options] of familyOptions.entries()) {
-    if (options.length <= 1) continue;
+  for (const [root, options] of optionRoots) {
+    if (new Set(options).size < 2) continue;
     issues.push(
       `Prompt ${prompt.id} fragments the "${root}" family across multiple options (${options.join(', ')}), which breaks exact-match plurality and mixes abstraction levels.`,
     );
   }
-
   return issues;
 }
 
-function isColorSymbolismPrompt(prompt: SchellingPrompt): boolean {
-  return prompt.category === 'aesthetics' && /\bcolor\b/i.test(prompt.text);
-}
-
-export function getPromptPoolQualityIssues(
-  pool: readonly SchellingPrompt[] = PROMPT_POOL,
-): string[] {
+function getPromptIssues(pool: readonly SchellingPrompt[]): string[] {
   const issues: string[] = [];
-  const seenIds = new Set<number>();
 
-  if (pool.length !== 45) {
+  if (pool.length !== 100) {
     issues.push(
-      `Canonical prompt pool must contain exactly 45 prompts; found ${pool.length}.`,
+      `Canonical prompt pool must contain exactly 100 prompts; found ${pool.length}.`,
     );
   }
 
+  const ids = new Set<number>();
   for (const prompt of pool) {
-    if (seenIds.has(prompt.id)) {
-      issues.push(`Prompt id ${prompt.id} is duplicated.`);
+    if (ids.has(prompt.id)) {
+      issues.push(`Duplicate prompt id detected: ${prompt.id}.`);
     }
-    seenIds.add(prompt.id);
+    ids.add(prompt.id);
 
-    if (prompt.type !== 'select') {
-      issues.push(`Prompt ${prompt.id} must use type "select".`);
+    if (prompt.type === 'select') {
+      if (prompt.options.length === 0) {
+        issues.push(`Prompt ${prompt.id} must have at least one option.`);
+      }
+
+      const seenNormalized = new Map<string, string>();
+      const duplicateOptions: string[] = [];
+      for (const option of prompt.options) {
+        const normalized = normalizeOptionIdentity(option);
+        const previous = seenNormalized.get(normalized);
+        if (previous) {
+          duplicateOptions.push(`${previous} / ${option}`);
+        } else {
+          seenNormalized.set(normalized, option);
+        }
+      }
+      if (duplicateOptions.length > 0) {
+        issues.push(
+          `Prompt ${prompt.id} contains duplicate normalized options: ${duplicateOptions.join(', ')}.`,
+        );
+      }
+
+      issues.push(...getFamilyFragmentationIssues(prompt));
+    } else {
+      if (!prompt.maxLength || prompt.maxLength <= 0) {
+        issues.push(`Prompt ${prompt.id} must declare a positive maxLength.`);
+      }
+      if (!prompt.placeholder.trim()) {
+        issues.push(
+          `Prompt ${prompt.id} must declare a non-empty placeholder.`,
+        );
+      }
     }
-    if (!Array.isArray(prompt.options) || prompt.options.length === 0) {
-      issues.push(`Prompt ${prompt.id} must define a non-empty options array.`);
-      continue;
-    }
-
-    const normalizedCounts = new Map<string, number>();
-    for (const option of prompt.options) {
-      const normalized = normalizeOptionIdentity(option);
-      normalizedCounts.set(
-        normalized,
-        (normalizedCounts.get(normalized) ?? 0) + 1,
-      );
-    }
-
-    const duplicateOptions = [...normalizedCounts.entries()]
-      .filter(([, count]) => count > 1)
-      .map(([option]) => option);
-    if (duplicateOptions.length > 0) {
-      issues.push(
-        `Prompt ${prompt.id} contains duplicate normalized options: ${duplicateOptions.join(', ')}.`,
-      );
-    }
-
-    issues.push(...getFamilyFragmentationIssues(prompt));
-  }
-
-  const colorPromptCount = pool.filter(isColorSymbolismPrompt).length;
-  if (colorPromptCount > 4) {
-    issues.push(
-      `Canonical prompt pool may contain at most 4 color-symbolism prompts; found ${colorPromptCount}.`,
-    );
   }
 
   return issues;
 }
 
-export function getCanonicalPromptPool(): SchellingPrompt[] {
-  return JSON.parse(JSON.stringify(PROMPT_POOL));
-}
+function getRecordIssues(records: readonly PromptCatalogRecord[]): string[] {
+  const issues: string[] = [];
 
-export function selectPromptsForMatch(count = 10): SchellingPrompt[] {
-  const pool = getCanonicalPromptPool();
-  if (count > pool.length) {
-    throw new RangeError(
-      `Requested ${count} prompts but pool only has ${pool.length}`,
+  const selectCount = records.filter(
+    (record) => record.prompt.type === 'select',
+  ).length;
+  const openTextCount = records.filter(
+    (record) => record.prompt.type === 'open_text',
+  ).length;
+
+  if (selectCount !== 80) {
+    issues.push(
+      `Canonical pool must contain exactly 80 select prompts; found ${selectCount}.`,
+    );
+  }
+  if (openTextCount !== 20) {
+    issues.push(
+      `Canonical pool must contain exactly 20 open_text prompts; found ${openTextCount}.`,
     );
   }
 
-  for (let i = pool.length - 1; i > 0; i--) {
+  for (const record of records) {
+    if (
+      !record.root ||
+      !record.sourceSet ||
+      !record.frame ||
+      !record.audienceScope
+    ) {
+      issues.push(
+        `Prompt ${record.prompt.id} is missing required catalog metadata.`,
+      );
+    }
+  }
+
+  const countsByRoot = new Map<
+    PromptRoot,
+    { select: number; openText: number }
+  >();
+  for (const record of records) {
+    const entry = countsByRoot.get(record.root) || { select: 0, openText: 0 };
+    if (record.prompt.type === 'select') entry.select += 1;
+    else entry.openText += 1;
+    countsByRoot.set(record.root, entry);
+  }
+
+  for (const config of SELECT_ROOTS) {
+    const counts = countsByRoot.get(config.root);
+    if ((counts?.select || 0) !== 4) {
+      issues.push(
+        `Select root "${config.root}" must contribute exactly 4 prompts; found ${counts?.select || 0}.`,
+      );
+    }
+  }
+
+  for (const config of OPEN_TEXT_ROOTS) {
+    const counts = countsByRoot.get(config.root);
+    if ((counts?.openText || 0) !== 2) {
+      issues.push(
+        `Open-text root "${config.root}" must contribute exactly 2 prompts; found ${counts?.openText || 0}.`,
+      );
+    }
+  }
+
+  return issues;
+}
+
+function shuffleInPlace<T>(values: T[]): T[] {
+  for (let i = values.length - 1; i > 0; i -= 1) {
     const buf = new Uint32Array(1);
     crypto.getRandomValues(buf);
     const randomValue = buf[0];
@@ -790,22 +700,139 @@ export function selectPromptsForMatch(count = 10): SchellingPrompt[] {
       throw new RangeError('Missing random value during prompt shuffle');
     }
     const j = randomValue % (i + 1);
-    const current = pool[i];
-    const swap = pool[j];
+    const current = values[i];
+    const swap = values[j];
     if (current === undefined || swap === undefined) {
       throw new RangeError('Prompt shuffle index out of bounds');
     }
-    pool[i] = swap;
-    pool[j] = current;
+    values[i] = swap;
+    values[j] = current;
+  }
+  return values;
+}
+
+const CONTEXTUAL_ROOTS = new Set<PromptRoot>([
+  'city_in_england',
+  'nyc_meeting_place',
+  'nyc_meeting_time',
+]);
+
+function getSelectionFamily(root: PromptRoot): string {
+  switch (root) {
+    case 'fruit':
+    case 'fruits':
+      return 'fruit';
+    case 'animal':
+    case 'animals':
+      return 'animal';
+    case 'car_manufacturer':
+    case 'car_manufacturers':
+      return 'car_manufacturer';
+    default:
+      return root;
+  }
+}
+
+export function getCanonicalPromptPool(): SchellingPrompt[] {
+  return JSON.parse(JSON.stringify(PUBLIC_PROMPT_POOL));
+}
+
+export function getCanonicalPromptRecords(): PromptCatalogRecord[] {
+  return JSON.parse(JSON.stringify(CANONICAL_PROMPT_RECORDS));
+}
+
+export function getPromptRecordById(
+  promptId: number,
+): PromptCatalogRecord | undefined {
+  return PROMPT_RECORDS_BY_ID.get(promptId);
+}
+
+export function selectPromptsForMatch(
+  count = 10,
+  options: { includeOpenText?: boolean } = {},
+): SchellingPrompt[] {
+  const includeOpenText = options.includeOpenText ?? true;
+  const eligibleRecords = CANONICAL_PROMPT_RECORDS.filter(
+    (record) => includeOpenText || record.prompt.type === 'select',
+  );
+
+  const families = shuffleInPlace([
+    ...new Set(
+      eligibleRecords.map((record) => getSelectionFamily(record.root)),
+    ),
+  ]);
+
+  if (count > families.length) {
+    throw new RangeError(
+      `Requested ${count} prompts but only ${families.length} distinct prompt families are available`,
+    );
   }
 
-  return pool.slice(0, count);
+  const recordsByFamily = new Map<string, PromptCatalogRecord[]>();
+  for (const record of eligibleRecords) {
+    const family = getSelectionFamily(record.root);
+    recordsByFamily.set(family, [
+      ...(recordsByFamily.get(family) || []),
+      record,
+    ]);
+  }
+
+  const selected: PromptCatalogRecord[] = [];
+  let openTextCount = 0;
+  let calibrationCount = 0;
+  const contextualFamiliesPicked = new Set<string>();
+
+  for (const family of families) {
+    if (selected.length >= count) break;
+
+    const group = shuffleInPlace([...(recordsByFamily.get(family) || [])]);
+    const candidate = group.find((record) => {
+      if (record.prompt.type === 'open_text' && openTextCount >= 2) {
+        return false;
+      }
+      if (record.calibration && calibrationCount >= 1) {
+        return false;
+      }
+      if (CONTEXTUAL_ROOTS.has(record.root)) {
+        return !contextualFamiliesPicked.has(family);
+      }
+      return true;
+    });
+
+    if (!candidate) continue;
+    selected.push(candidate);
+    if (candidate.prompt.type === 'open_text') openTextCount += 1;
+    if (candidate.calibration) calibrationCount += 1;
+    if (CONTEXTUAL_ROOTS.has(candidate.root)) {
+      contextualFamiliesPicked.add(family);
+    }
+  }
+
+  if (selected.length !== count) {
+    throw new RangeError(
+      `Unable to satisfy a ${count}-prompt balanced selection from the canonical pool`,
+    );
+  }
+
+  return shuffleInPlace([...selected]).map(
+    (record) => JSON.parse(JSON.stringify(record.prompt)) as SchellingPrompt,
+  );
+}
+
+export function getPromptPoolQualityIssues(
+  pool: readonly SchellingPrompt[] = PUBLIC_PROMPT_POOL,
+): string[] {
+  const issues = getPromptIssues(pool);
+  if (pool === PUBLIC_PROMPT_POOL) {
+    issues.push(...getRecordIssues(CANONICAL_PROMPT_RECORDS));
+  }
+  return issues;
 }
 
 export function validatePromptPool(
-  pool: readonly SchellingPrompt[] = PROMPT_POOL,
+  pool: readonly SchellingPrompt[] = PUBLIC_PROMPT_POOL,
 ): boolean {
   return getPromptPoolQualityIssues(pool).length === 0;
 }
 
-export default PROMPT_POOL;
+export default PUBLIC_PROMPT_POOL;

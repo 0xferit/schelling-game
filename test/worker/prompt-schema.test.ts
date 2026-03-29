@@ -32,4 +32,28 @@ describe('prompt schema migrations', () => {
     expect(columns).toContain('prompt_id');
     expect(columns).not.toContain('question_id');
   });
+
+  it('adds open-text normalization columns to vote_logs', async () => {
+    const columns = await getColumnNames('vote_logs');
+
+    expect(columns).toContain('prompt_type');
+    expect(columns).toContain('revealed_input_text');
+    expect(columns).toContain('revealed_bucket_key');
+    expect(columns).toContain('revealed_bucket_label');
+    expect(columns).toContain('normalization_mode');
+    expect(columns).toContain('normalization_run_id');
+    expect(columns).toContain('winning_bucket_keys_json');
+  });
+
+  it('creates normalization artifact tables', async () => {
+    const normalizationRuns = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'normalization_runs'",
+    ).first<{ name: string }>();
+    const normalizationVerdicts = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'normalization_verdicts'",
+    ).first<{ name: string }>();
+
+    expect(normalizationRuns?.name).toBe('normalization_runs');
+    expect(normalizationVerdicts?.name).toBe('normalization_verdicts');
+  });
 });

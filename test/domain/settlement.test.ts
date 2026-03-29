@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { GAME_ANTE, MIN_ESTABLISHED_MATCHES } from '../../src/domain/constants';
 import { settleGame } from '../../src/domain/settlement';
 import type {
+  OpenTextPrompt,
   PlayerSettlementInput,
-  SchellingPrompt,
+  SelectPrompt,
 } from '../../src/types/domain';
 
 function must<T>(value: T | null | undefined, message: string): T {
@@ -13,12 +14,21 @@ function must<T>(value: T | null | undefined, message: string): T {
   return value;
 }
 
-const prompt: SchellingPrompt = {
+const prompt: SelectPrompt = {
   id: 1,
   text: 'Test',
   type: 'select',
   category: 'number',
   options: ['A', 'B', 'C', 'D'],
+};
+
+const openTextPrompt: OpenTextPrompt = {
+  id: 2,
+  text: 'Type the most iconic city in England.',
+  type: 'open_text',
+  category: 'culture',
+  maxLength: 64,
+  placeholder: 'e.g. London',
 };
 
 function makePlayer(
@@ -33,9 +43,39 @@ function makePlayer(
     accountId: id,
     displayName: name,
     optionIndex,
+    inputText: null,
+    normalizedRevealText: null,
+    bucketKey:
+      validReveal && optionIndex !== null ? `option:${optionIndex}` : null,
+    bucketLabel:
+      validReveal && optionIndex !== null
+        ? (prompt.options[optionIndex] ?? null)
+        : null,
     validReveal,
     forfeited,
     attached,
+  };
+}
+
+function makeOpenTextPlayer(
+  id: string,
+  name: string,
+  inputText: string | null,
+  bucketKey: string | null,
+  bucketLabel: string | null,
+  validReveal = true,
+): PlayerSettlementInput {
+  return {
+    accountId: id,
+    displayName: name,
+    optionIndex: null,
+    inputText,
+    normalizedRevealText: inputText ? inputText.toLowerCase() : null,
+    bucketKey,
+    bucketLabel,
+    validReveal,
+    forfeited: false,
+    attached: true,
   };
 }
 
@@ -311,6 +351,10 @@ describe('forfeited player handling', () => {
         accountId: 'a3',
         displayName: 'Carol',
         optionIndex: null,
+        inputText: null,
+        normalizedRevealText: null,
+        bucketKey: null,
+        bucketLabel: null,
         validReveal: false,
         forfeited: true,
         attached: true,
@@ -344,6 +388,50 @@ describe('forfeited player handling', () => {
     expect(result.players.find((p) => p.accountId === 'a3')).toBeUndefined();
     expect(result.winnerCount).toBe(2);
     expect(result.payoutPerWinner).toBe(GAME_ANTE);
+  });
+});
+
+describe('open-text settlement', () => {
+  it('settles by canonical bucket rather than raw input text', () => {
+    const players = [
+      makeOpenTextPlayer(
+        'a1',
+        'Alice',
+        'Grand Central',
+        'grand central terminal',
+        'Grand Central Terminal',
+      ),
+      makeOpenTextPlayer(
+        'a2',
+        'Bob',
+        'grand central terminal',
+        'grand central terminal',
+        'Grand Central Terminal',
+      ),
+      makeOpenTextPlayer(
+        'a3',
+        'Carol',
+        'Times Square',
+        'times square',
+        'Times Square',
+      ),
+    ];
+
+    const result = settleGame(players, openTextPrompt, 'llm');
+
+    expect(result.normalizationMode).toBe('llm');
+    expect(result.winningOptionIndexes).toEqual([]);
+    expect(result.winningBucketKeys).toEqual(['grand central terminal']);
+    expect(result.topCount).toBe(2);
+    expect(result.winnerCount).toBe(2);
+
+    const alice = must(
+      result.players.find((player) => player.accountId === 'a1'),
+      'Expected Alice in open-text result',
+    );
+    expect(alice.revealedInputText).toBe('Grand Central');
+    expect(alice.revealedBucketLabel).toBe('Grand Central Terminal');
+    expect(alice.wonGame).toBe(true);
   });
 });
 

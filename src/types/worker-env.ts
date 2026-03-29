@@ -21,4 +21,7 @@ export interface Env {
   AI_BOT_ENABLED?: string;
   AI_BOT_MODELS?: string;
   AI_BOT_TIMEOUT_MS?: string;
+  OPEN_TEXT_PROMPTS_ENABLED?: string;
+  OPEN_TEXT_NORMALIZER_MODEL?: string;
+  OPEN_TEXT_NORMALIZER_TIMEOUT_MS?: string;
 }

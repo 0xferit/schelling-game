@@ -8,7 +8,7 @@ Authentication, transport, persistence, leaderboard implementation, and UI are o
 
 ## 1. Game Summary
 
-The Schelling Game is a multiplayer coordination game played as matches. In each game within a match, every player independently picks the option they expect the most other players to pick. Answers are hidden during commit, opened during reveal, and settled by exact-match plurality.
+The Schelling Game is a multiplayer coordination game played as matches. In each game within a match, every player independently submits the answer they expect the most other players to submit. Answers are hidden during commit, opened during reveal, and settled by exact-match plurality for `select` prompts or by normalized bucket plurality for `open_text` prompts.
 
 Each game distinguishes between two outcomes:
 
@@ -20,18 +20,30 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 ## 2. Core Concepts
 
 - Match: one complete session with any number of players from `3` to `21`.
-- Game: one `commit -> reveal -> results` cycle built around one question.
-- Question: a prompt with a fixed ordered list of discrete answer options.
+- Game: one `commit -> reveal -> results` cycle built around one Schelling prompt.
+- Schelling prompt: a fixed prompt designed to elicit focal-point coordination. A prompt is either:
+  - `select`: an ordered list of discrete answer options
+  - `open_text`: a single short free-text answer field with deterministic transport normalization and post-reveal bucketing
 - Attached player: a player still counted for game accounting. A forfeited player is attached only for the game in which they forfeit; they are detached for all subsequent games.
 - Valid reveal: a reveal from an attached, non-forfeited player who committed in time, revealed in time, and passed commitment verification.
-- `topCount`: the largest number of valid reveals on any single option in a game.
+- `topCount`: the largest number of valid reveals in any winning option or winning answer bucket in a game.
 
 ## 3. Match Format
 
 - Match size is any number from `3` to `21`.
 - Every match lasts `10` games unless it ends early under the rule in section 4.
-- Every game uses one `select` question from the canonical public question pool.
-- Questions are used without replacement inside a match.
+- Every match draws from the canonical public prompt pool of `100` literature-rooted prompt adaptations:
+  - `80` `select` prompts
+  - `20` `open_text` prompts
+- Public selection is root-balanced:
+  - prompts are used without replacement inside a match
+  - a match contains at least `8` distinct prompt families
+  - `open_text` prompts are capped at `2` per match
+  - the same semantic family may not appear in both `select` and `open_text` form in one match
+  - contextualized roots such as `city_in_england`, `nyc_meeting_place`, and `nyc_meeting_time` appear at most once per match
+  - a `10`-game match may contain at most one calibration prompt
+- `open_text` prompts are available only when Workers AI normalization is enabled and the match is not AI-assisted. Otherwise selection is `select`-only.
+- Prompts are used without replacement inside a match.
 - Phase timings are fixed (source of truth: `src/domain/constants.ts`):
   - commit: `60` seconds
   - reveal: `15` seconds
@@ -41,11 +53,13 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 
 For each game:
 
-1. A select question is presented.
+1. A Schelling prompt is presented.
 2. Every attached player is scheduled to ante `2520`.
-3. During commit, each player chooses one option and submits a commitment hash.
+3. During commit, each player chooses one answer and submits a commitment hash.
 4. The game enters reveal when either all non-forfeited players have committed or the commit timer expires.
-5. During reveal, each committed non-forfeited player reveals the exact option index and salt used in the commitment.
+5. During reveal, each committed non-forfeited player reveals:
+   - for `select`: the exact option index and salt used in the commitment
+   - for `open_text`: the raw `answerText` and salt used in the commitment
 6. The game finalizes when either all committed non-forfeited players have revealed or the reveal timer expires.
 7. The game is settled and the results phase runs for `7` seconds.
 8. The next game starts unless the match has ended.
@@ -77,18 +91,21 @@ If the player does not reconnect within `15` seconds, they forfeit:
 
 A player may also choose to forfeit manually from the client during an active match. A manual forfeit is treated exactly like a grace-window expiry at the moment it is triggered.
 
-## 6. Questions and Commit-Reveal
+## 6. Prompts and Commit-Reveal
 
-The game uses `select` questions only.
+Prompt rules:
 
-Question rules:
+- `select` prompts:
+  - each option has a stable zero-based index
+  - clients must preserve the provided option order
+  - scoring uses exact option identity, not numeric distance or proximity
+  - option order must not be randomized within a game
+- `open_text` prompts:
+  - clients must submit one short single-line answer
+  - clients must preserve the raw answer for reveal
+  - settlement does not use embedding similarity or free-form semantic scoring; it uses deterministic transport normalization plus conservative bucket assignment
 
-- each option has a stable zero-based index
-- clients must preserve the provided option order
-- scoring uses exact option identity, not numeric distance or proximity
-- option order must not be randomized within a game
-
-The commitment preimage is:
+The `select` commitment preimage is:
 
 `"${optionIndex}:${salt}"`
 
@@ -97,6 +114,21 @@ where:
 - `optionIndex` is the exact zero-based index of the chosen option
 - `salt` is a player-generated random hex string
 
+The `open_text` commitment preimage is:
+
+`"${normalizeRevealText(answerText)}:${salt}"`
+
+`normalizeRevealText(answerText)` applies:
+
+- Unicode `NFKC`
+- edge trimming
+- internal whitespace collapse
+- lowercasing
+- curly-quote / apostrophe normalization
+- terminal punctuation stripping
+
+Reveal verification succeeds only if the recomputed hash exactly matches the committed hash after the appropriate preimage rule is applied.
+
 The commitment hash is the SHA-256 hex digest of that preimage.
 
 Salt rules:
@@ -104,8 +136,6 @@ Salt rules:
 - `salt` must be a hex string
 - `salt` must be between `32` and `128` hex characters long
 - shorter salts are invalid
-
-Reveal verification succeeds only if the recomputed hash exactly matches the committed hash.
 
 ## 7. Settlement and Coordination Credit
 
@@ -128,6 +158,12 @@ A reveal is valid only if the player:
 - revealed during reveal phase
 - passed commitment verification
 
+For `open_text`, a valid reveal must also pass answer-shape validation:
+
+- single line only
+- non-empty after deterministic transport normalization
+- within the prompt-specific maximum length
+
 ### Void Rule
 
 A game is voided only if there are zero valid reveals.
@@ -142,17 +178,28 @@ In a voided game:
 
 Definitions:
 
-- `count(optionIndex)`: number of valid reveals for that exact option
-- `topCount`: maximum value of `count(optionIndex)` across revealed options
-- `winningOptions`: every option index whose count equals `topCount`
+- for `select`, `count(optionIndex)`: number of valid reveals for that exact option
+- for `open_text`, `count(bucketKey)`: number of valid reveals assigned to the same canonical answer bucket
+- `topCount`: maximum count across revealed options or answer buckets
+- `winningOptions`: every winning option index for a `select` prompt
+- `winningBuckets`: every winning bucket key for an `open_text` prompt
 - `winnerCount`: number of players whose valid reveal is on a winning option
 - `gamePlayerCount`: number of attached players in the game
 - `pot = gamePlayerCount * 2520`
 
+For `select` prompts, the bucket key is the exact option identity.
+
+For `open_text` prompts, settlement first runs one normalization pass over the deduplicated valid revealed answers:
+
+- primary mode: Workers AI returns a strict JSON verdict assigning each normalized input string to one canonical bucket
+- merge policy: only clearly identical referents or spelling/casing/punctuation variants may be merged
+- fallback mode: if the AI call fails, times out, or returns invalid schema, the game falls back to exact-match plurality on deterministically normalized text
+- normalization verdicts are persisted so settled outcomes remain replayable and auditable
+
 A player wins the game if and only if:
 
 - they produced a valid reveal, and
-- their revealed option index is in `winningOptions`
+- their reveal landed in a winning option or winning bucket
 
 All attached players who do not win lose the game.
 
@@ -194,9 +241,9 @@ Consequences:
 - unanimous games do award coordination credit
 - tied pluralities such as `2-2-1` award coordination credit to all winners on the tied top options
 
-## 8. Question Design Policy
+## 8. Prompt Design Policy
 
-Questions must test coordination behavior, not specialist knowledge.
+Prompts must test coordination behavior, not specialist knowledge.
 
 Canonical prompts may rely on:
 
@@ -214,7 +261,16 @@ Canonical prompts may not rely on:
 - exact percentages
 - expert estimation
 
-Because settlement uses exact-match plurality, prompts should present discrete focal alternatives rather than numeric scales.
+Because settlement uses exact-match plurality or conservative bucket plurality, prompts should present salient coordination targets rather than requiring interpretation or specialist lookup.
+
+The canonical pool is literature-rooted: it adapts published focal-point prompt families rather than treating the pool as an unconstrained trivia or survey set.
+
+Prompt design rules:
+
+- one plausible focal-answer family should map to one option or one canonical bucket
+- prompts must stay on one abstraction level
+- region-specific prompts must be explicitly anchored in the text
+- `open_text` prompts are a minority subset used to cover canonical free-response focal-point families without forcing artificial option lists
 
 The canonical pool may include a small calibration subset of intentionally obvious prompts. Calibration prompts are optional, must be answerable without lookup, and a `10`-game match may contain at most one such prompt.
 

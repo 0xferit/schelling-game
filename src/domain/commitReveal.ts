@@ -1,24 +1,54 @@
 import crypto from 'node:crypto';
 
-// Preimage format: "${optionIndex}:${salt}"
-// Hash: SHA-256 hex digest
+const MIN_SALT_LENGTH = 32;
+const MAX_SALT_LENGTH = 128;
+const TERMINAL_PUNCTUATION_RE = /[.!?,;:]+(?=(?:['"])?$)/;
 
-export function createCommitHash(optionIndex: number, salt: string): string {
-  const preimage = `${optionIndex}:${salt}`;
-  return crypto.createHash('sha256').update(preimage).digest('hex');
+function buildCommitPreimage(value: string | number, salt: string): string {
+  return `${value}:${salt}`;
+}
+
+export function createCommitHash(value: string | number, salt: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(buildCommitPreimage(value, salt))
+    .digest('hex');
 }
 
 export function verifyCommit(
-  optionIndex: number,
+  value: string | number,
   salt: string,
   hash: string,
 ): boolean {
-  return createCommitHash(optionIndex, salt) === hash;
+  return createCommitHash(value, salt) === hash;
 }
 
-// Validate salt: must be hex string, 32–128 chars (128–512 bits)
-const MIN_SALT_LENGTH = 32;
-const MAX_SALT_LENGTH = 128;
+export function normalizeRevealText(answerText: string): string {
+  return answerText
+    .normalize('NFKC')
+    .replace(/[\u2018\u2019\u2032`]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .replace(TERMINAL_PUNCTUATION_RE, '')
+    .trim();
+}
+
+export function createOpenTextCommitHash(
+  answerText: string,
+  salt: string,
+): string {
+  return createCommitHash(normalizeRevealText(answerText), salt);
+}
+
+export function verifyOpenTextCommit(
+  answerText: string,
+  salt: string,
+  hash: string,
+): boolean {
+  return createOpenTextCommitHash(answerText, salt) === hash;
+}
 
 export function validateSalt(salt: unknown): salt is string {
   if (typeof salt !== 'string') return false;
@@ -27,12 +57,10 @@ export function validateSalt(salt: unknown): salt is string {
   return /^[0-9a-f]+$/i.test(salt);
 }
 
-// Validate commit hash format
 export function validateHash(hash: unknown): hash is string {
   return typeof hash === 'string' && /^[0-9a-f]{64}$/.test(hash);
 }
 
-// Validate optionIndex: must be non-negative integer within option count
 export function validateOptionIndex(
   optionIndex: unknown,
   optionCount: number,
@@ -42,4 +70,14 @@ export function validateOptionIndex(
     (optionIndex as number) >= 0 &&
     (optionIndex as number) < optionCount
   );
+}
+
+export function validateAnswerText(
+  answerText: unknown,
+  maxLength: number,
+): answerText is string {
+  if (typeof answerText !== 'string') return false;
+  if (answerText.length === 0 || answerText.length > maxLength) return false;
+  if (/[\r\n]/.test(answerText)) return false;
+  return normalizeRevealText(answerText).length > 0;
 }

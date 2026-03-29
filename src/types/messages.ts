@@ -9,6 +9,7 @@ export type ClientMessage =
   | { type: 'set_start_now'; value: boolean }
   | { type: 'commit'; hash: string }
   | { type: 'reveal'; optionIndex: number; salt: string }
+  | { type: 'reveal'; answerText: string; salt: string }
   | { type: 'prompt_rating'; rating: 'like' | 'dislike' };
 
 // ── Server → Client ──────────────────────────────────────────────
