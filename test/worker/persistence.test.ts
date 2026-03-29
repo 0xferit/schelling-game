@@ -266,4 +266,80 @@ describe('restoreMatchesFromStorage', () => {
     );
     expect(active.forfeitedAtGame).toBeNull();
   });
+
+  it('restores aiAssisted from checkpoint rows and defaults legacy rows to false', () => {
+    const phaseEnteredAt = Date.now();
+    const baseMatchRow = {
+      phase: 'commit',
+      current_game: 1,
+      total_games: 10,
+      questions_json: JSON.stringify([
+        {
+          id: 1,
+          text: 'Q',
+          type: 'select',
+          category: 'number',
+          options: ['A', 'B'],
+        },
+      ]),
+      phase_entered_at: phaseEnteredAt,
+      last_settled_game: 0,
+    };
+    const playerRows = [
+      {
+        match_id: 'match-ai',
+        account_id: '0xplayer',
+        display_name: 'P1',
+        starting_balance: 1000,
+        current_balance: 1000,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        salt: null,
+        forfeited: 0,
+        disconnected_at: null,
+      },
+      {
+        match_id: 'match-legacy',
+        account_id: '0xplayer',
+        display_name: 'P1',
+        starting_balance: 1000,
+        current_balance: 1000,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        salt: null,
+        forfeited: 0,
+        disconnected_at: null,
+      },
+    ];
+
+    const restored = restoreMatchesFromStorage(
+      createMockSql(
+        [
+          {
+            ...baseMatchRow,
+            match_id: 'match-ai',
+            ai_assisted: 1,
+          },
+          {
+            ...baseMatchRow,
+            match_id: 'match-legacy',
+          },
+        ],
+        playerRows,
+      ),
+      STALE_THRESHOLD_MS,
+    );
+
+    const aiMatch = restored.find((match) => match.matchId === 'match-ai');
+    const legacyMatch = restored.find(
+      (match) => match.matchId === 'match-legacy',
+    );
+
+    expect(aiMatch?.aiAssisted).toBe(true);
+    expect(legacyMatch?.aiAssisted).toBe(false);
+  });
 });

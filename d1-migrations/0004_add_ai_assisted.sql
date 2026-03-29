@@ -1,0 +1,1 @@
+ALTER TABLE matches ADD COLUMN ai_assisted INTEGER DEFAULT 0;

@@ -65,6 +65,21 @@ interface FormingMatchState {
   fillDeadlineMs: number | null;
 }
 
+function neutralizeAiAssistedResult(result: GameResult): GameResult {
+  return {
+    ...result,
+    pot: 0,
+    dustBurned: 0,
+    payoutPerWinner: 0,
+    players: result.players.map((player) => ({
+      ...player,
+      antePaid: 0,
+      gamePayout: 0,
+      netDelta: 0,
+    })),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -395,6 +410,10 @@ export class GameRoom {
     return this.connections.get(accountId)?.displayName || 'unknown';
   }
 
+  _getMatchGameAnte(match: Pick<PersistedMatchFields, 'aiAssisted'>): number {
+    return match.aiAssisted ? 0 : GAME_ANTE;
+  }
+
   _getAiBotTimeoutMs(): number {
     const parsed = Number.parseInt(this.env.AI_BOT_TIMEOUT_MS || '', 10);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -704,6 +723,7 @@ export class GameRoom {
       revealTimer: null,
       resultsTimer: null,
       lastGameResult: null,
+      aiAssisted: playerIds.some((id) => this._isAiBot(id)),
     };
     this.activeMatches.set(matchId, match);
 
@@ -711,13 +731,14 @@ export class GameRoom {
     try {
       const createStmts: D1PreparedStatement[] = [
         this.env.DB.prepare(
-          'INSERT INTO matches (match_id, started_at, game_count, player_count, status) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO matches (match_id, started_at, game_count, player_count, status, ai_assisted) VALUES (?, ?, ?, ?, ?, ?)',
         ).bind(
           matchId,
           new Date().toISOString(),
           TOTAL_GAMES,
           playersMap.size,
           'active',
+          match.aiAssisted ? 1 : 0,
         ),
       ];
       for (const [acctId, p] of playersMap) {
@@ -743,6 +764,7 @@ export class GameRoom {
       type: 'match_started',
       matchId,
       gameCount: TOTAL_GAMES,
+      aiAssisted: match.aiAssisted,
       players: playersInfo,
     });
 
@@ -781,7 +803,8 @@ export class GameRoom {
         options: question.options,
       },
       commitDuration: COMMIT_DURATION,
-      gameAnte: GAME_ANTE,
+      gameAnte: this._getMatchGameAnte(match),
+      aiAssisted: match.aiAssisted,
       phase: 'commit',
     });
 
@@ -843,7 +866,9 @@ export class GameRoom {
       attached: !p.forfeited || p.forfeitedAtGame === match.currentGame,
     }));
 
-    const result: GameResult = settleGame(settlementPlayers, question);
+    const result: GameResult = match.aiAssisted
+      ? neutralizeAiAssistedResult(settleGame(settlementPlayers, question))
+      : settleGame(settlementPlayers, question);
 
     // Apply balance changes to in-memory state (always needed for correct broadcast)
     for (const pr of result.players) {
@@ -874,13 +899,15 @@ export class GameRoom {
         if (!playerState) continue;
 
         if (!this._isAiBot(pr.accountId)) {
-          stmts.push(
-            this.env.DB.prepare(
-              'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-            ).bind(playerState.currentBalance, pr.accountId),
-          );
+          if (!match.aiAssisted) {
+            stmts.push(
+              this.env.DB.prepare(
+                'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+              ).bind(playerState.currentBalance, pr.accountId),
+            );
+          }
 
-          if (!result.voided) {
+          if (!result.voided && !match.aiAssisted) {
             stmts.push(
               this.env.DB.prepare(
                 'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
@@ -1036,7 +1063,11 @@ export class GameRoom {
       })),
     };
 
-    this._broadcastToMatch(match, { type: 'match_over', summary });
+    this._broadcastToMatch(match, {
+      type: 'match_over',
+      aiAssisted: match.aiAssisted,
+      summary,
+    });
 
     // Batch all endMatch D1 writes
     try {
@@ -1049,11 +1080,13 @@ export class GameRoom {
       for (const p of match.players.values()) {
         if (this._isAiBot(p.accountId)) continue;
 
-        endStmts.push(
-          this.env.DB.prepare(
-            'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-          ).bind(p.currentBalance, p.accountId),
-        );
+        if (!match.aiAssisted) {
+          endStmts.push(
+            this.env.DB.prepare(
+              'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+            ).bind(p.currentBalance, p.accountId),
+          );
+        }
 
         endStmts.push(
           this.env.DB.prepare(
@@ -1067,11 +1100,13 @@ export class GameRoom {
           ),
         );
 
-        endStmts.push(
-          this.env.DB.prepare(
-            'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
-          ).bind(p.accountId),
-        );
+        if (!match.aiAssisted) {
+          endStmts.push(
+            this.env.DB.prepare(
+              'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
+            ).bind(p.accountId),
+          );
+        }
       }
 
       await this.env.DB.batch(endStmts);
@@ -1673,8 +1708,11 @@ export class GameRoom {
     // subsequent rounds, so this is the only place the penalty is applied.
     // Applying here instead of in _finalizeGame avoids a timing exploit
     // where a disconnect during the results phase would skip the penalty.
-    const futureGames = match.totalGames - match.currentGame;
-    player.currentBalance -= futureGames * GAME_ANTE;
+    const futureGamesPenaltyApplied = !match.aiAssisted;
+    if (futureGamesPenaltyApplied) {
+      const futureGames = match.totalGames - match.currentGame;
+      player.currentBalance -= futureGames * GAME_ANTE;
+    }
 
     this._checkpointPlayerAction(match.matchId, accountId, {
       forfeited: true,
@@ -1695,7 +1733,7 @@ export class GameRoom {
     // balance to D1, so persisting here would race with that write.
     const roundFullySettled =
       match.lastGameResult?.gameNum === match.currentGame;
-    if (roundFullySettled) {
+    if (roundFullySettled && futureGamesPenaltyApplied) {
       this._waitUntil(
         this._persistAccountBalance(accountId, player.currentBalance),
         `persist forfeited balance for ${accountId}`,
@@ -1717,7 +1755,7 @@ export class GameRoom {
     this._broadcastToMatch(match, {
       type: 'player_forfeited',
       displayName: player.displayName,
-      futureGamesPenaltyApplied: true,
+      futureGamesPenaltyApplied,
     });
 
     // If all players are now forfeited, check for early termination
@@ -2074,6 +2112,7 @@ export class GameRoom {
       type: 'match_started',
       matchId: match.matchId,
       gameCount: match.totalGames,
+      aiAssisted: match.aiAssisted,
       players: playersInfo,
     });
 
@@ -2084,7 +2123,7 @@ export class GameRoom {
         this._sendTo(accountId, {
           type: 'player_forfeited',
           displayName: peer.displayName,
-          futureGamesPenaltyApplied: true,
+          futureGamesPenaltyApplied: !match.aiAssisted,
         });
       } else if (peer.disconnectedAt !== null) {
         const elapsedMs = Date.now() - peer.disconnectedAt;
@@ -2132,7 +2171,8 @@ export class GameRoom {
         },
         commitDuration:
           match.phase === 'commit' ? commitRemaining : COMMIT_DURATION,
-        gameAnte: GAME_ANTE,
+        gameAnte: this._getMatchGameAnte(match),
+        aiAssisted: match.aiAssisted,
         phase: match.phase,
         yourCommitted: player.committed,
         yourRevealed: player.revealed,

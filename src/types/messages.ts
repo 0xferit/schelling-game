@@ -29,6 +29,7 @@ export interface MatchStartedMessage {
   type: 'match_started';
   matchId: string;
   gameCount: number;
+  aiAssisted: boolean;
   players: {
     displayName: string;
     startingBalance: number;
@@ -42,6 +43,7 @@ export interface GameStartedMessage {
   question: Question;
   commitDuration: number;
   gameAnte: number;
+  aiAssisted: boolean;
   phase: 'commit' | 'reveal' | 'results';
   /** Sent on reconnect: whether this player already committed this game */
   yourCommitted?: boolean;
@@ -73,6 +75,7 @@ export interface GameResultMessage {
 
 export interface MatchOverMessage {
   type: 'match_over';
+  aiAssisted: boolean;
   summary: {
     players: {
       displayName: string;

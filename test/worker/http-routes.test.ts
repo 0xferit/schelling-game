@@ -237,6 +237,9 @@ describe('HTTP routes', () => {
         'INSERT INTO matches (match_id, started_at, ended_at, game_count, player_count, status) VALUES (?, ?, ?, ?, ?, ?)',
       ).bind('match-stale', stale, stale, 10, 2, 'completed'),
       env.DB.prepare(
+        'INSERT INTO matches (match_id, started_at, ended_at, game_count, player_count, status, ai_assisted) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).bind('match-ai', recent, recent, 10, 2, 'completed', 1),
+      env.DB.prepare(
         'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
       ).bind('match-recent', accountA, 'Alice', 0, 'completed'),
       env.DB.prepare(
@@ -245,6 +248,9 @@ describe('HTTP routes', () => {
       env.DB.prepare(
         'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
       ).bind('match-stale', accountC, 'Carol', 0, 'completed'),
+      env.DB.prepare(
+        'INSERT INTO match_players (match_id, account_id, display_name_snapshot, starting_balance, result) VALUES (?, ?, ?, ?, ?)',
+      ).bind('match-ai', accountC, 'Carol', 0, 'completed'),
       env.DB.prepare(
         'UPDATE player_stats SET longest_streak = ? WHERE account_id = ?',
       ).bind(8, accountB),

@@ -34,6 +34,7 @@ export interface PersistedMatchFields {
   phaseEnteredAt: number;
   lastSettledGame: number;
   lastGameResult: GameResultMessage['result'] | null;
+  aiAssisted: boolean;
 }
 
 export interface CheckpointableMatch extends PersistedMatchFields {
@@ -94,6 +95,7 @@ export function initCheckpointTables(sql: SqlStorage): void {
       phase_entered_at INTEGER NOT NULL,
       last_settled_game INTEGER NOT NULL DEFAULT 0,
       last_game_result_json TEXT,
+      ai_assisted     INTEGER NOT NULL DEFAULT 0,
       created_at      INTEGER NOT NULL
     )
   `);
@@ -122,6 +124,11 @@ export function initCheckpointTables(sql: SqlStorage): void {
       'ALTER TABLE match_checkpoints ADD COLUMN last_game_result_json TEXT',
     );
   }
+  if (!getColumnNames(sql, 'match_checkpoints').has('ai_assisted')) {
+    sql.exec(
+      'ALTER TABLE match_checkpoints ADD COLUMN ai_assisted INTEGER NOT NULL DEFAULT 0',
+    );
+  }
 
   sql.exec(`
     CREATE TABLE IF NOT EXISTS player_checkpoints (
@@ -148,6 +155,12 @@ export function initCheckpointTables(sql: SqlStorage): void {
     'forfeited_at_game',
   );
 
+  if (!getColumnNames(sql, 'match_checkpoints').has('ai_assisted')) {
+    sql.exec(
+      'ALTER TABLE match_checkpoints ADD COLUMN ai_assisted INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+
   if (!getColumnNames(sql, 'player_checkpoints').has('forfeited_at_game')) {
     sql.exec(
       'ALTER TABLE player_checkpoints ADD COLUMN forfeited_at_game INTEGER',
@@ -169,8 +182,8 @@ export function checkpointMatch(
     );
     sql.exec(
       `INSERT OR REPLACE INTO match_checkpoints
-        (match_id, phase, current_game, total_games, questions_json, phase_entered_at, last_settled_game, last_game_result_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (match_id, phase, current_game, total_games, questions_json, phase_entered_at, last_settled_game, last_game_result_json, ai_assisted, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       match.matchId,
       match.phase,
       match.currentGame,
@@ -179,6 +192,7 @@ export function checkpointMatch(
       match.phaseEnteredAt,
       match.lastSettledGame,
       match.lastGameResult ? JSON.stringify(match.lastGameResult) : null,
+      match.aiAssisted ? 1 : 0,
       Date.now(),
     );
     for (const p of match.players.values()) {
@@ -338,6 +352,7 @@ export function restoreMatchesFromStorage(
         lastGameResult: lastGameResultRaw
           ? JSON.parse(lastGameResultRaw)
           : null,
+        aiAssisted: !!(row.ai_assisted as number),
       });
     } catch (err) {
       console.error('DO storage: failed to restore match', row.match_id, err);
