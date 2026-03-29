@@ -73,8 +73,8 @@ nav{display:flex;gap:.5rem}
 #rules-overlay .rules-example strong{color:var(--accent)}
 .info-banner{background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.45);border-radius:var(--radius);padding:.8rem 1rem;font-size:.85rem;line-height:1.5;color:var(--text)}
 .info-banner strong{color:var(--orange)}
-.danger-banner{background:linear-gradient(135deg,rgba(229,57,53,.16),rgba(229,57,53,.06));border:1px solid rgba(229,57,53,.4);border-radius:var(--radius);padding:.9rem 1rem;font-size:.86rem;line-height:1.5;color:var(--text)}
-.danger-banner strong{color:#ffb3a9}
+.danger-banner{background:var(--surface);border:1px solid rgba(229,57,53,.28);border-radius:var(--radius);padding:.9rem 1rem;font-size:.86rem;line-height:1.5;color:var(--text)}
+.danger-banner strong{color:#f09a97}
 /* Queue */
 #queue-view .card{max-width:520px;margin:0 auto}
 #queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
@@ -151,21 +151,13 @@ nav{display:flex;gap:.5rem}
 .dot.forfeited{background:var(--red)}
 .dot.disconnected{background:var(--red);animation:pulse 1s infinite alternate}
 .balance-badge{font-family:var(--serif);font-size:.8rem;color:var(--muted)}
-#forfeit-panel{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(229,57,53,.1),rgba(17,17,17,.96) 60%);border:1px solid rgba(229,57,53,.24);border-radius:var(--radius);padding:1rem}
-#forfeit-panel::before{content:'';position:absolute;inset:auto -20% 0 35%;height:140px;background:radial-gradient(circle at center,rgba(229,57,53,.16),transparent 70%);pointer-events:none;opacity:.8;transform:translateY(45%);transition:transform .25s ease,opacity .25s ease}
-#forfeit-panel:hover::before{transform:translateY(30%);opacity:1}
-#forfeit-panel.is-locked{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(17,17,17,.96) 65%);border-color:rgba(255,255,255,.08)}
-.forfeit-kicker{font-size:.68rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#ffb3a9}
-.forfeit-copy{margin-top:.45rem;font-size:.83rem;line-height:1.55;color:var(--muted)}
-#forfeit-match-btn{position:relative;width:100%;display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin-top:.9rem;padding:.95rem 1rem;border:1px solid rgba(229,57,53,.4);border-radius:calc(var(--radius) + 1px);background:rgba(229,57,53,.08);color:var(--text);font-weight:500;text-align:left;text-transform:none;letter-spacing:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
-#forfeit-match-btn:hover:not(:disabled){transform:translateY(-1px);border-color:rgba(229,57,53,.72);background:rgba(229,57,53,.15);box-shadow:0 12px 28px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.04)}
-#forfeit-match-btn:disabled{opacity:1;cursor:default;transform:none;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08);box-shadow:none}
-.forfeit-btn-copy{display:flex;flex-direction:column;gap:.26rem}
-.forfeit-btn-label{font-family:var(--serif);font-size:1.18rem;font-weight:600;line-height:1}
-.forfeit-btn-meta{font-size:.79rem;line-height:1.45;color:var(--muted)}
-.forfeit-btn-state{align-self:center;font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:#ffb3a9}
-#forfeit-panel.is-locked .forfeit-kicker,#forfeit-panel.is-locked .forfeit-btn-state{color:rgba(255,255,255,.5)}
-#forfeit-panel.is-locked .forfeit-copy,#forfeit-panel.is-locked .forfeit-btn-meta{color:var(--muted)}
+#forfeit-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
+#forfeit-panel.is-locked{border-color:rgba(229,57,53,.24)}
+#forfeit-panel h3{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.25em;color:var(--muted);margin:0}
+.forfeit-copy{margin-top:.5rem;font-size:.83rem;line-height:1.55;color:var(--muted)}
+#forfeit-match-btn{width:100%;margin-top:.85rem}
+#forfeit-match-btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.03)}
+#forfeit-panel.is-locked .forfeit-copy{color:var(--muted)}
 /* Summary */
 #summary-view .card{max-width:760px;margin:0 auto}
 #summary-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
@@ -224,12 +216,12 @@ nav{display:flex;gap:.5rem}
 .action-row{display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap}
 #rating-row{display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)}
 #forfeit-overlay{position:fixed;inset:0;background:rgba(0,0,0,.76);display:flex;align-items:center;justify-content:center;z-index:210;padding:1rem;backdrop-filter:blur(12px)}
-#forfeit-overlay .forfeit-dialog{width:min(440px,100%);background:linear-gradient(180deg,rgba(50,14,14,.98),rgba(17,17,17,.98) 72%);border:1px solid rgba(229,57,53,.3);border-radius:var(--radius);padding:1.4rem;box-shadow:0 28px 60px rgba(0,0,0,.5);animation:forfeitDialogIn .2s ease-out}
-.forfeit-dialog-eyebrow{font-size:.68rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#ffb3a9}
+#forfeit-overlay .forfeit-dialog{width:min(440px,100%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.4rem;box-shadow:0 20px 44px rgba(0,0,0,.42);animation:forfeitDialogIn .2s ease-out}
+.forfeit-dialog-eyebrow{font-size:.68rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 #forfeit-overlay h3{margin-top:.4rem;font-size:2rem;line-height:.95}
 #forfeit-overlay p{margin-top:.75rem;font-size:.9rem;line-height:1.6;color:var(--muted)}
 .forfeit-dialog-rule{margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.08);font-size:.78rem;line-height:1.5;color:var(--text)}
-.forfeit-dialog-rule strong{display:block;font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;color:#ffb3a9}
+.forfeit-dialog-rule strong{display:block;font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 .forfeit-dialog-actions{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1.1rem;flex-wrap:wrap}
 #confirm-forfeit-btn{background:linear-gradient(180deg,rgba(229,57,53,.92),rgba(188,32,28,.92));border:1px solid rgba(255,179,169,.16);color:#fff}
 #confirm-forfeit-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 14px 26px rgba(92,10,8,.34)}
@@ -245,8 +237,6 @@ nav{display:flex;gap:.5rem}
   .action-row{flex-direction:column}
   .action-row button{width:100%}
   .action-row .toggle-row{margin-left:0;justify-content:center}
-  #forfeit-match-btn{align-items:flex-start;flex-direction:column}
-  .forfeit-btn-state{align-self:flex-start}
   .forfeit-dialog-actions{flex-direction:column}
   .forfeit-dialog-actions button{width:100%}
 }
@@ -407,15 +397,9 @@ nav{display:flex;gap:.5rem}
         <div id="players-list"></div>
       </div>
       <div id="forfeit-panel">
-        <div class="forfeit-kicker">Exit Match</div>
-        <p class="forfeit-copy" id="forfeit-panel-copy">Leave the current run if you do not want to keep taking turns.</p>
-        <button id="forfeit-match-btn" type="button">
-          <span class="forfeit-btn-copy">
-            <span class="forfeit-btn-label">Forfeit Match</span>
-            <span class="forfeit-btn-meta" id="forfeit-btn-meta">Stops your future turns immediately.</span>
-          </span>
-          <span class="forfeit-btn-state" id="forfeit-btn-state">Irreversible</span>
-        </button>
+        <h3>Leave Match</h3>
+        <p class="forfeit-copy" id="forfeit-panel-copy">Ends your participation for the rest of this run.</p>
+        <button class="btn-danger" id="forfeit-match-btn" type="button">Forfeit Match</button>
       </div>
     </div>
   </div>
@@ -982,21 +966,19 @@ function openForfeitOverlay() {
 function syncForfeitUi() {
   const activeMatch = hasActiveMatch();
   const selfForfeited = hasSelfForfeited();
+  const button = $('#forfeit-match-btn');
 
   $('#forfeit-panel').classList.toggle('hidden', !activeMatch);
   $('#forfeit-panel').classList.toggle('is-locked', selfForfeited);
-  $('#forfeit-match-btn').disabled = !activeMatch || selfForfeited;
+  button.disabled = !activeMatch || selfForfeited;
   $('#forfeit-status-banner').classList.toggle('hidden', !selfForfeited);
 
   $('#forfeit-panel-copy').textContent = selfForfeited
-    ? 'Your match is settling in the background. Final standings arrive when the run closes.'
-    : 'Leave the current run if you do not want to keep taking turns.';
-  $('#forfeit-btn-meta').textContent = selfForfeited
-    ? 'Waiting for the final standings screen.'
-    : 'Stops your future turns immediately.';
-  $('#forfeit-btn-state').textContent = selfForfeited
-    ? 'Locked'
-    : 'Irreversible';
+    ? 'Waiting for the match to finish so final standings can settle.'
+    : 'Ends your participation for the rest of this run.';
+  button.textContent = selfForfeited
+    ? 'Forfeit Locked In'
+    : 'Forfeit Match';
 
   if (!activeMatch || selfForfeited) {
     closeForfeitOverlay({ restoreFocus: false });
