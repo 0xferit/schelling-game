@@ -95,6 +95,7 @@ export function initCheckpointTables(sql: SqlStorage): void {
       phase_entered_at INTEGER NOT NULL,
       last_settled_game INTEGER NOT NULL DEFAULT 0,
       last_game_result_json TEXT,
+      ai_assisted     INTEGER NOT NULL DEFAULT 0,
       created_at      INTEGER NOT NULL
     )
   `);
@@ -121,6 +122,11 @@ export function initCheckpointTables(sql: SqlStorage): void {
   if (!getColumnNames(sql, 'match_checkpoints').has('last_game_result_json')) {
     sql.exec(
       'ALTER TABLE match_checkpoints ADD COLUMN last_game_result_json TEXT',
+    );
+  }
+  if (!getColumnNames(sql, 'match_checkpoints').has('ai_assisted')) {
+    sql.exec(
+      'ALTER TABLE match_checkpoints ADD COLUMN ai_assisted INTEGER NOT NULL DEFAULT 0',
     );
   }
 

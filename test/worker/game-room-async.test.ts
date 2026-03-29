@@ -658,7 +658,34 @@ describe('GameRoom async task tracking', () => {
     }
   });
 
-  it('skips player_stats writes but keeps token_balance for AI-assisted matches', async () => {
+  it('broadcasts AI-assisted game_start metadata with zero ante', () => {
+    const { room } = createRoom();
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_maybeScheduleAiBotCommit').mockImplementation(() => {});
+    const broadcastToMatch = vi
+      .spyOn(room, '_broadcastToMatch')
+      .mockImplementation(() => {});
+
+    const match = createMatch();
+    match.currentGame = 0;
+    match.phase = 'starting';
+    match.aiAssisted = true;
+
+    room._startCommitPhase(match);
+
+    expect(broadcastToMatch).toHaveBeenCalledWith(
+      match,
+      expect.objectContaining({
+        type: 'game_started',
+        aiAssisted: true,
+        gameAnte: 0,
+      }),
+    );
+
+    if (match.commitTimer) clearTimeout(match.commitTimer);
+  });
+
+  it('keeps balances unchanged and skips account/stat writes in AI-assisted matches', async () => {
     const prepare = vi.fn((sql: string) => ({
       bind: (...args: unknown[]) => ({ sql, args }),
     }));
@@ -711,25 +738,96 @@ describe('GameRoom async task tracking', () => {
 
     await room._finalizeGame(match);
 
+    const alice = must(
+      match.players.get('acct-1'),
+      'Expected human player state after settlement',
+    );
+    expect(alice.currentBalance).toBe(100);
     const statements = must(
       batch.mock.calls[0],
       'Expected D1 batch call',
     )[0] as Array<{ sql: string; args: unknown[] }>;
+    expect(
+      statements.some((stmt) =>
+        stmt.sql.includes('UPDATE accounts SET token_balance'),
+      ),
+    ).toBe(false);
+    expect(
+      statements.some((stmt) => stmt.sql.includes('UPDATE player_stats')),
+    ).toBe(false);
 
-    const statsStatements = statements.filter((stmt) =>
-      stmt.sql.includes('player_stats'),
+    const voteLog = statements.find((stmt) =>
+      stmt.sql.includes('INSERT INTO vote_logs'),
     );
-    expect(statsStatements).toHaveLength(0);
+    expect(voteLog).toBeDefined();
+    expect(voteLog?.args[9]).toBe(0);
+    expect(voteLog?.args[10]).toBe(0);
+    expect(voteLog?.args[11]).toBe(0);
 
-    const balanceStatements = statements.filter((stmt) =>
-      stmt.sql.includes('UPDATE accounts SET token_balance'),
-    );
-    expect(balanceStatements).toHaveLength(1);
-    expect(balanceStatements[0]?.args[1]).toBe('acct-1');
+    expect(match.lastGameResult?.pot).toBe(0);
+    expect(match.lastGameResult?.payoutPerWinner).toBe(0);
+    expect(match.lastGameResult?.players[0]?.newBalance).toBe(100);
 
     if (match.resultsTimer) clearTimeout(match.resultsTimer);
   });
 
+  it('does not burn future-game antes when an AI-assisted match is forfeited', () => {
+    const prepare = vi.fn();
+    const { room, waitUntil } = createRoom({
+      DB: { prepare } as unknown as D1Database,
+    });
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'commit';
+    match.currentGame = 3;
+    match.totalGames = 10;
+    match.aiAssisted = true;
+
+    const player = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: GAME_ANTE * 10,
+      currentBalance: GAME_ANTE * 10,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    match.players.set(player.accountId, player);
+    match.players.set('ai-bot:0:test', {
+      accountId: 'ai-bot:0:test',
+      displayName: 'nemotron',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+
+    room._forfeitPlayer(match, player.accountId);
+
+    expect(player.currentBalance).toBe(GAME_ANTE * 10);
+    expect(player.forfeited).toBe(true);
+    expect(waitUntil).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+  });
   it('tracks match end after results with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);

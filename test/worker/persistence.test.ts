@@ -267,28 +267,24 @@ describe('restoreMatchesFromStorage', () => {
     expect(active.forfeitedAtGame).toBeNull();
   });
 
-  it('restores aiAssisted flag from checkpoint', () => {
-    const matchRows = [
-      {
-        match_id: 'match-ai',
-        phase: 'commit',
-        current_game: 1,
-        total_games: 10,
-        questions_json: JSON.stringify([
-          {
-            id: 1,
-            text: 'Q',
-            type: 'select',
-            category: 'number',
-            options: ['A', 'B'],
-          },
-        ]),
-        phase_entered_at: Date.now(),
-        last_settled_game: 0,
-        ai_assisted: 1,
-      },
-    ];
-
+  it('restores aiAssisted from checkpoint rows and defaults legacy rows to false', () => {
+    const phaseEnteredAt = Date.now();
+    const baseMatchRow = {
+      phase: 'commit',
+      current_game: 1,
+      total_games: 10,
+      questions_json: JSON.stringify([
+        {
+          id: 1,
+          text: 'Q',
+          type: 'select',
+          category: 'number',
+          options: ['A', 'B'],
+        },
+      ]),
+      phase_entered_at: phaseEnteredAt,
+      last_settled_game: 0,
+    };
     const playerRows = [
       {
         match_id: 'match-ai',
@@ -304,38 +300,6 @@ describe('restoreMatchesFromStorage', () => {
         forfeited: 0,
         disconnected_at: null,
       },
-    ];
-
-    const sql = createMockSql(matchRows, playerRows);
-    const restored = restoreMatchesFromStorage(sql, STALE_THRESHOLD_MS);
-
-    const match = must(restored[0], 'Expected restored match');
-    expect(match.aiAssisted).toBe(true);
-  });
-
-  it('defaults aiAssisted to false for legacy checkpoints', () => {
-    const matchRows = [
-      {
-        match_id: 'match-legacy',
-        phase: 'commit',
-        current_game: 1,
-        total_games: 10,
-        questions_json: JSON.stringify([
-          {
-            id: 1,
-            text: 'Q',
-            type: 'select',
-            category: 'number',
-            options: ['A', 'B'],
-          },
-        ]),
-        phase_entered_at: Date.now(),
-        last_settled_game: 0,
-        // no ai_assisted column
-      },
-    ];
-
-    const playerRows = [
       {
         match_id: 'match-legacy',
         account_id: '0xplayer',
@@ -352,10 +316,30 @@ describe('restoreMatchesFromStorage', () => {
       },
     ];
 
-    const sql = createMockSql(matchRows, playerRows);
-    const restored = restoreMatchesFromStorage(sql, STALE_THRESHOLD_MS);
+    const restored = restoreMatchesFromStorage(
+      createMockSql(
+        [
+          {
+            ...baseMatchRow,
+            match_id: 'match-ai',
+            ai_assisted: 1,
+          },
+          {
+            ...baseMatchRow,
+            match_id: 'match-legacy',
+          },
+        ],
+        playerRows,
+      ),
+      STALE_THRESHOLD_MS,
+    );
 
-    const match = must(restored[0], 'Expected restored match');
-    expect(match.aiAssisted).toBe(false);
+    const aiMatch = restored.find((match) => match.matchId === 'match-ai');
+    const legacyMatch = restored.find(
+      (match) => match.matchId === 'match-legacy',
+    );
+
+    expect(aiMatch?.aiAssisted).toBe(true);
+    expect(legacyMatch?.aiAssisted).toBe(false);
   });
 });

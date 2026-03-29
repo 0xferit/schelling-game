@@ -71,6 +71,8 @@ nav{display:flex;gap:.5rem}
 #rules-overlay .rules-text{font-size:.85rem;color:var(--text);line-height:1.5;margin:.25rem 0 0}
 #rules-overlay .rules-example{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;font-size:.85rem;line-height:1.5;color:var(--text)}
 #rules-overlay .rules-example strong{color:var(--accent)}
+.info-banner{background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.45);border-radius:var(--radius);padding:.8rem 1rem;font-size:.85rem;line-height:1.5;color:var(--text)}
+.info-banner strong{color:var(--orange)}
 /* Queue */
 #queue-view .card{max-width:520px;margin:0 auto}
 #queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
@@ -297,6 +299,9 @@ nav{display:flex;gap:.5rem}
       <!-- Question -->
       <div id="question-card">
         <div id="phase-label">Game <span id="game-num">1</span> / 10</div>
+        <div id="off-record-banner" class="info-banner hidden" style="margin-bottom:1rem">
+          <strong>Off the record.</strong> An AI backfill joined this match, so balances, streaks, and leaderboard standing will not change.
+        </div>
         <div id="question-text">Waiting for game...</div>
         <div id="select-grid"></div>
         <div id="commit-area" class="hidden">
@@ -346,6 +351,9 @@ nav{display:flex;gap:.5rem}
           <p id="summary-headline"></p>
         </div>
         <div id="summary-placement">Final</div>
+      </div>
+      <div id="summary-off-record-banner" class="info-banner hidden" style="margin-top:1rem">
+        <strong>Off the record.</strong> This AI-assisted match did not change balances, streaks, or leaderboard standing.
       </div>
       <div id="summary-stats"></div>
       <div id="summary-highlights-section" class="summary-section hidden">
@@ -466,6 +474,11 @@ nav{display:flex;gap:.5rem}
     </div>
 
     <div>
+      <p class="rules-section-label">AI Backfill</p>
+      <p class="rules-text">If a bot backfills a public match, the entire match is off the record. You still play the full game, but balances, streaks, and leaderboard standing do not change.</p>
+    </div>
+
+    <div>
       <p class="rules-section-label">Examples</p>
       <div class="rules-example" style="margin-bottom:.5rem">
         <strong>2-1 split</strong> (3 players, pot = 7560): Two players pick the same option. Each winner receives 3780 (net +1260). The lone picker gets nothing (net &minus;2520).
@@ -494,6 +507,7 @@ const S = {
   displayName: null,
   tokenBalance: 0,
   autoRequeue: true,
+  aiAssistedMatch: false,
   // queue
   inQueue: false,
   queuedPlayers: [],
@@ -879,6 +893,7 @@ $('#logout-btn').addEventListener('click', async () => {
   S.inQueue = false;
   S.queuedPlayers = [];
   S.matchId = null;
+  S.aiAssistedMatch = false;
   $('#header-profile').classList.add('hidden');
   $('#connect-wallet-btn').classList.remove('hidden');
   $('#browser-wallet-btn').classList.remove('hidden');
@@ -985,6 +1000,11 @@ function handleMessage(msg) {
   }
 }
 
+function syncAiAssistedUi() {
+  $('#off-record-banner').classList.toggle('hidden', !S.aiAssistedMatch);
+  $('#summary-off-record-banner').classList.toggle('hidden', !S.aiAssistedMatch);
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  QUEUE VIEW
 // ═══════════════════════════════════════════════════════════════
@@ -1081,6 +1101,7 @@ setInterval(updateFormingTimer, 1000);
 // ═══════════════════════════════════════════════════════════════
 function onMatchStarted(msg) {
   S.matchId = msg.matchId;
+  S.aiAssistedMatch = !!msg.aiAssisted;
   S.inQueue = false;
   S.queuedPlayers = [];
   S.formingMatch = null;
@@ -1093,13 +1114,18 @@ function onMatchStarted(msg) {
   S.players.forEach(p => { S.playerStatuses[p.displayName] = 'connected'; });
 
   showView('play');
+  syncAiAssistedUi();
   renderPlayers();
   $('#game-result-banner').classList.add('hidden');
   $('#question-text').textContent = 'Match started. Waiting for first game...';
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
-  notify('Match started with ' + S.players.length + ' players', 'success');
+  if (S.aiAssistedMatch) {
+    notify('AI backfill joined this match. It is off the record: balances and stats will not change.', 'warn');
+  } else {
+    notify('Match started with ' + S.players.length + ' players', 'success');
+  }
 }
 
 function onGameStarted(msg) {
@@ -1114,6 +1140,8 @@ function onGameStarted(msg) {
   S.game = msg.game;
   S.phase = msg.phase;
   S.question = msg.question;
+  S.aiAssistedMatch = !!msg.aiAssisted;
+  syncAiAssistedUi();
 
   if (hasPreimage) {
     // Reconnect with preimage intact: preserve selectedOption/salt/commitHash
@@ -1386,7 +1414,9 @@ function renderGameResult(r) {
 
   // Note about solo wins
   const note = $('#result-note');
-  if (!r.voided) {
+  if (S.aiAssistedMatch) {
+    note.textContent = 'AI-assisted match: off the record. Winners are shown, but balances and coordination stats do not change.';
+  } else if (!r.voided) {
     const hasWinnerNoCredit = r.players.some(p => p.wonGame && !p.earnsCoordinationCredit);
     if (hasWinnerNoCredit) {
       note.textContent = 'Solo win: won the pot but no coordination credit earned (topCount=1). Does not extend streak.';
@@ -1462,7 +1492,11 @@ function onPlayerReconnected(msg) {
 
 function onPlayerForfeited(msg) {
   S.playerStatuses[msg.displayName] = 'forfeited';
-  notify(msg.displayName + ' forfeited', 'error');
+  if (msg.futureGamesPenaltyApplied) {
+    notify(msg.displayName + ' forfeited', 'error');
+  } else {
+    notify(msg.displayName + ' forfeited. This off-the-record AI match applies no remaining-game penalty.', 'warn');
+  }
   updatePlayerDots();
 }
 
@@ -1520,6 +1554,7 @@ $('#rating-dislike').addEventListener('click', () => sendRating('dislike'));
 //  GAME OVER / SUMMARY
 // ═══════════════════════════════════════════════════════════════
 function onMatchOver(msg) {
+  S.aiAssistedMatch = !!msg.aiAssisted;
   S.summary = msg.summary;
   S.matchId = null;
   S.phase = null;
@@ -1533,6 +1568,7 @@ function onMatchOver(msg) {
   }
 
   showView('summary');
+  syncAiAssistedUi();
   renderSummary(msg.summary);
   syncAutoRequeueUI();
 }
@@ -1556,9 +1592,15 @@ function renderSummary(summary) {
   $('#summary-placement').textContent = placement
     ? `${placement.tied ? 'T-' : ''}${ordinal(placement.rank)}`
     : 'Final';
-  $('#summary-headline').textContent = me
-    ? `You finished ${placement && placement.tied ? 'tied ' : ''}${placement ? ordinal(placement.rank) : 'in the match'} with ${me.endingBalance} tokens (${formatDelta(me.netDelta)} net).`
-    : 'Final balances settled. Queue again when you want another ten-game run.';
+  if (S.aiAssistedMatch) {
+    $('#summary-headline').textContent = me
+      ? `AI-assisted match: off the record. You finished ${placement && placement.tied ? 'tied ' : ''}${placement ? ordinal(placement.rank) : 'in the match'}, and your balance stayed at ${me.endingBalance} tokens.`
+      : 'AI-assisted match: off the record. Final standings are shown, but balances and stats did not change.';
+  } else {
+    $('#summary-headline').textContent = me
+      ? `You finished ${placement && placement.tied ? 'tied ' : ''}${placement ? ordinal(placement.rank) : 'in the match'} with ${me.endingBalance} tokens (${formatDelta(me.netDelta)} net).`
+      : 'Final balances settled. Queue again when you want another ten-game run.';
+  }
 
   const statCards = [
     { label: 'Final Balance', value: me ? `${me.endingBalance}` : '—', className: '' },
