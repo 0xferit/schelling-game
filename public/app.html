@@ -120,9 +120,6 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #start-now-btn[aria-pressed='true']{border-color:var(--accent);color:var(--accent);background:rgba(201,168,76,.08)}
 .queue-action-row{align-items:center;gap:.75rem;margin-top:.25rem}
 .queue-action-row button{min-height:3rem;min-width:11rem}
-.queue-action-meta{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;padding-top:.2rem}
-.toggle-row{display:flex;align-items:center;gap:.5rem;font-size:.92rem;color:var(--muted);margin-top:.75rem}
-.toggle-row input[type=checkbox]{width:auto;accent-color:var(--accent)}
 .queue-side{--queue-side-top-inset:.15rem;position:relative;min-width:0;display:flex;flex-direction:column;gap:1rem;padding:var(--queue-side-top-inset) 0 0 clamp(1rem,1.8vw,1.5rem)}
 .queue-side::before{content:'';position:absolute;left:0;top:var(--queue-side-top-inset);bottom:0;width:1px;background:rgba(255,255,255,.06)}
 .queue-side-head{padding-bottom:.9rem;border-bottom:1px solid rgba(255,255,255,.06)}
@@ -265,7 +262,6 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #summary-table tr:last-child td{border-bottom:none}
 #summary-table tr.me td{background:rgba(201,168,76,.08)}
 .summary-actions{align-items:center}
-.summary-actions .toggle-row{margin-top:0;margin-left:auto}
 /* Leaderboard */
 #leaderboard-view.active{display:flex;flex-direction:column;gap:1rem}
 .leaderboard-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
@@ -339,9 +335,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   #commit-btn,#reveal-btn{min-width:0}
   #rating-row{text-align:left}
   .queue-action-row button,.action-row button{width:100%}
-  .queue-action-meta{flex-direction:column;align-items:flex-start}
   .action-row{flex-direction:column}
-  .action-row .toggle-row{margin-left:0;justify-content:center}
   .forfeit-dialog-actions{flex-direction:column}
   .forfeit-dialog-actions button{width:100%}
 }
@@ -449,12 +443,6 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
             <button class="btn-primary hidden" id="return-to-game-btn">Back to Game</button>
             <button class="btn-primary" id="join-queue-btn">Join Queue</button>
             <button class="btn-danger hidden" id="leave-queue-btn">Leave Queue</button>
-          </div>
-          <div class="queue-action-meta">
-            <div class="toggle-row">
-              <input type="checkbox" id="auto-requeue-toggle" checked/>
-              <label for="auto-requeue-toggle" style="margin:0">Auto-requeue after match</label>
-            </div>
           </div>
         </div>
       </section>
@@ -584,10 +572,6 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
       <div class="action-row summary-actions">
         <button class="btn-primary" id="requeue-btn">Back to Queue</button>
         <button class="btn-ghost" id="summary-lb-btn">Leaderboard</button>
-        <div class="toggle-row">
-          <input type="checkbox" id="summary-auto-requeue" checked/>
-          <label for="summary-auto-requeue" style="margin:0">Auto-requeue</label>
-        </div>
       </div>
     </div>
   </div>
@@ -724,7 +708,6 @@ const S = {
   accountId: null,
   displayName: null,
   tokenBalance: 0,
-  autoRequeue: true,
   aiAssistedMatch: false,
   startNow: false,
   // queue
@@ -1247,7 +1230,6 @@ async function checkSession() {
     S.accountId = me.accountId;
     S.displayName = me.displayName;
     S.tokenBalance = me.tokenBalance;
-    S.autoRequeue = me.autoRequeue;
     // Detect if this session belongs to a browser wallet
     try {
       const stored = localStorage.getItem(BROWSER_KEY);
@@ -1409,20 +1391,16 @@ function syncAiAssistedUi() {
 //  QUEUE VIEW
 // ═══════════════════════════════════════════════════════════════
 $('#join-queue-btn').addEventListener('click', () => {
-  S.autoRequeue = true;
   S.startNow = false;
   syncStartNowUI();
-  syncAutoRequeueUI();
   if (!wsSend({ type: 'join_queue' })) {
     queueQueueAction('join');
   }
 });
 
 $('#leave-queue-btn').addEventListener('click', () => {
-  S.autoRequeue = false;
   S.startNow = false;
   syncStartNowUI();
-  syncAutoRequeueUI();
   if (!wsSend({ type: 'leave_queue' })) {
     queueQueueAction('leave');
   }
@@ -1435,22 +1413,12 @@ function returnToGame() {
 
 $('#return-to-game-btn').addEventListener('click', returnToGame);
 
-$('#auto-requeue-toggle').addEventListener('change', (e) => {
-  S.autoRequeue = e.target.checked;
-  // auto-requeue is session state; toggling while not queued is just a preference
-});
-
 $('#start-now-btn').addEventListener('click', () => {
   const nextValue = !S.startNow;
   S.startNow = nextValue;
   syncStartNowUI();
   wsSend({ type: 'set_start_now', value: nextValue });
 });
-
-function syncAutoRequeueUI() {
-  $('#auto-requeue-toggle').checked = S.autoRequeue;
-  $('#summary-auto-requeue').checked = S.autoRequeue;
-}
 
 function syncStartNowUI() {
   const btn = $('#start-now-btn');
@@ -1463,10 +1431,6 @@ function onQueueState(msg) {
   S.inQueue = msg.status === 'queued' || msg.status === 'forming';
   S.queuedPlayers = msg.queuedPlayers || [];
   S.formingMatch = msg.formingMatch || null;
-  if (msg.autoRequeue !== undefined) {
-    S.autoRequeue = msg.autoRequeue;
-    syncAutoRequeueUI();
-  }
   if (msg.startNow !== undefined) {
     S.startNow = msg.startNow;
   } else if (!S.formingMatch) {
@@ -2276,7 +2240,6 @@ function onMatchOver(msg) {
   syncAiAssistedUi();
   syncForfeitUi();
   renderSummary(msg.summary);
-  syncAutoRequeueUI();
 }
 
 function renderSummary(summary) {
@@ -2562,19 +2525,12 @@ function quoteLabel(label) {
 }
 
 $('#requeue-btn').addEventListener('click', () => {
-  S.autoRequeue = true;
   S.startNow = false;
   syncStartNowUI();
-  syncAutoRequeueUI();
-  wsSend({ type: 'join_queue' });
-  showView('queue');
-});
-
-$('#summary-auto-requeue').addEventListener('change', (e) => {
-  S.autoRequeue = e.target.checked;
-  if (!S.autoRequeue) {
-    wsSend({ type: 'leave_queue' });
+  if (!wsSend({ type: 'join_queue' })) {
+    queueQueueAction('join');
   }
+  showView('queue');
 });
 
 $('#summary-lb-btn').addEventListener('click', () => {

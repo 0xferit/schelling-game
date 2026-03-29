@@ -51,7 +51,6 @@ function createConnectionState(displayName: string) {
       send: vi.fn(),
     } as unknown as WebSocket,
     displayName,
-    autoRequeue: false,
     startNow: false,
     previousOpponents: new Set<string>(),
   };
@@ -468,18 +467,11 @@ describe('GameRoom async task tracking', () => {
     };
     room.waitingQueue = ['acct-5', 'acct-6', 'acct-7'];
 
-    const participantState: QueueStateMessage = room._buildQueueStateMsg(
-      'acct-1',
-      false,
-    );
-    const queuedState: QueueStateMessage = room._buildQueueStateMsg(
-      'acct-5',
-      false,
-    );
-    const spectatorState: QueueStateMessage = room._buildQueueStateMsg(
-      'acct-4',
-      false,
-    );
+    const participantState: QueueStateMessage =
+      room._buildQueueStateMsg('acct-1');
+    const queuedState: QueueStateMessage = room._buildQueueStateMsg('acct-5');
+    const spectatorState: QueueStateMessage =
+      room._buildQueueStateMsg('acct-4');
 
     expect(participantState.status).toBe('forming');
     expect(participantState.startNow).toBe(true);
@@ -1120,5 +1112,99 @@ describe('GameRoom async task tracking', () => {
     expect(waitUntil).toHaveBeenCalledTimes(1);
     await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
     expect(endMatch).toHaveBeenCalledWith(match);
+  });
+
+  it('leaves completed players idle after match end until they rejoin manually', async () => {
+    const batch = vi.fn().mockResolvedValue(undefined);
+    const bind = vi.fn(() => ({ bind, first: vi.fn(), run: vi.fn() }));
+    const prepare = vi.fn(() => ({ bind }));
+    const { room } = createRoom({
+      DB: { prepare, batch } as unknown as D1Database,
+    });
+    vi.spyOn(room, '_deleteMatchCheckpoint').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+
+    const match = createMatch();
+    match.phase = 'results';
+    match.players.set('acct-1', {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 140,
+      committed: true,
+      revealed: true,
+      hash: null,
+      optionIndex: 0,
+      salt: 'a'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('acct-2', {
+      accountId: 'acct-2',
+      displayName: 'Bob',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 80,
+      committed: true,
+      revealed: true,
+      hash: null,
+      optionIndex: 1,
+      salt: 'b'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('acct-3', {
+      accountId: 'acct-3',
+      displayName: 'Carol',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 80,
+      committed: true,
+      revealed: true,
+      hash: null,
+      optionIndex: 1,
+      salt: 'c'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+
+    room.activeMatches.set(match.matchId, match);
+    room.playerMatchIndex.set('acct-1', match.matchId);
+    room.playerMatchIndex.set('acct-2', match.matchId);
+    room.playerMatchIndex.set('acct-3', match.matchId);
+
+    await room._endMatch(match);
+
+    expect(room.waitingQueue).toEqual([]);
+    expect(room.playerMatchIndex.has('acct-1')).toBe(false);
+    expect(room.playerMatchIndex.has('acct-2')).toBe(false);
+    expect(room.playerMatchIndex.has('acct-3')).toBe(false);
+
+    const aliceConnection = must(
+      room.connections.get('acct-1'),
+      'Expected Alice connection',
+    ) as {
+      ws: { send: ReturnType<typeof vi.fn> };
+    };
+    const sentMessages = aliceConnection.ws.send.mock.calls.map(([payload]) =>
+      JSON.parse(payload as string),
+    );
+    expect(sentMessages.at(-1)).toMatchObject({
+      type: 'queue_state',
+      status: 'idle',
+    });
   });
 });

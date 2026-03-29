@@ -46,7 +46,6 @@ import {
 interface ConnectionState {
   ws: WebSocket;
   displayName: string;
-  autoRequeue: boolean;
   startNow: boolean;
   previousOpponents: Set<string>;
 }
@@ -246,7 +245,6 @@ export class GameRoom {
           this.connections.set(accountId, {
             ws,
             displayName,
-            autoRequeue: false,
             startNow: false,
             previousOpponents: new Set(),
           });
@@ -299,7 +297,6 @@ export class GameRoom {
     this.connections.set(accountId, {
       ws,
       displayName,
-      autoRequeue: false,
       startNow: false,
       previousOpponents: existingConn
         ? existingConn.previousOpponents
@@ -572,7 +569,6 @@ export class GameRoom {
       });
     }
 
-    conn.autoRequeue = true;
     conn.startNow = false;
     this.waitingQueue.push(accountId);
     this._ensureAiBotBackfill();
@@ -584,7 +580,6 @@ export class GameRoom {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
-    conn.autoRequeue = false;
     conn.startNow = false;
     this._removeFromQueue(accountId);
     this._ensureAiBotBackfill();
@@ -1197,29 +1192,6 @@ export class GameRoom {
     for (const accountId of matchPlayerIds) {
       if (this.playerMatchIndex.get(accountId) === match.matchId) {
         this.playerMatchIndex.delete(accountId);
-      }
-    }
-
-    // Auto-requeue non-forfeited players with autoRequeue enabled
-    for (const p of match.players.values()) {
-      if (p.forfeited) continue;
-      if (this._isAiBot(p.accountId)) continue;
-      const conn = this.connections.get(p.accountId);
-      if (conn?.autoRequeue) {
-        // Refresh balance from D1 before requeueing
-        try {
-          const row = (await this.env.DB.prepare(
-            'SELECT token_balance FROM accounts WHERE account_id = ?',
-          )
-            .bind(p.accountId)
-            .first()) as { token_balance: number } | null;
-          if (row) {
-            // balance is already updated in D1, just requeue
-          }
-        } catch (e) {
-          console.error('D1: refresh balance for requeue', p.accountId, e);
-        }
-        this.waitingQueue.push(p.accountId);
       }
     }
 
@@ -1923,10 +1895,7 @@ export class GameRoom {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
-    this._sendTo(
-      accountId,
-      this._buildQueueStateMsg(accountId, conn.autoRequeue),
-    );
+    this._sendTo(accountId, this._buildQueueStateMsg(accountId));
   }
 
   _broadcastQueueState(): void {
@@ -1934,17 +1903,14 @@ export class GameRoom {
     for (const [accountId, conn] of this.connections) {
       if (this.playerMatchIndex.has(accountId)) continue;
 
-      const msg = this._buildQueueStateMsg(accountId, conn.autoRequeue);
+      const msg = this._buildQueueStateMsg(accountId);
       try {
         conn.ws.send(JSON.stringify(msg));
       } catch {}
     }
   }
 
-  _buildQueueStateMsg(
-    accountId: string,
-    autoRequeue: boolean,
-  ): QueueStateMessage {
+  _buildQueueStateMsg(accountId: string): QueueStateMessage {
     const isForming = this.formingMatch?.players.includes(accountId) ?? false;
     const isQueued = this.waitingQueue.includes(accountId);
     let status: QueueStateMessage['status'] = 'idle';
@@ -1953,7 +1919,6 @@ export class GameRoom {
     } else if (isQueued) {
       status = 'queued';
     }
-
     // All queued + forming display names
     const allQueuedIds = [...this.waitingQueue];
     if (this.formingMatch) {
@@ -1995,7 +1960,6 @@ export class GameRoom {
     return {
       type: 'queue_state',
       status,
-      autoRequeue,
       startNow: this.connections.get(accountId)?.startNow ?? false,
       queuedCount: allQueuedIds.length,
       queuedPlayers,

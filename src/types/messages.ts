@@ -18,7 +18,6 @@ export interface QueueStateMessage {
   status: 'queued' | 'forming' | 'idle';
   queuedCount: number;
   queuedPlayers: string[];
-  autoRequeue?: boolean;
   startNow?: boolean;
   formingMatch: {
     playerCount: number;
