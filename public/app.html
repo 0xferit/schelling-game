@@ -192,6 +192,7 @@ nav{display:flex;gap:.5rem}
       <a class="button-link btn-ghost" id="nav-feedback" href="https://github.com/0xferit/schelling-game/issues/new?template=feedback.md&labels=feedback&title=%5BFeedback%5D%3A%20" target="_blank" rel="noopener noreferrer">Feedback</a>
       <button class="btn-ghost" id="nav-rules">Rules</button>
       <button class="btn-ghost" id="nav-leaderboard">Leaderboard</button>
+      <button class="btn-ghost hidden" id="nav-return-game">Back to Game</button>
       <button class="btn-ghost hidden" id="nav-queue">Queue</button>
     </nav>
   </header>
@@ -229,6 +230,9 @@ nav{display:flex;gap:.5rem}
     <div class="card">
       <h2>Public Queue</h2>
       <p style="color:var(--muted);font-size:.9rem;margin:.5rem 0">Waiting for players. Matches form automatically with any odd crowd from 3 to 21 players.</p>
+      <div id="active-match-banner" class="hidden" style="background:rgba(201,168,76,.08);border:1px solid var(--accent);border-radius:var(--radius);padding:.75rem 1rem;font-size:.9rem;color:var(--text);margin:.75rem 0">
+        Active match in progress. Return to the game to keep committing and revealing on time.
+      </div>
       <div style="font-size:.9rem;color:var(--muted)">Players in queue: <strong id="queue-count">0</strong></div>
       <ul id="queue-players"></ul>
       <div id="forming-banner" class="hidden">
@@ -236,6 +240,7 @@ nav{display:flex;gap:.5rem}
         Fill closes in <strong id="forming-timer">--</strong>s
       </div>
       <div class="action-row">
+        <button class="btn-primary hidden" id="return-to-game-btn">Back to Game</button>
         <button class="btn-primary" id="join-queue-btn">Join Queue</button>
         <button class="btn-danger hidden" id="leave-queue-btn">Leave Queue</button>
       </div>
@@ -547,6 +552,20 @@ function updateHeaderProfile() {
   }
 }
 
+function hasActiveMatch() {
+  return S.matchId !== null;
+}
+
+function updateNavigation() {
+  $('#nav-queue').classList.toggle('hidden', S.view === 'auth');
+  $('#nav-return-game').classList.toggle(
+    'hidden',
+    S.view === 'auth' || S.view === 'play' || !hasActiveMatch(),
+  );
+  // hide logout during active matches
+  $('#logout-btn').classList.toggle('hidden', S.view === 'play');
+}
+
 // ── View switching ──────────────────────────────────────────────
 function showView(name) {
   S.view = name;
@@ -554,11 +573,8 @@ function showView(name) {
   $(`#${name}-view`).classList.add('active');
 
   updateHeaderProfile();
-
-  // nav visibility
-  $('#nav-queue').classList.toggle('hidden', name === 'auth');
-  // hide logout during active matches
-  $('#logout-btn').classList.toggle('hidden', name === 'play');
+  updateNavigation();
+  if (name === 'queue') renderQueue();
 }
 
 // ── Name-claim UI (shared by authenticateWithWallet + checkSession) ──
@@ -926,6 +942,11 @@ $('#leave-queue-btn').addEventListener('click', () => {
   syncAutoRequeueUI();
 });
 
+$('#return-to-game-btn').addEventListener('click', () => {
+  if (!hasActiveMatch()) return;
+  showView('play');
+});
+
 $('#auto-requeue-toggle').addEventListener('change', (e) => {
   S.autoRequeue = e.target.checked;
   // auto-requeue is session state; toggling while not queued is just a preference
@@ -937,6 +958,7 @@ function syncAutoRequeueUI() {
 }
 
 function onQueueState(msg) {
+  S.matchId = null;
   S.inQueue = msg.status === 'queued';
   S.queuedPlayers = msg.queuedPlayers || [];
   S.formingMatch = msg.formingMatch || null;
@@ -944,6 +966,7 @@ function onQueueState(msg) {
     S.autoRequeue = msg.autoRequeue;
     syncAutoRequeueUI();
   }
+  updateNavigation();
 
   // ensure we are on queue view if we aren't playing
   if (S.view === 'auth' || S.view === 'summary') {
@@ -954,7 +977,9 @@ function onQueueState(msg) {
 }
 
 function renderQueue() {
+  const activeMatch = hasActiveMatch();
   $('#queue-count').textContent = S.queuedPlayers.length;
+  $('#active-match-banner').classList.toggle('hidden', !activeMatch);
 
   const list = $('#queue-players');
   list.innerHTML = '';
@@ -975,8 +1000,9 @@ function renderQueue() {
   }
 
   // buttons
-  $('#join-queue-btn').classList.toggle('hidden', S.inQueue);
-  $('#leave-queue-btn').classList.toggle('hidden', !S.inQueue);
+  $('#return-to-game-btn').classList.toggle('hidden', !activeMatch);
+  $('#join-queue-btn').classList.toggle('hidden', activeMatch || S.inQueue);
+  $('#leave-queue-btn').classList.toggle('hidden', activeMatch || !S.inQueue);
 }
 
 function updateFormingTimer() {
@@ -996,6 +1022,9 @@ setInterval(updateFormingTimer, 1000);
 // ═══════════════════════════════════════════════════════════════
 function onMatchStarted(msg) {
   S.matchId = msg.matchId;
+  S.inQueue = false;
+  S.queuedPlayers = [];
+  S.formingMatch = null;
   S.players = msg.players;
   S.game = 0;
   S.phase = null;
@@ -1489,6 +1518,11 @@ $('#summary-lb-btn').addEventListener('click', () => {
 $('#nav-leaderboard').addEventListener('click', () => {
   S.previousView = S.view;
   loadLeaderboard();
+});
+
+$('#nav-return-game').addEventListener('click', () => {
+  if (!hasActiveMatch()) return;
+  showView('play');
 });
 
 $('#lb-back-btn').addEventListener('click', () => {
