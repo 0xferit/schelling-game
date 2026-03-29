@@ -69,7 +69,7 @@ interface FormingMatchState {
 // Constants
 // ---------------------------------------------------------------------------
 const TOTAL_ROUNDS = 10;
-const FILL_TIMER_MS = 20_000;
+const FILL_TIMER_MS = 30_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
@@ -1205,7 +1205,7 @@ export class GameRoom {
             },
           },
           max_tokens: 16,
-          temperature: 0.2,
+          temperature: 0,
         }),
         new Promise<never>((_, reject) => {
           setTimeout(
@@ -1231,14 +1231,26 @@ export class GameRoom {
       .map((option, index) => `${index}: ${option}`)
       .join('\n');
     return [
-      'You are an AI backfill player in a 3-player coordination game.',
-      'Two human players are answering independently.',
-      'Choose the option they are most likely to converge on.',
-      'Do not answer with your personal preference.',
+      'You are playing a Schelling point coordination game.',
+      'All players see the same question and options. Nobody can communicate.',
+      'You win ONLY if you pick the same option as the majority.',
+      '',
+      'A Schelling point is the answer people gravitate to without talking:',
+      '- The most famous, default, or culturally dominant choice',
+      '- The first thing that comes to mind for most people',
+      '- Round numbers over odd ones (7 > 13, 100 > 67)',
+      '- The most stereotypical or cliche answer',
+      '',
+      'Think step by step:',
+      '1. What would the average person pick without overthinking?',
+      '2. Which option is the most obvious, common, or iconic?',
+      '3. Ignore what you personally prefer; pick what MOST people would pick.',
+      '',
       `Question: ${question.text}`,
       'Options:',
       options,
-      'Respond with JSON only: {"optionIndex": <zero-based index>}.',
+      '',
+      'Respond with JSON: {"optionIndex": <zero-based index>}',
     ].join('\n');
   }
 
