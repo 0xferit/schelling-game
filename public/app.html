@@ -418,7 +418,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
           <div class="queue-title-wrap">
             <p class="section-kicker">Public Lobby</p>
             <h2 id="queue-title">Public Queue</h2>
-            <p class="queue-intro">Waiting for players. Matches form automatically with any odd crowd from 3 to 21 players.</p>
+            <p class="queue-intro">Waiting for players. Matches form automatically with any crowd from 3 to 21 players.</p>
           </div>
           <div class="queue-stat-block" aria-live="polite">
             <span class="queue-stat-label">Players Waiting</span>
@@ -1432,16 +1432,13 @@ function renderQueue() {
     $('#forming-count').textContent = S.formingMatch.playerCount;
     const readyCount = S.formingMatch.readyHumanCount || 0;
     const humanCount = S.formingMatch.humanPlayerCount || 0;
-    const oddSized = S.formingMatch.playerCount % 2 === 1;
     $('#start-now-meta').textContent = readyCount + ' / ' + humanCount + ' humans ready to start';
     let note = 'When every human in this forming match votes yes, the match launches immediately.';
-    if (!oddSized) {
-      note = 'Start now arms the lobby now, but launch still waits for an odd reserved count.';
-    } else if (S.startNow) {
+    if (S.startNow) {
       note = 'Your vote is in. The match starts as soon as every other human votes yes.';
     }
     $('#start-now-note').textContent = note;
-    $('#forming-banner').classList.toggle('is-armed', oddSized && readyCount > 0);
+    $('#forming-banner').classList.toggle('is-armed', readyCount > 0);
     $('#start-now-btn').classList.toggle('hidden', !S.formingMatch.youCanVoteStartNow);
     syncStartNowUI();
     updateFormingTimer();

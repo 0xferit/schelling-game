@@ -356,7 +356,7 @@ describe('GameRoom async task tracking', () => {
       .mockResolvedValue(undefined);
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
-    // Set up a forming match with 3 players (minimum odd count)
+    // Set up a forming match with the minimum playable count.
     room.formingMatch = {
       players: ['acct-1', 'acct-2', 'acct-3'],
       timer: null,
@@ -373,7 +373,7 @@ describe('GameRoom async task tracking', () => {
     await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
   });
 
-  it('returns the newest reserved player when fill closes on an even count', async () => {
+  it('starts the full reserved cohort when fill closes on 10 players', async () => {
     const { room, waitUntil } = createRoom();
     const startMatch = vi
       .spyOn(room, '_startMatch')
@@ -391,13 +391,13 @@ describe('GameRoom async task tracking', () => {
     expect(startMatch).toHaveBeenCalledTimes(1);
     expect(
       must(startMatch.mock.calls[0], 'Expected startMatch call')[0],
-    ).toEqual(Array.from({ length: 9 }, (_, i) => `acct-${i + 1}`));
-    expect(room.waitingQueue).toEqual(['acct-10']);
+    ).toEqual(Array.from({ length: 10 }, (_, i) => `acct-${i + 1}`));
+    expect(room.waitingQueue).toEqual([]);
     expect(waitUntil).toHaveBeenCalledTimes(1);
     await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
   });
 
-  it('starts immediately when all humans in an odd forming match vote start now', () => {
+  it('starts immediately when all humans in a forming match vote start now', () => {
     const { room } = createRoom();
     const startFormingMatch = vi
       .spyOn(room, '_startFormingMatch')
@@ -420,7 +420,7 @@ describe('GameRoom async task tracking', () => {
     expect(startFormingMatch).toHaveBeenCalledTimes(1);
   });
 
-  it('does not start immediately on unanimous start-now votes for an even forming match', () => {
+  it('starts immediately on unanimous start-now votes for an even forming match', () => {
     const { room } = createRoom();
     const startFormingMatch = vi
       .spyOn(room, '_startFormingMatch')
@@ -441,7 +441,7 @@ describe('GameRoom async task tracking', () => {
     room._handleSetStartNow('acct-3', { value: true });
     room._handleSetStartNow('acct-4', { value: true });
 
-    expect(startFormingMatch).not.toHaveBeenCalled();
+    expect(startFormingMatch).toHaveBeenCalledTimes(1);
   });
 
   it('includes start-now readiness data in queue state', () => {
@@ -462,6 +462,7 @@ describe('GameRoom async task tracking', () => {
       timer: null,
       fillDeadlineMs: Date.now() + 30_000,
     };
+    room.waitingQueue = ['acct-5', 'acct-6', 'acct-7'];
 
     const participantState = room._buildQueueStateMsg(
       'acct-1',
@@ -472,6 +473,7 @@ describe('GameRoom async task tracking', () => {
       formingMatch: {
         humanPlayerCount: number;
         readyHumanCount: number;
+        allowedSizes: number[];
         youCanVoteStartNow: boolean;
       } | null;
     };
@@ -480,6 +482,7 @@ describe('GameRoom async task tracking', () => {
       formingMatch: {
         humanPlayerCount: number;
         readyHumanCount: number;
+        allowedSizes: number[];
         youCanVoteStartNow: boolean;
       } | null;
     };
@@ -488,12 +491,14 @@ describe('GameRoom async task tracking', () => {
     expect(participantState.formingMatch).toMatchObject({
       humanPlayerCount: 3,
       readyHumanCount: 2,
+      allowedSizes: [3, 4, 5, 6],
       youCanVoteStartNow: true,
     });
     expect(spectatorState.startNow).toBe(false);
     expect(spectatorState.formingMatch).toMatchObject({
       humanPlayerCount: 3,
       readyHumanCount: 2,
+      allowedSizes: [3, 4, 5, 6],
       youCanVoteStartNow: false,
     });
   });
@@ -603,6 +608,38 @@ describe('GameRoom async task tracking', () => {
 
     const indices = bots.map((id) => room._getBotModelIndex(id));
     expect(new Set(indices).size).toBe(2);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('does not inject a bot for six humans', () => {
+    const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    for (const [accountId, displayName] of [
+      ['acct-1', 'Alice'],
+      ['acct-2', 'Bob'],
+      ['acct-3', 'Carol'],
+      ['acct-4', 'Drew'],
+      ['acct-5', 'Eve'],
+      ['acct-6', 'Frank'],
+    ] as const) {
+      room.connections.set(accountId, createConnectionState(displayName));
+      room._handleJoinQueue(accountId);
+    }
+
+    expect(room.formingMatch).not.toBeNull();
+    expect(room.formingMatch?.players).toEqual([
+      'acct-1',
+      'acct-2',
+      'acct-3',
+      'acct-4',
+      'acct-5',
+      'acct-6',
+    ]);
+    expect(room.formingMatch?.players.some((id) => room._isAiBot(id))).toBe(
+      false,
+    );
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });

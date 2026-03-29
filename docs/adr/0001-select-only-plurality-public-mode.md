@@ -3,7 +3,7 @@
 Status: Accepted
 Date: 2026-03-23
 
-Supersession note: ADR [0006](0006-generalize-public-match-sizes.md) supersedes this ADR's `3/5/7` public-match-size restriction. The rest of this ADR remains canonical.
+Supersession note: ADR [0006](0006-generalize-public-match-sizes.md) and ADR [0008](0008-remove-public-odd-match-requirement.md) supersede this ADR's original public-match-size restriction and odd-lobby rationale. The rest of this ADR remains canonical.
 
 ## Context
 

@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-03-27
 
+Supersession note: ADR [0008](0008-remove-public-odd-match-requirement.md) supersedes this ADR's odd-only match-size rule and even-count trimming behavior. The wider `3` to `21` range and ante rationale remain canonical.
+
 ## Context
 
 The `3/5/7` public-match restriction kept settlement examples neat, but it also created unnecessary queue friction:

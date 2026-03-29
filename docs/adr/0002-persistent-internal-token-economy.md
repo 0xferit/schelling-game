@@ -12,7 +12,7 @@ The public product needs a simple persistent progression system and leaderboard,
 The design also needs integer-only per-round settlement even when:
 
 - ties create multiple winning options
-- odd match sizes vary between 3, 5, and 7
+- public match sizes vary between `3` and `21` players
 
 ## Decision
 
@@ -30,7 +30,7 @@ Per round:
 - every player still attached to the match antes `2520`
 - coherent players split the round pot equally, with any indivisible dust burned
 
-For odd public match sizes up to `21`, any indivisible remainder after equal winner payouts is burned.
+For public match sizes up to `21`, any indivisible remainder after equal winner payouts is burned.
 
 ## Consequences
 

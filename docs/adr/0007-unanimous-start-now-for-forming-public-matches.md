@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-03-29
 
+Supersession note: ADR [0008](0008-remove-public-odd-match-requirement.md) supersedes this ADR's parity gate for unanimous `start now`. The rest of this ADR remains canonical.
+
 ## Context
 
 ADR `0006` kept a fill timer so public matches could keep growing toward larger odd lobbies, but that created dead time when a coordinated group was already present and wanted to begin immediately.
