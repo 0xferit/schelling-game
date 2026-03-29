@@ -425,6 +425,46 @@ describe('HTTP routes', () => {
     expect(data).not.toHaveProperty('autoRequeue');
   });
 
+  it('GET /api/me auto-provisions missing account rows for a valid session', async () => {
+    const wallet = createTestWallet(8);
+    const { accountId, cookie } = await createTestSession(wallet);
+
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM player_stats WHERE account_id = ?').bind(
+        accountId,
+      ),
+      env.DB.prepare('DELETE FROM accounts WHERE account_id = ?').bind(
+        accountId,
+      ),
+    ]);
+
+    const resp = await get('/api/me', { Cookie: `session=${cookie}` });
+    expect(resp.status).toBe(200);
+
+    const data = (await resp.json()) as {
+      accountId: string;
+      displayName: string | null;
+      tokenBalance: number;
+    };
+    expect(data.accountId).toBe(accountId);
+    expect(data.displayName).toBeNull();
+    expect(data.tokenBalance).toBe(0);
+
+    const account = (await env.DB.prepare(
+      'SELECT account_id FROM accounts WHERE account_id = ?',
+    )
+      .bind(accountId)
+      .first()) as { account_id: string } | null;
+    const stats = (await env.DB.prepare(
+      'SELECT account_id FROM player_stats WHERE account_id = ?',
+    )
+      .bind(accountId)
+      .first()) as { account_id: string } | null;
+
+    expect(account?.account_id).toBe(accountId);
+    expect(stats?.account_id).toBe(accountId);
+  });
+
   it('GET /api/me without session returns 401', async () => {
     const resp = await get('/api/me');
     expect(resp.status).toBe(401);
