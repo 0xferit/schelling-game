@@ -123,7 +123,8 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
 .queue-action-meta{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;padding-top:.2rem}
 .toggle-row{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--muted);margin-top:.75rem}
 .toggle-row input[type=checkbox]{width:auto;accent-color:var(--accent)}
-.queue-side{min-width:0;display:flex;flex-direction:column;gap:1rem;padding-left:clamp(1rem,1.8vw,1.5rem);border-left:1px solid rgba(255,255,255,.06)}
+.queue-side{--queue-side-top-inset:.15rem;position:relative;min-width:0;display:flex;flex-direction:column;gap:1rem;padding:var(--queue-side-top-inset) 0 0 clamp(1rem,1.8vw,1.5rem)}
+.queue-side::before{content:'';position:absolute;left:0;top:var(--queue-side-top-inset);bottom:0;width:1px;background:rgba(255,255,255,.06)}
 .queue-side-head{padding-bottom:.9rem;border-bottom:1px solid rgba(255,255,255,.06)}
 .queue-side-title{font-size:.72rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
 .queue-side-copy{font-size:.9rem;line-height:1.6;color:var(--muted);margin-top:.45rem}
@@ -187,6 +188,39 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
 .dot.forfeited{background:var(--red)}
 .dot.disconnected{background:var(--red);animation:pulse 1s infinite alternate}
 .balance-badge{font-family:var(--serif);font-size:.8rem;color:var(--muted)}
+#live-stats-panel{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(201,168,76,.08),rgba(17,17,17,.98) 72%);border:1px solid rgba(201,168,76,.24);border-radius:var(--radius);padding:1rem;transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+#live-stats-panel::before{content:'';position:absolute;inset:-30% auto auto 38%;width:180px;height:180px;background:radial-gradient(circle,rgba(201,168,76,.16),transparent 72%);pointer-events:none;opacity:.75;transform:translateY(-18%);transition:transform .35s ease,opacity .35s ease}
+#live-stats-panel:hover{border-color:rgba(201,168,76,.4);transform:translateY(-1px);box-shadow:0 16px 34px rgba(0,0,0,.22)}
+#live-stats-panel:hover::before{opacity:1;transform:translateY(-10%)}
+#live-stats-panel.is-updated{animation:liveStatsFlash .72s ease}
+@keyframes liveStatsFlash{
+  0%{border-color:rgba(201,168,76,.22);box-shadow:none}
+  28%{border-color:rgba(223,192,106,.78);box-shadow:0 18px 38px rgba(0,0,0,.28)}
+  100%{border-color:rgba(201,168,76,.24);box-shadow:none}
+}
+.live-stats-kicker{font-size:.68rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+.live-stats-headline{margin-top:.45rem;font-family:var(--serif);font-size:1.28rem;font-weight:600;line-height:1.05;color:var(--text)}
+.live-stats-subhead{margin-top:.4rem;font-size:.82rem;line-height:1.55;color:var(--muted);max-width:22rem}
+#live-stats-strip{display:grid;gap:.35rem;margin-top:1rem}
+.live-step{display:flex;flex-direction:column;align-items:center;gap:.35rem;min-width:0}
+.live-step-bar{position:relative;width:100%;height:56px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.05));overflow:hidden;transition:transform .2s ease,border-color .2s ease,background .2s ease,opacity .2s ease}
+.live-step-bar::after{content:'';position:absolute;left:50%;top:7px;width:8px;height:8px;border-radius:50%;background:transparent;transform:translateX(-50%);transition:background .2s ease,box-shadow .2s ease}
+.live-step.current .live-step-bar{transform:translateY(-2px);border-color:rgba(201,168,76,.62);box-shadow:0 0 0 1px rgba(201,168,76,.18)}
+.live-step.win .live-step-bar{background:linear-gradient(180deg,rgba(76,175,80,.1),rgba(76,175,80,.38));border-color:rgba(76,175,80,.35)}
+.live-step.loss .live-step-bar{background:linear-gradient(180deg,rgba(229,57,53,.05),rgba(229,57,53,.28));border-color:rgba(229,57,53,.26)}
+.live-step.void .live-step-bar{background:linear-gradient(180deg,rgba(255,152,0,.06),rgba(255,152,0,.3));border-color:rgba(255,152,0,.28)}
+.live-step.forfeited .live-step-bar{background:linear-gradient(180deg,rgba(229,57,53,.08),rgba(108,18,16,.48));border-color:rgba(229,57,53,.34)}
+.live-step.future .live-step-bar{opacity:.5}
+.live-step.unknown .live-step-bar{background:repeating-linear-gradient(180deg,rgba(255,255,255,.02) 0 8px,rgba(255,255,255,.06) 8px 16px);border-color:rgba(255,255,255,.12)}
+.live-step.coord .live-step-bar::after{background:var(--accent2);box-shadow:0 0 14px rgba(223,192,106,.38)}
+.live-step-label{font-size:.64rem;font-weight:600;letter-spacing:.12em;color:var(--muted)}
+#live-stats-grid{display:flex;flex-direction:column;gap:.42rem;margin-top:.95rem;padding-top:.85rem;border-top:1px solid rgba(255,255,255,.06)}
+.live-stat-row{display:flex;align-items:baseline;justify-content:space-between;gap:.85rem;padding-bottom:.38rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.live-stat-row:last-child{padding-bottom:0;border-bottom:none}
+.live-stat-label{font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.live-stat-value{font-family:var(--serif);font-size:1rem;font-weight:600;line-height:1;color:var(--text);text-align:right}
+.live-stat-value.delta-pos,.live-stat-value.delta-neg,.live-stat-value.delta-zero{font-family:var(--sans);font-size:.95rem}
+#live-stats-foot{margin-top:.75rem;font-size:.76rem;line-height:1.55;color:var(--muted)}
 #forfeit-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
 #forfeit-panel.is-locked{border-color:rgba(229,57,53,.24)}
 #forfeit-panel h3{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.25em;color:var(--muted);margin:0}
@@ -277,7 +311,8 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
 }
 @media(max-width:960px){
   .queue-shell{grid-template-columns:1fr}
-  .queue-side{border-left:none;border-top:1px solid rgba(255,255,255,.06);padding-left:0;padding-top:1rem}
+  .queue-side{border-top:1px solid rgba(255,255,255,.06);padding-left:0;padding-top:1rem}
+  .queue-side::before{display:none}
 }
 /* ── Narrow viewport (phones) ─────────────────────────────────── */
 @media(max-width:650px){
@@ -493,6 +528,14 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.72rem;let
         <h3>Players</h3>
         <div id="players-list"></div>
       </div>
+      <div id="live-stats-panel">
+        <div class="live-stats-kicker">Match Readout</div>
+        <div id="live-stats-headline" class="live-stats-headline">Opening read pending</div>
+        <div id="live-stats-subhead" class="live-stats-subhead">The first settle will start the readout.</div>
+        <div id="live-stats-strip"></div>
+        <div id="live-stats-grid"></div>
+        <div id="live-stats-foot"></div>
+      </div>
       <div id="forfeit-panel">
         <h3>Leave Match</h3>
         <p class="forfeit-copy" id="forfeit-panel-copy">Ends your participation for the rest of this run.</p>
@@ -692,6 +735,7 @@ const S = {
   matchId: null,
   players: [],
   game: 0,
+  totalGames: 10,
   phase: null,       // 'commit' | 'reveal' | 'results' | null
   question: null,
   selectedOption: null,
@@ -722,6 +766,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 const MIN_ESTABLISHED = 5; // must match backend MIN_ESTABLISHED_MATCHES
 const LEADERBOARD_LIMIT = 100; // must match backend leaderboard cap
+const LIVE_MATCH_STORAGE_PREFIX = 'schelling_live_match:';
 
 // ── Browser wallet ───────────────────────────────────────────────
 const BROWSER_KEY = 'schelling_browser_secret';
@@ -779,6 +824,39 @@ function getBrowserMnemonic() {
     const trimmed = stored.trim();
     return /\s/.test(trimmed) ? trimmed : null;
   } catch (_) { return null; }
+}
+
+function getLiveMatchStorageKey(matchId) {
+  return LIVE_MATCH_STORAGE_PREFIX + matchId;
+}
+
+function loadPersistedGameHistory(matchId) {
+  if (!matchId) return [];
+  try {
+    const raw = sessionStorage.getItem(getLiveMatchStorageKey(matchId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function persistGameHistory() {
+  if (!S.matchId) return;
+  try {
+    sessionStorage.setItem(
+      getLiveMatchStorageKey(S.matchId),
+      JSON.stringify(S.gameHistory),
+    );
+  } catch (_) {}
+}
+
+function clearPersistedGameHistory(matchId) {
+  if (!matchId) return;
+  try {
+    sessionStorage.removeItem(getLiveMatchStorageKey(matchId));
+  } catch (_) {}
 }
 
 // ── Notifications ───────────────────────────────────────────────
@@ -1396,17 +1474,21 @@ setInterval(updateFormingTimer, 1000);
 //  PLAY VIEW
 // ═══════════════════════════════════════════════════════════════
 function onMatchStarted(msg) {
+  if (S.matchId && S.matchId !== msg.matchId) {
+    clearPersistedGameHistory(S.matchId);
+  }
   S.matchId = msg.matchId;
   S.aiAssistedMatch = !!msg.aiAssisted;
   S.inQueue = false;
   S.startNow = false;
   S.queuedPlayers = [];
   S.formingMatch = null;
+  S.totalGames = msg.gameCount || S.totalGames;
   S.players = msg.players;
   S.game = 0;
   S.phase = null;
   S.summary = null;
-  S.gameHistory = [];
+  S.gameHistory = loadPersistedGameHistory(msg.matchId);
   S.playerStatuses = {};
   S.players.forEach(p => { S.playerStatuses[p.displayName] = 'connected'; });
 
@@ -1414,6 +1496,7 @@ function onMatchStarted(msg) {
   syncAiAssistedUi();
   syncForfeitUi();
   renderPlayers();
+  renderLiveReadout();
   $('#game-result-banner').classList.add('hidden');
   $('#phase-timer-label').textContent = 'Commit';
   $('#timer-bar').style.width = '100%';
@@ -1479,7 +1562,7 @@ function onGameStarted(msg) {
   // UI: use server-provided phase for labels
   const phaseLabel = msg.phase === 'reveal' ? 'Auto-Reveal'
     : msg.phase === 'results' ? 'Settle' : 'Commit';
-  $('#phase-label').textContent = `Game ${msg.game} / 10 : ${phaseLabel}`;
+  $('#phase-label').textContent = `Game ${msg.game} / ${S.totalGames} : ${phaseLabel}`;
   const phaseTimerLabel = msg.phase === 'reveal' ? 'Auto-Reveal'
     : msg.phase === 'results' ? 'Settle'
     : msg.phase === 'commit' ? 'Commit' : '';
@@ -1542,6 +1625,7 @@ function onGameStarted(msg) {
 
   // Reset player dots
   renderPlayers();
+  renderLiveReadout();
 }
 
 function renderOptions(options, disabled) {
@@ -1597,7 +1681,7 @@ function onCommitStatus(msg) {
 function onPhaseChange(msg) {
   if (msg.phase === 'reveal') {
     S.phase = 'reveal';
-    $('#phase-label').textContent = `Game ${S.game} / 10 : Auto-Reveal`;
+    $('#phase-label').textContent = `Game ${S.game} / ${S.totalGames} : Auto-Reveal`;
     $('#phase-timer-label').textContent = 'Auto-Reveal';
     $('#commit-area').classList.add('hidden');
 
@@ -1622,6 +1706,7 @@ function onPhaseChange(msg) {
     }
 
     startTimer(msg.revealDuration);
+    renderLiveReadout();
   }
 }
 
@@ -1645,7 +1730,7 @@ function onGameResult(msg) {
   S.gameResult = r;
   S.phase = 'results';
 
-  $('#phase-label').textContent = `Game ${S.game} / 10 : Settle`;
+  $('#phase-label').textContent = `Game ${S.game} / ${S.totalGames} : Settle`;
   $('#phase-timer-label').textContent = 'Settle';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
@@ -1668,6 +1753,7 @@ function onGameResult(msg) {
   storeGameHistoryEntry(r);
   renderGameResult(r);
   renderPlayers();
+  renderLiveReadout({ flash: true });
 }
 
 function renderGameResult(r) {
@@ -1784,6 +1870,186 @@ function renderPlayers() {
   updatePlayerDots();
 }
 
+function renderLiveReadout({ flash = false } = {}) {
+  if (!hasActiveMatch()) return;
+
+  const strip = $('#live-stats-strip');
+  const grid = $('#live-stats-grid');
+  const headline = $('#live-stats-headline');
+  const subhead = $('#live-stats-subhead');
+  const foot = $('#live-stats-foot');
+  const panel = $('#live-stats-panel');
+  const totalGames = S.totalGames || 10;
+  const settledGames = getSettledGameCount();
+  const remainingGames = Math.max(0, totalGames - settledGames);
+  const historyComplete = hasCompleteGameHistory(settledGames);
+  const standings = getLiveStandings();
+  const me = standings.find((player) => player.displayName === S.displayName) || null;
+  const placement = me ? getLivePlacement(standings, me.liveBalance) : null;
+  const net = me ? me.liveBalance - me.startingBalance : 0;
+  const wins = historyComplete ? countCapturedGameResults((player) => player.wonGame, settledGames) : null;
+  const coordinationHits = historyComplete
+    ? countCapturedGameResults((player) => player.earnsCoordinationCredit, settledGames)
+    : null;
+  const coordinationStreak = historyComplete
+    ? getCurrentCoordinationStreak(settledGames)
+    : null;
+
+  headline.textContent = settledGames === 0
+    ? 'Opening read pending'
+    : placement && me
+      ? `${placement.tied ? 'Tied ' : ''}${ordinal(placement.rank)} at ${formatDelta(net)}`
+      : 'Live readout unavailable';
+  subhead.textContent = settledGames === 0
+    ? 'The first settle will start the readout.'
+    : historyComplete
+      ? `${wins} pot win${wins === 1 ? '' : 's'}, ${coordinationHits} coordination hit${coordinationHits === 1 ? '' : 's'}, ${remainingGames} game${remainingGames === 1 ? '' : 's'} left.`
+      : `${settledGames} game${settledGames === 1 ? '' : 's'} settled. Earlier results were not captured in this browser.`;
+
+  grid.innerHTML = [
+    { label: 'Standing', value: placement ? `${placement.tied ? 'T-' : ''}${placement.rank} / ${standings.length}` : '—', className: '' },
+    { label: 'Net', value: me ? formatDelta(net) : '—', className: me ? deltaClassName(net) : '' },
+    { label: 'Settled', value: `${settledGames} / ${totalGames}`, className: '' },
+    { label: 'Coord Streak', value: settledGames === 0 || coordinationStreak === null ? '—' : `${coordinationStreak}`, className: '' },
+  ].map((stat) => `
+    <div class="live-stat-row">
+      <span class="live-stat-label">${esc(stat.label)}</span>
+      <span class="live-stat-value ${stat.className}">${esc(stat.value)}</span>
+    </div>
+  `).join('');
+
+  strip.innerHTML = '';
+  strip.style.gridTemplateColumns = `repeat(${totalGames}, minmax(0, 1fr))`;
+  for (let index = 0; index < totalGames; index++) {
+    const game = S.gameHistory[index];
+    const mine = getMyRound(game);
+    const step = document.createElement('div');
+    const bar = document.createElement('div');
+    const label = document.createElement('div');
+    const gameNumber = index + 1;
+    const classes = ['live-step'];
+    let title = `Game ${gameNumber}: not settled yet.`;
+
+    if (game) {
+      if (mine?.result === 'forfeited') {
+        classes.push('forfeited');
+        title = `Game ${gameNumber}: you were already forfeited from the match.`;
+      } else if (game.voided) {
+        classes.push('void');
+        title = `Game ${gameNumber}: voided${game.voidReason ? ` (${game.voidReason})` : ''}.`;
+      } else if (mine?.wonGame) {
+        classes.push('win');
+        title = `Game ${gameNumber}: won ${formatDelta(mine.netDelta)} on ${quoteLabel(mine.revealedOptionLabel || 'no valid reveal')}.`;
+      } else {
+        classes.push('loss');
+        title = `Game ${gameNumber}: missed ${quoteLabel(mine?.revealedOptionLabel || 'no valid reveal')} for ${formatDelta(mine?.netDelta ?? 0)}.`;
+      }
+      if (mine?.earnsCoordinationCredit) {
+        classes.push('coord');
+        title += ' Coordination credit earned.';
+      }
+    } else if (gameNumber <= settledGames) {
+      classes.push('unknown');
+      title = `Game ${gameNumber}: settled before this browser captured the result.`;
+    } else {
+      classes.push('future');
+    }
+
+    if (S.phase !== 'results' && S.game === gameNumber) {
+      classes.push('current');
+      title = game
+        ? `${title} Current game in progress.`
+        : `Game ${gameNumber}: in progress.`;
+    }
+
+    step.className = classes.join(' ');
+    step.title = title;
+    bar.className = 'live-step-bar';
+    label.className = 'live-step-label';
+    label.textContent = gameNumber;
+    step.appendChild(bar);
+    step.appendChild(label);
+    strip.appendChild(step);
+  }
+
+  foot.textContent = S.aiAssistedMatch
+    ? 'Off the record match. This readout tracks the run, but persistent balances and streaks stay unchanged.'
+    : settledGames === 0
+      ? 'The rail wakes up after the first settle. From there it tracks wins, misses, voids, and coordination hits.'
+    : historyComplete
+      ? 'Green bars won the pot. Gold dots mark rounds that counted as real coordination.'
+      : 'The balance and standing are live. Round-by-round stats resume as soon as this browser sees the next settle.';
+
+  if (flash) {
+    panel.classList.remove('is-updated');
+    void panel.offsetWidth;
+    panel.classList.add('is-updated');
+  }
+}
+
+function getSettledGameCount() {
+  const completedFromPhase = S.game === 0
+    ? 0
+    : S.phase === 'results'
+      ? S.game
+      : Math.max(0, S.game - 1);
+  return Math.min(
+    S.totalGames || 10,
+    Math.max(completedFromPhase, S.gameHistory.filter(Boolean).length),
+  );
+}
+
+function hasCompleteGameHistory(settledGames) {
+  for (let index = 0; index < settledGames; index++) {
+    if (!S.gameHistory[index]) return false;
+  }
+  return true;
+}
+
+function getLiveStandings() {
+  return [...S.players]
+    .map((player) => ({
+      ...player,
+      liveBalance:
+        player.currentBalance !== undefined
+          ? player.currentBalance
+          : player.startingBalance,
+    }))
+    .sort((a, b) =>
+      b.liveBalance - a.liveBalance
+      || b.startingBalance - a.startingBalance
+      || a.displayName.localeCompare(b.displayName)
+    );
+}
+
+function getLivePlacement(standings, liveBalance) {
+  const higherStacks = standings.filter((player) => player.liveBalance > liveBalance).length;
+  const tiedStacks = standings.filter((player) => player.liveBalance === liveBalance).length;
+  return {
+    rank: higherStacks + 1,
+    tied: tiedStacks > 1,
+  };
+}
+
+function countCapturedGameResults(predicate, settledGames) {
+  let count = 0;
+  for (let index = 0; index < settledGames; index++) {
+    const mine = getMyRound(S.gameHistory[index]);
+    if (mine && predicate(mine)) count += 1;
+  }
+  return count;
+}
+
+function getCurrentCoordinationStreak(settledGames) {
+  let streak = 0;
+  for (let index = settledGames - 1; index >= 0; index--) {
+    const mine = getMyRound(S.gameHistory[index]);
+    if (!mine?.earnsCoordinationCredit) break;
+    streak += 1;
+  }
+  return streak;
+}
+
 // ── Player events ───────────────────────────────────────────────
 function onPlayerDisconnected(msg) {
   S.playerStatuses[msg.displayName] = 'disconnected';
@@ -1799,6 +2065,20 @@ function onPlayerReconnected(msg) {
 
 function onPlayerForfeited(msg) {
   S.playerStatuses[msg.displayName] = 'forfeited';
+  if (msg.futureGamesPenaltyApplied) {
+    const player = S.players.find((entry) => entry.displayName === msg.displayName);
+    if (player) {
+      const futureGames = Math.max(0, (S.totalGames || 10) - S.game);
+      const currentBalance = player.currentBalance !== undefined
+        ? player.currentBalance
+        : player.startingBalance;
+      player.currentBalance = currentBalance - futureGames * 2520;
+      if (msg.displayName === S.displayName) {
+        S.tokenBalance = player.currentBalance;
+        $('#header-balance').textContent = S.tokenBalance + ' tokens';
+      }
+    }
+  }
   if (msg.displayName === S.displayName) {
     $('#commit-area').classList.add('hidden');
     $('#reveal-area').classList.add('hidden');
@@ -1820,7 +2100,8 @@ function onPlayerForfeited(msg) {
   } else {
     notify(msg.displayName + ' forfeited. This off-the-record AI match applies no remaining-game penalty.', 'warn');
   }
-  updatePlayerDots();
+  renderPlayers();
+  renderLiveReadout();
   syncForfeitUi();
   if (msg.displayName === S.displayName && S.view === 'play') {
     showView('queue');
@@ -1881,11 +2162,13 @@ $('#rating-dislike').addEventListener('click', () => sendRating('dislike'));
 //  GAME OVER / SUMMARY
 // ═══════════════════════════════════════════════════════════════
 function onMatchOver(msg) {
+  const finishedMatchId = S.matchId;
   S.aiAssistedMatch = !!msg.aiAssisted;
   S.summary = msg.summary;
   S.matchId = null;
   S.phase = null;
   clearInterval(S.timerInterval);
+  clearPersistedGameHistory(finishedMatchId);
 
   // Update own balance from summary
   const me = msg.summary.players.find(p => p.displayName === S.displayName);
@@ -1927,7 +2210,7 @@ function renderSummary(summary) {
   } else {
     $('#summary-headline').textContent = me
       ? `You finished ${placement && placement.tied ? 'tied ' : ''}${placement ? ordinal(placement.rank) : 'in the match'} with ${me.endingBalance} tokens (${formatDelta(me.netDelta)} net).`
-      : 'Final balances settled. Queue again when you want another ten-game run.';
+      : `Final balances settled. Queue again when you want another ${S.totalGames}-game run.`;
   }
 
   const statCards = [
@@ -2032,8 +2315,8 @@ function renderSummaryTimeline() {
   }
 
   const visibleRounds = S.gameHistory.filter(Boolean);
-  note.textContent = visibleRounds.length === 10
-    ? 'All ten rounds captured.'
+  note.textContent = visibleRounds.length === S.totalGames
+    ? `All ${S.totalGames} rounds captured.`
     : `${visibleRounds.length} round${visibleRounds.length === 1 ? '' : 's'} captured in this tab.`;
 
   timeline.innerHTML = visibleRounds.map((game) => {
@@ -2109,6 +2392,7 @@ function storeGameHistoryEntry(result) {
       result: S.playerStatuses[player.displayName] === 'forfeited' ? 'forfeited' : 'completed',
     })),
   };
+  persistGameHistory();
 }
 
 function getPlacement(standings, player) {
