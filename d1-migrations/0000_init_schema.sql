@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS vote_logs (
   revealed_option_label       TEXT,
   won_round                   INTEGER,
   earns_coordination_credit   INTEGER,
-  ante_amount                 INTEGER DEFAULT 60,
+  ante_amount                 INTEGER DEFAULT 2520,
   round_payout                INTEGER DEFAULT 0,
   net_delta                   INTEGER DEFAULT 0,
   player_count                INTEGER,

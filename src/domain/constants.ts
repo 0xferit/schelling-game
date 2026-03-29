@@ -2,7 +2,7 @@
 export const MIN_ESTABLISHED_MATCHES = 5;
 
 /** Token ante charged per player per game. */
-export const GAME_ANTE = 60;
+export const GAME_ANTE = 2520;
 
 /** Maximum rows returned by the public leaderboard endpoint. */
 export const LEADERBOARD_LIMIT = 100;

@@ -918,6 +918,7 @@ export class GameRoom {
       voidReason: result.voidReason,
       playerCount: result.playerCount,
       pot: result.pot,
+      dustBurned: result.dustBurned,
       validRevealCount: result.validRevealCount,
       topCount: result.topCount,
       winningOptionIndexes: result.winningOptionIndexes,

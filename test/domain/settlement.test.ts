@@ -46,9 +46,10 @@ describe('plurality settlement: basic cases', () => {
     const result = settleGame(players, question);
 
     expect(result.voided).toBe(false);
-    expect(result.pot).toBe(180);
+    expect(result.pot).toBe(3 * GAME_ANTE);
+    expect(result.dustBurned).toBe(0);
     expect(result.winnerCount).toBe(3);
-    expect(result.payoutPerWinner).toBe(60);
+    expect(result.payoutPerWinner).toBe(GAME_ANTE);
     expect(result.players.every((p) => p.netDelta === 0)).toBe(true);
     expect(result.players.every((p) => p.earnsCoordinationCredit)).toBe(true);
   });
@@ -64,14 +65,15 @@ describe('plurality settlement: basic cases', () => {
     expect(result.voided).toBe(false);
     expect(result.topCount).toBe(2);
     expect(result.winnerCount).toBe(2);
-    expect(result.payoutPerWinner).toBe(90);
+    expect(result.payoutPerWinner).toBe(Math.floor((3 * GAME_ANTE) / 2));
+    expect(result.dustBurned).toBe(0);
 
     const carol = must(
       result.players.find((p) => p.accountId === 'a3'),
       'Expected Carol in game result',
     );
     expect(carol.wonGame).toBe(false);
-    expect(carol.netDelta).toBe(-60);
+    expect(carol.netDelta).toBe(-GAME_ANTE);
     expect(carol.earnsCoordinationCredit).toBe(false);
   });
 
@@ -87,12 +89,13 @@ describe('plurality settlement: basic cases', () => {
 
     expect(result.topCount).toBe(3);
     expect(result.winnerCount).toBe(3);
-    expect(result.pot).toBe(300);
-    expect(result.payoutPerWinner).toBe(100);
+    expect(result.pot).toBe(5 * GAME_ANTE);
+    expect(result.payoutPerWinner).toBe(Math.floor((5 * GAME_ANTE) / 3));
+    expect(result.dustBurned).toBe(0);
 
     const losers = result.players.filter((p) => !p.wonGame);
     expect(losers).toHaveLength(2);
-    expect(losers.every((p) => p.netDelta === -60)).toBe(true);
+    expect(losers.every((p) => p.netDelta === -GAME_ANTE)).toBe(true);
   });
 
   it('7 players: 4-2-1 split', () => {
@@ -109,8 +112,9 @@ describe('plurality settlement: basic cases', () => {
 
     expect(result.topCount).toBe(4);
     expect(result.winnerCount).toBe(4);
-    expect(result.pot).toBe(420);
-    expect(result.payoutPerWinner).toBe(105);
+    expect(result.pot).toBe(7 * GAME_ANTE);
+    expect(result.payoutPerWinner).toBe(Math.floor((7 * GAME_ANTE) / 4));
+    expect(result.dustBurned).toBe(0);
   });
 });
 
@@ -126,14 +130,15 @@ describe('single valid revealer', () => {
     expect(result.voided).toBe(false);
     expect(result.validRevealCount).toBe(1);
     expect(result.winnerCount).toBe(1);
-    expect(result.pot).toBe(180);
-    expect(result.payoutPerWinner).toBe(180);
+    expect(result.pot).toBe(3 * GAME_ANTE);
+    expect(result.payoutPerWinner).toBe(3 * GAME_ANTE);
+    expect(result.dustBurned).toBe(0);
 
     const alice = must(
       result.players.find((p) => p.accountId === 'a1'),
       'Expected Alice in game result',
     );
-    expect(alice.netDelta).toBe(120);
+    expect(alice.netDelta).toBe(2 * GAME_ANTE);
     expect(alice.earnsCoordinationCredit).toBe(false);
   });
 });
@@ -169,8 +174,9 @@ describe('tied pluralities', () => {
     expect(result.topCount).toBe(2);
     expect(result.winningOptionIndexes).toHaveLength(2);
     expect(result.winnerCount).toBe(4);
-    expect(result.pot).toBe(300);
-    expect(result.payoutPerWinner).toBe(75);
+    expect(result.pot).toBe(5 * GAME_ANTE);
+    expect(result.payoutPerWinner).toBe(Math.floor((5 * GAME_ANTE) / 4));
+    expect(result.dustBurned).toBe(0);
 
     const winners = result.players.filter((p) => p.wonGame);
     expect(winners).toHaveLength(4);
@@ -203,24 +209,20 @@ describe('all distinct (topCount=1)', () => {
 });
 
 describe('pot math', () => {
-  it.each([
-    { playerCount: 3, expectedPot: 180 },
-    { playerCount: 5, expectedPot: 300 },
-    { playerCount: 7, expectedPot: 420 },
-  ])('$playerCount players: pot = $expectedPot', ({
-    playerCount,
-    expectedPot,
-  }) => {
-    const players = Array.from({ length: playerCount }, (_, i) =>
-      makePlayer(`a${i + 1}`, String.fromCharCode(65 + i), 0),
-    );
-    const result = settleGame(players, question);
+  it.each([{ playerCount: 3 }, { playerCount: 5 }, { playerCount: 7 }])(
+    '$playerCount players: pot = playerCount * GAME_ANTE',
+    ({ playerCount }) => {
+      const players = Array.from({ length: playerCount }, (_, i) =>
+        makePlayer(`a${i + 1}`, String.fromCharCode(65 + i), 0),
+      );
+      const result = settleGame(players, question);
 
-    expect(result.pot).toBe(playerCount * GAME_ANTE);
-    expect(result.pot).toBe(expectedPot);
-  });
+      expect(result.pot).toBe(playerCount * GAME_ANTE);
+      expect(result.dustBurned).toBe(0);
+    },
+  );
 
-  it('integer division floor: 7 players, 3 winners → floor(420/3) = 140', () => {
+  it('7 players, 3 winners still divide exactly', () => {
     const players = [
       makePlayer('a1', 'A', 0),
       makePlayer('a2', 'B', 0),
@@ -231,10 +233,12 @@ describe('pot math', () => {
       makePlayer('a7', 'G', 3),
     ];
     const result = settleGame(players, question);
-    expect(result.payoutPerWinner).toBe(Math.floor(420 / 3));
+
+    expect(result.payoutPerWinner).toBe(Math.floor((7 * GAME_ANTE) / 3));
+    expect(result.dustBurned).toBe(0);
   });
 
-  it('odd-size floor: 11 players, 7 winners → floor(660/7) = 94', () => {
+  it('11 players, 7 winners still divide exactly', () => {
     const players = [
       makePlayer('a1', 'A', 0),
       makePlayer('a2', 'B', 0),
@@ -251,10 +255,44 @@ describe('pot math', () => {
     const result = settleGame(players, question);
     const winners = result.players.filter((p) => p.wonGame);
 
-    expect(result.pot).toBe(660);
+    expect(result.pot).toBe(11 * GAME_ANTE);
     expect(result.winnerCount).toBe(7);
-    expect(result.payoutPerWinner).toBe(Math.floor(660 / 7));
-    expect(winners.every((p) => p.netDelta === 34)).toBe(true);
+    expect(result.payoutPerWinner).toBe((11 * GAME_ANTE) / 7);
+    expect(result.dustBurned).toBe(0);
+    expect(
+      winners.every((p) => p.netDelta === (11 * GAME_ANTE) / 7 - GAME_ANTE),
+    ).toBe(true);
+  });
+
+  it('13 players, 11 winners burn dust', () => {
+    const players = [
+      makePlayer('a1', 'A', 0),
+      makePlayer('a2', 'B', 0),
+      makePlayer('a3', 'C', 0),
+      makePlayer('a4', 'D', 0),
+      makePlayer('a5', 'E', 0),
+      makePlayer('a6', 'F', 0),
+      makePlayer('a7', 'G', 0),
+      makePlayer('a8', 'H', 0),
+      makePlayer('a9', 'I', 0),
+      makePlayer('a10', 'J', 0),
+      makePlayer('a11', 'K', 0),
+      makePlayer('a12', 'L', 1),
+      makePlayer('a13', 'M', 2),
+    ];
+    const result = settleGame(players, question);
+    const winners = result.players.filter((p) => p.wonGame);
+
+    expect(result.pot).toBe(13 * GAME_ANTE);
+    expect(result.winnerCount).toBe(11);
+    expect(result.payoutPerWinner).toBe(
+      Math.floor((13 * GAME_ANTE) / result.winnerCount),
+    );
+    expect(result.dustBurned).toBe((13 * GAME_ANTE) % result.winnerCount);
+    expect(result.dustBurned).toBe(2);
+    expect(
+      winners.every((p) => p.netDelta === result.payoutPerWinner - GAME_ANTE),
+    ).toBe(true);
   });
 });
 
@@ -275,15 +313,16 @@ describe('forfeited player handling', () => {
     const result = settleGame(players, question);
 
     expect(result.voided).toBe(false);
-    expect(result.pot).toBe(180);
+    expect(result.pot).toBe(3 * GAME_ANTE);
     expect(result.validRevealCount).toBe(2);
+    expect(result.dustBurned).toBe(0);
 
     const carol = must(
       result.players.find((p) => p.accountId === 'a3'),
       'Expected Carol in game result',
     );
     expect(carol.wonGame).toBe(false);
-    expect(carol.netDelta).toBe(-60);
+    expect(carol.netDelta).toBe(-GAME_ANTE);
   });
 
   it('detached (prior-game forfeit) player is excluded from pot', () => {
@@ -295,10 +334,10 @@ describe('forfeited player handling', () => {
     const result = settleGame(players, question);
 
     expect(result.playerCount).toBe(2);
-    expect(result.pot).toBe(120);
+    expect(result.pot).toBe(2 * GAME_ANTE);
     expect(result.players.find((p) => p.accountId === 'a3')).toBeUndefined();
     expect(result.winnerCount).toBe(2);
-    expect(result.payoutPerWinner).toBe(60);
+    expect(result.payoutPerWinner).toBe(GAME_ANTE);
   });
 });
 

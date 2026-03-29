@@ -42,7 +42,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 For each game:
 
 1. A select question is presented.
-2. Every attached player is scheduled to ante `60`.
+2. Every attached player is scheduled to ante `2520`.
 3. During commit, each player chooses one option and submits a commitment hash.
 4. The game enters reveal when either all non-forfeited players have committed or the commit timer expires.
 5. During reveal, each committed non-forfeited player reveals the exact option index and salt used in the commitment.
@@ -111,7 +111,7 @@ Reveal verification succeeds only if the recomputed hash exactly matches the com
 
 Each game uses a fixed ante:
 
-`ante = 60`
+`ante = 2520`
 
 Every attached player contributes the ante for accounting purposes.
 
@@ -145,7 +145,7 @@ Definitions:
 - `winningOptions`: every option index whose count equals `topCount`
 - `winnerCount`: number of players whose valid reveal is on a winning option
 - `gamePlayerCount`: number of attached players in the game
-- `pot = gamePlayerCount * 60`
+- `pot = gamePlayerCount * 2520`
 
 A player wins the game if and only if:
 
@@ -164,15 +164,16 @@ Consequences:
 
 In a non-voided game:
 
-- every attached player contributes `60` to the pot
+- every attached player contributes `2520` to the pot
 - winners receive equal integer payouts computed as `floor(pot / winnerCount)`
 - losers receive no game payout
-- if the pot does not divide evenly, the remainder is not distributed
+- `dustBurned = pot % winnerCount`
+- if the pot does not divide evenly, the remainder is burned and not distributed
 
 Per-player net game delta:
 
-- winner: `floor(pot / winnerCount) - 60`
-- loser: `-60`
+- winner: `floor(pot / winnerCount) - 2520`
+- loser: `-2520`
 
 ### Coordination Credit
 
@@ -230,52 +231,64 @@ In a `3`-player game, if nobody produces a valid reveal:
 
 In a `3`-player game, if exactly one player reveals validly:
 
-- `pot = 3 * 60 = 180`
+- `pot = 3 * 2520 = 7560`
 - `winnerCount = 1`
-- the single revealer gets `180`
-- the winner's net delta is `+120`
-- each other player gets `-60`
+- the single revealer gets `7560`
+- the winner's net delta is `+5040`
+- each other player gets `-2520`
 - nobody earns coordination credit because `topCount = 1`
 
 ### `2-1` Split
 
 In a `3`-player game where two players pick the same winning option and one player picks another:
 
-- `pot = 180`
+- `pot = 7560`
 - `winnerCount = 2`
-- each winner gets `90`
-- each winner's net delta is `+30`
-- the loser gets `-60`
+- each winner gets `3780`
+- each winner's net delta is `+1260`
+- the loser gets `-2520`
 - both winners earn coordination credit because `topCount = 2`
 
 ### `2-2-1` Split
 
 In a `5`-player game where two options tie for first with two valid reveals each:
 
-- `pot = 5 * 60 = 300`
+- `pot = 5 * 2520 = 12600`
 - `winnerCount = 4`
-- each winner gets `75`
-- each winner's net delta is `+15`
-- the minority player gets `-60`
+- each winner gets `3150`
+- each winner's net delta is `+630`
+- the minority player gets `-2520`
 - all four winners earn coordination credit because `topCount = 2`
 
 ### Unanimous Convergence
 
 In a `5`-player game where all five players reveal the same option:
 
-- `pot = 300`
+- `pot = 12600`
 - `winnerCount = 5`
-- each player gets `60`
+- each player gets `2520`
 - every player's net delta is `0`
 - every player earns coordination credit because `topCount = 5`
+
+### Forfeited Player in a Later Game
+### Burned Dust
+
+In a `13`-player game where `11` players share the winning option:
+
+- `pot = 13 * 2520 = 32760`
+- `winnerCount = 11`
+- each winner gets `floor(32760 / 11) = 2978`
+- `dustBurned = 32760 % 11 = 2`
+- each winner's net delta is `+458`
+- each losing player gets `-2520`
 
 ### Forfeited Player in a Later Game
 
 In a `3`-player match, one player forfeited in game 2. In game 3 the two remaining active players reveal the same option:
 
-- the forfeited player is detached, so `gamePlayerCount = 2` and `pot = 2 * 60 = 120`
-- the two active players each pay `60`; both win
-- each winner gets `60`
+- the forfeited player is detached, so `gamePlayerCount = 2` and `pot = 2 * 2520 = 5040`
+- the two active players each pay `2520`; both win
+- each winner gets `2520`
 - each winner's net delta is `0`
 - the forfeited player is not part of this game at all
 - both active players earn coordination credit because `topCount = 2`
