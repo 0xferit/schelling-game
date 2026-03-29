@@ -131,15 +131,19 @@ export async function handleHttpRequest(
 
     const account = await fetchAccountWithStats(env.DB, accountId);
 
-    if (!account?.display_name) {
-      return new Response('Profile incomplete', { status: 403 });
+    if (!account) {
+      return new Response('Account not found', { status: 403 });
     }
+
+    const displayName =
+      account.display_name ||
+      `${accountId.slice(0, 6)}..${accountId.slice(-4)}`;
 
     const id = env.GAME_ROOM.idFromName('lobby');
     const stub = env.GAME_ROOM.get(id);
     const doUrl = new URL(request.url);
     doUrl.searchParams.set('accountId', accountId);
-    doUrl.searchParams.set('displayName', account.display_name);
+    doUrl.searchParams.set('displayName', displayName);
     doUrl.searchParams.set('tokenBalance', String(account.token_balance ?? 0));
     return stub.fetch(new Request(doUrl.toString(), request));
   }
