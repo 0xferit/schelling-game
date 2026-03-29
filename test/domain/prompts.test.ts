@@ -3,6 +3,7 @@ import {
   getCanonicalPromptPool,
   getCanonicalPromptRecords,
   getPromptPoolQualityIssues,
+  getPromptRecordById,
   selectPromptsForMatch,
   validatePromptPool,
 } from '../../src/domain/prompts';
@@ -22,6 +23,32 @@ function getRootFamily(root: string): string {
     default:
       return root;
   }
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function restoreRecord(target: unknown, snapshot: unknown): void {
+  const mutableTarget = target as Record<string, unknown>;
+  for (const key of Object.keys(mutableTarget)) {
+    delete mutableTarget[key];
+  }
+  Object.assign(mutableTarget, cloneJson(snapshot));
+}
+
+function getMutableRecord(id: number): Record<string, unknown> {
+  const record = getPromptRecordById(id);
+  if (!record) {
+    throw new Error(`Expected prompt record ${id}`);
+  }
+  return record as unknown as Record<string, unknown>;
+}
+
+function getRecordIdsForRoot(root: string): number[] {
+  return getCanonicalPromptRecords()
+    .filter((record) => record.root === root)
+    .map((record) => record.prompt.id);
 }
 
 describe('prompt pool', () => {
@@ -92,6 +119,149 @@ describe('prompt pool', () => {
   it('passes prompt-pool quality validation', () => {
     expect(validatePromptPool()).toBe(true);
     expect(getPromptPoolQualityIssues()).toEqual([]);
+  });
+
+  it('returns defensive clones of the public prompt pool', () => {
+    const first = getCanonicalPromptPool();
+    const second = getCanonicalPromptPool();
+    const firstPrompt = first[0];
+    const secondPrompt = second[0];
+
+    if (!firstPrompt || !secondPrompt) {
+      throw new Error('Expected canonical prompt pool entries');
+    }
+
+    firstPrompt.text = 'Mutated prompt text';
+
+    expect(secondPrompt?.text).not.toBe('Mutated prompt text');
+  });
+
+  it('looks up prompt records by id and returns undefined for missing ids', () => {
+    const knownId = records[0]?.prompt.id;
+    if (knownId === undefined) {
+      throw new Error('Expected canonical prompt id');
+    }
+
+    expect(getPromptRecordById(knownId)?.prompt.id).toBe(knownId);
+    expect(getPromptRecordById(-1)).toBeUndefined();
+  });
+
+  it('flags missing catalog metadata on the canonical record set', () => {
+    const firstRecordId = records[0]?.prompt.id;
+    if (firstRecordId === undefined) {
+      throw new Error('Expected canonical prompt id');
+    }
+    const record = getMutableRecord(firstRecordId);
+    const snapshot = cloneJson(record);
+
+    try {
+      record.frame = '';
+      expect(
+        getPromptPoolQualityIssues().some((issue) =>
+          issue.includes('missing required catalog metadata'),
+        ),
+      ).toBe(true);
+    } finally {
+      restoreRecord(record, snapshot);
+    }
+  });
+
+  it('flags canonical select-root count mismatches', () => {
+    const firstRecordId = records[0]?.prompt.id;
+    if (firstRecordId === undefined) {
+      throw new Error('Expected canonical prompt id');
+    }
+    const record = getMutableRecord(firstRecordId);
+    const snapshot = cloneJson(record);
+
+    try {
+      record.root = 'sports';
+      const issues = getPromptPoolQualityIssues();
+
+      expect(
+        issues.some((issue) =>
+          issue.includes(
+            'Select root "day_of_week" must contribute exactly 4 prompts',
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        issues.some((issue) =>
+          issue.includes(
+            'Select root "sports" must contribute exactly 4 prompts',
+          ),
+        ),
+      ).toBe(true);
+    } finally {
+      restoreRecord(record, snapshot);
+    }
+  });
+
+  it('flags canonical open-text-root count mismatches', () => {
+    const openTextId = records.find(
+      (record) => record.prompt.type === 'open_text',
+    )?.prompt.id;
+    if (openTextId === undefined) {
+      throw new Error('Expected canonical open-text prompt id');
+    }
+    const record = getMutableRecord(openTextId);
+    const snapshot = cloneJson(record);
+
+    try {
+      record.root = 'animal';
+      const issues = getPromptPoolQualityIssues();
+
+      expect(
+        issues.some((issue) =>
+          issue.includes(
+            'Open-text root "day_of_week" must contribute exactly 2 prompts',
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        issues.some((issue) =>
+          issue.includes(
+            'Open-text root "animal" must contribute exactly 2 prompts',
+          ),
+        ),
+      ).toBe(true);
+    } finally {
+      restoreRecord(record, snapshot);
+    }
+  });
+
+  it('flags canonical select/open-text pool count mismatches', () => {
+    const firstRecordId = records[0]?.prompt.id;
+    if (firstRecordId === undefined) {
+      throw new Error('Expected canonical prompt id');
+    }
+    const record = getMutableRecord(firstRecordId);
+    const snapshot = cloneJson(record);
+
+    try {
+      const prompt = record.prompt as Record<string, unknown>;
+      prompt.type = 'open_text';
+      prompt.maxLength = 30;
+      prompt.placeholder = 'Type one answer';
+      const issues = getPromptPoolQualityIssues();
+
+      expect(
+        issues.some((issue) =>
+          issue.includes(
+            'Canonical pool must contain exactly 80 select prompts',
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        issues.some((issue) =>
+          issue.includes(
+            'Canonical pool must contain exactly 20 open_text prompts',
+          ),
+        ),
+      ).toBe(true);
+    } finally {
+      restoreRecord(record, snapshot);
+    }
   });
 });
 
@@ -191,5 +361,60 @@ describe('selectPromptsForMatch', () => {
 
   it('throws RangeError when requesting more prompts than distinct families', () => {
     expect(() => selectPromptsForMatch(21)).toThrow(RangeError);
+  });
+
+  it('throws when the open-text cap makes a balanced 20-prompt selection impossible', () => {
+    const roots = ['sports', 'furniture', 'drinks'];
+    const snapshots = roots.flatMap((root) =>
+      getRecordIdsForRoot(root).map((id) => {
+        const record = getMutableRecord(id);
+        return { id, snapshot: cloneJson(record) };
+      }),
+    );
+
+    try {
+      for (const { id } of snapshots) {
+        const record = getMutableRecord(id);
+        const prompt = record.prompt as Record<string, unknown>;
+        prompt.type = 'open_text';
+        prompt.maxLength = 40;
+        prompt.placeholder = 'Type one answer';
+      }
+
+      expect(() => selectPromptsForMatch(20)).toThrow(
+        'Unable to satisfy a 20-prompt balanced selection from the canonical pool',
+      );
+    } finally {
+      for (const { id, snapshot } of snapshots) {
+        restoreRecord(getPromptRecordById(id), snapshot);
+      }
+    }
+  });
+
+  it('throws when the calibration cap makes a balanced select-only 20-prompt selection impossible', () => {
+    const roots = ['sports', 'furniture'];
+    const snapshots = roots.flatMap((root) =>
+      getRecordIdsForRoot(root).map((id) => {
+        const record = getMutableRecord(id);
+        return { id, snapshot: cloneJson(record) };
+      }),
+    );
+
+    try {
+      for (const { id } of snapshots) {
+        const record = getMutableRecord(id);
+        record.calibration = true;
+      }
+
+      expect(() =>
+        selectPromptsForMatch(20, { includeOpenText: false }),
+      ).toThrow(
+        'Unable to satisfy a 20-prompt balanced selection from the canonical pool',
+      );
+    } finally {
+      for (const { id, snapshot } of snapshots) {
+        restoreRecord(getPromptRecordById(id), snapshot);
+      }
+    }
   });
 });
