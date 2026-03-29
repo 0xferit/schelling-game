@@ -54,6 +54,29 @@ function waitForMessage(
   });
 }
 
+/** Wait for a message that satisfies a predicate. */
+function waitForMessageWhere(
+  ws: WebSocket,
+  predicate: (msg: Record<string, unknown>) => boolean,
+  timeoutMs = 3000,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const handler = (evt: MessageEvent) => {
+      const msg = JSON.parse(evt.data as string);
+      if (predicate(msg)) {
+        clearTimeout(timer);
+        ws.removeEventListener('message', handler);
+        resolve(msg);
+      }
+    };
+    const timer = setTimeout(() => {
+      ws.removeEventListener('message', handler);
+      reject(new Error('Timed out waiting for matching message'));
+    }, timeoutMs);
+    ws.addEventListener('message', handler);
+  });
+}
+
 /** Open a WebSocket for a wallet index, returning the client socket. */
 async function connectWs(
   walletIndex: number,
@@ -97,6 +120,29 @@ async function reconnectPlayer(
   walletIndex: number,
 ): Promise<{ ws: WebSocket; accountId: string }> {
   return connectWs(walletIndex);
+}
+
+/** Join queue and start immediately via unanimous start-now votes. */
+async function joinPlayersAndStartNow(
+  players: Array<{ ws: WebSocket }>,
+): Promise<void> {
+  const formingPromises = players.map((player) =>
+    waitForMessageWhere(
+      player.ws,
+      (msg) => msg.type === 'queue_state' && msg.status === 'forming',
+      3000,
+    ),
+  );
+
+  for (const player of players) {
+    player.ws.send(JSON.stringify({ type: 'join_queue' }));
+  }
+
+  await Promise.all(formingPromises);
+
+  for (const player of players) {
+    player.ws.send(JSON.stringify({ type: 'set_start_now', value: true }));
+  }
 }
 
 /** Connect N players, join queue, and await match_started for all. */
@@ -295,9 +341,7 @@ describe('GameRoom Durable Object', () => {
       MATCH_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     // Listen for game_started before awaiting match_started to avoid missing
     // back-to-back messages from the server.
@@ -375,9 +419,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     await p1Round;
@@ -455,9 +497,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     await Promise.all([p1Round, p2Round, p3Round]);
@@ -554,9 +594,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     await Promise.all([p1Round, p2Round, p3Round]);
@@ -645,9 +683,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     await Promise.all([p1Round, p2Round, p3Round]);
@@ -753,9 +789,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     await Promise.all([p1Game1, p2Game1, p3Game1]);
