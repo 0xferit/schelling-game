@@ -19,7 +19,11 @@ import type {
   PlayerSettlementInput,
   Question,
 } from './types/domain';
-import type { GameResultMessage } from './types/messages';
+import type {
+  GameResultMessage,
+  QueueStateMessage,
+  ServerMessage,
+} from './types/messages';
 import type { Env } from './types/worker-env';
 import { handleHttpRequest } from './worker/httpHandler';
 import type {
@@ -859,12 +863,7 @@ export class GameRoom {
     this._broadcastToMatch(match, {
       type: 'game_started',
       game: match.currentGame,
-      question: {
-        id: question.id,
-        text: question.text,
-        type: question.type,
-        options: question.options,
-      },
+      question,
       commitDuration: COMMIT_DURATION,
       gameAnte: this._getMatchGameAnte(match),
       aiAssisted: match.aiAssisted,
@@ -1856,7 +1855,7 @@ export class GameRoom {
   // Broadcast helpers
   // -------------------------------------------------------------------------
 
-  _sendTo(accountId: string, msg: Record<string, unknown>): void {
+  _sendTo(accountId: string, msg: ServerMessage): void {
     const conn = this.connections.get(accountId);
     if (!conn) return;
     try {
@@ -1864,10 +1863,7 @@ export class GameRoom {
     } catch {}
   }
 
-  _broadcastToMatch(
-    match: WorkerMatchState,
-    msg: Record<string, unknown>,
-  ): void {
+  _broadcastToMatch(match: WorkerMatchState, msg: ServerMessage): void {
     const data = JSON.stringify(msg);
     for (const p of match.players.values()) {
       if (!p.forfeited || msg.type === 'match_over') {
@@ -1899,11 +1895,7 @@ export class GameRoom {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
-    const isQueued =
-      this.waitingQueue.includes(accountId) ||
-      this.formingMatch?.players.includes(accountId);
-
-    this._sendTo(accountId, this._buildQueueStateMsg(accountId, !!isQueued));
+    this._sendTo(accountId, this._buildQueueStateMsg(accountId));
   }
 
   _broadcastQueueState(): void {
@@ -1911,21 +1903,22 @@ export class GameRoom {
     for (const [accountId, conn] of this.connections) {
       if (this.playerMatchIndex.has(accountId)) continue;
 
-      const isQueued =
-        this.waitingQueue.includes(accountId) ||
-        this.formingMatch?.players.includes(accountId);
-
-      const msg = this._buildQueueStateMsg(accountId, !!isQueued);
+      const msg = this._buildQueueStateMsg(accountId);
       try {
         conn.ws.send(JSON.stringify(msg));
       } catch {}
     }
   }
 
-  _buildQueueStateMsg(
-    accountId: string,
-    isQueued: boolean,
-  ): Record<string, unknown> {
+  _buildQueueStateMsg(accountId: string): QueueStateMessage {
+    const isForming = this.formingMatch?.players.includes(accountId) ?? false;
+    const isQueued = this.waitingQueue.includes(accountId);
+    let status: QueueStateMessage['status'] = 'idle';
+    if (isForming) {
+      status = 'forming';
+    } else if (isQueued) {
+      status = 'queued';
+    }
     // All queued + forming display names
     const allQueuedIds = [...this.waitingQueue];
     if (this.formingMatch) {
@@ -1966,7 +1959,7 @@ export class GameRoom {
 
     return {
       type: 'queue_state',
-      status: isQueued ? 'queued' : 'idle',
+      status,
       startNow: this.connections.get(accountId)?.startNow ?? false,
       queuedCount: allQueuedIds.length,
       queuedPlayers,
@@ -2247,12 +2240,7 @@ export class GameRoom {
       this._sendTo(accountId, {
         type: 'game_started',
         game: match.currentGame,
-        question: {
-          id: question.id,
-          text: question.text,
-          type: question.type,
-          options: question.options,
-        },
+        question,
         commitDuration:
           match.phase === 'commit' ? commitRemaining : COMMIT_DURATION,
         gameAnte: this._getMatchGameAnte(match),

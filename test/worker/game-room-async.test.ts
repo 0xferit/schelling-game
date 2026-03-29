@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
 import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
 import type { Question } from '../../src/types/domain';
-import type { GameResultMessage } from '../../src/types/messages';
+import type {
+  GameResultMessage,
+  QueueStateMessage,
+} from '../../src/types/messages';
 import type { Env } from '../../src/types/worker-env';
 import { GameRoom } from '../../src/worker';
 import { must } from './helpers';
@@ -450,6 +453,7 @@ describe('GameRoom async task tracking', () => {
     room.connections.set('acct-2', createConnectionState('Bob'));
     room.connections.set('acct-3', createConnectionState('Carol'));
     room.connections.set('acct-4', createConnectionState('Spectator'));
+    room.connections.set('acct-5', createConnectionState('Queued'));
 
     must(room.connections.get('acct-1'), 'Expected Alice connection').startNow =
       true;
@@ -463,25 +467,13 @@ describe('GameRoom async task tracking', () => {
     };
     room.waitingQueue = ['acct-5', 'acct-6', 'acct-7'];
 
-    const participantState = room._buildQueueStateMsg('acct-1', true) as {
-      startNow: boolean;
-      formingMatch: {
-        humanPlayerCount: number;
-        readyHumanCount: number;
-        allowedSizes: number[];
-        youCanVoteStartNow: boolean;
-      } | null;
-    };
-    const spectatorState = room._buildQueueStateMsg('acct-4', false) as {
-      startNow: boolean;
-      formingMatch: {
-        humanPlayerCount: number;
-        readyHumanCount: number;
-        allowedSizes: number[];
-        youCanVoteStartNow: boolean;
-      } | null;
-    };
+    const participantState: QueueStateMessage =
+      room._buildQueueStateMsg('acct-1');
+    const queuedState: QueueStateMessage = room._buildQueueStateMsg('acct-5');
+    const spectatorState: QueueStateMessage =
+      room._buildQueueStateMsg('acct-4');
 
+    expect(participantState.status).toBe('forming');
     expect(participantState.startNow).toBe(true);
     expect(participantState.formingMatch).toMatchObject({
       humanPlayerCount: 3,
@@ -489,6 +481,14 @@ describe('GameRoom async task tracking', () => {
       allowedSizes: [3, 4, 5, 6],
       youCanVoteStartNow: true,
     });
+    expect(queuedState.status).toBe('queued');
+    expect(queuedState.formingMatch).toMatchObject({
+      humanPlayerCount: 3,
+      readyHumanCount: 2,
+      allowedSizes: [3, 4, 5, 6],
+      youCanVoteStartNow: false,
+    });
+    expect(spectatorState.status).toBe('idle');
     expect(spectatorState.startNow).toBe(false);
     expect(spectatorState.formingMatch).toMatchObject({
       humanPlayerCount: 3,
@@ -1093,12 +1093,7 @@ describe('GameRoom async task tracking', () => {
     });
     expect(sentMessages[3]).toMatchObject({
       type: 'commit_status',
-      committed: [
-        {
-          displayName: 'Alice',
-          hasCommitted: false,
-        },
-      ],
+      committed: [{ displayName: 'Alice', hasCommitted: false }],
     });
   });
   it('tracks match end after results with state.waitUntil', async () => {
