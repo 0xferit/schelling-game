@@ -2,7 +2,7 @@
 // All functions take a SqlStorage instance as their first argument
 // so they can be called from the GameRoom class without coupling.
 
-import type { Question } from '../types/domain';
+import type { SchellingPrompt } from '../types/domain';
 import type { GameResultMessage } from '../types/messages';
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ export interface PersistedMatchFields {
   phase: string;
   currentGame: number;
   totalGames: number;
-  questions: Question[];
+  prompts: SchellingPrompt[];
   phaseEnteredAt: number;
   lastSettledGame: number;
   lastGameResult: GameResultMessage['result'] | null;
@@ -91,7 +91,7 @@ export function initCheckpointTables(sql: SqlStorage): void {
       phase           TEXT NOT NULL,
       current_game    INTEGER NOT NULL,
       total_games     INTEGER NOT NULL,
-      questions_json  TEXT NOT NULL,
+      prompts_json    TEXT NOT NULL,
       phase_entered_at INTEGER NOT NULL,
       last_settled_game INTEGER NOT NULL DEFAULT 0,
       last_game_result_json TEXT,
@@ -117,6 +117,12 @@ export function initCheckpointTables(sql: SqlStorage): void {
     'match_checkpoints',
     'last_round_result_json',
     'last_game_result_json',
+  );
+  renameColumnIfNeeded(
+    sql,
+    'match_checkpoints',
+    'questions_json',
+    'prompts_json',
   );
 
   if (!getColumnNames(sql, 'match_checkpoints').has('last_game_result_json')) {
@@ -182,13 +188,13 @@ export function checkpointMatch(
     );
     sql.exec(
       `INSERT OR REPLACE INTO match_checkpoints
-        (match_id, phase, current_game, total_games, questions_json, phase_entered_at, last_settled_game, last_game_result_json, ai_assisted, created_at)
+        (match_id, phase, current_game, total_games, prompts_json, phase_entered_at, last_settled_game, last_game_result_json, ai_assisted, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       match.matchId,
       match.phase,
       match.currentGame,
       match.totalGames,
-      JSON.stringify(match.questions),
+      JSON.stringify(match.prompts),
       match.phaseEnteredAt,
       match.lastSettledGame,
       match.lastGameResult ? JSON.stringify(match.lastGameResult) : null,
@@ -343,7 +349,10 @@ export function restoreMatchesFromStorage(
       restored.push({
         matchId: row.match_id as string,
         players,
-        questions: JSON.parse(row.questions_json as string),
+        prompts: JSON.parse(
+          ((row.prompts_json as string | null) ??
+            (row.questions_json as string | null)) as string,
+        ),
         currentGame,
         totalGames,
         phase: row.phase as string,

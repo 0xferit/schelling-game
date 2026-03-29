@@ -1,4 +1,4 @@
-export type QuestionCategory =
+export type PromptCategory =
   | 'number'
   | 'lifestyle'
   | 'culture'
@@ -7,11 +7,11 @@ export type QuestionCategory =
   | 'philosophy'
   | 'aesthetics';
 
-export interface Question {
+export interface SchellingPrompt {
   id: number;
   text: string;
   type: 'select';
-  category: QuestionCategory;
+  category: PromptCategory;
   options: string[];
 }
 

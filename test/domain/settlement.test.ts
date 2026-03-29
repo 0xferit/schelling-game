@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GAME_ANTE, MIN_ESTABLISHED_MATCHES } from '../../src/domain/constants';
 import { settleGame } from '../../src/domain/settlement';
-import type { PlayerSettlementInput, Question } from '../../src/types/domain';
+import type {
+  PlayerSettlementInput,
+  SchellingPrompt,
+} from '../../src/types/domain';
 
 function must<T>(value: T | null | undefined, message: string): T {
   if (value == null) {
@@ -10,7 +13,7 @@ function must<T>(value: T | null | undefined, message: string): T {
   return value;
 }
 
-const question: Question = {
+const prompt: SchellingPrompt = {
   id: 1,
   text: 'Test',
   type: 'select',
@@ -43,7 +46,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 0),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.pot).toBe(3 * GAME_ANTE);
@@ -60,7 +63,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 1),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.topCount).toBe(2);
@@ -85,7 +88,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a4', 'Dave', 1),
       makePlayer('a5', 'Eve', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(3);
     expect(result.winnerCount).toBe(3);
@@ -108,7 +111,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a6', 'Frank', 1),
       makePlayer('a7', 'Grace', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(4);
     expect(result.winnerCount).toBe(4);
@@ -125,7 +128,7 @@ describe('single valid revealer', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.validRevealCount).toBe(1);
@@ -150,7 +153,7 @@ describe('zero valid reveals = void', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(true);
     expect(result.voidReason).toBe('zero_valid_reveals');
@@ -169,7 +172,7 @@ describe('tied pluralities', () => {
       makePlayer('a4', 'Dave', 1),
       makePlayer('a5', 'Eve', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(2);
     expect(result.winningOptionIndexes).toHaveLength(2);
@@ -198,7 +201,7 @@ describe('all distinct (topCount=1)', () => {
       makePlayer('a2', 'Bob', 1),
       makePlayer('a3', 'Carol', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(1);
     expect(result.winnerCount).toBe(3);
@@ -219,7 +222,7 @@ describe('pot math', () => {
     const players = Array.from({ length: playerCount }, (_, i) =>
       makePlayer(`a${i + 1}`, String.fromCharCode(65 + i), 0),
     );
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.pot).toBe(playerCount * GAME_ANTE);
     expect(result.dustBurned).toBe(0);
@@ -235,7 +238,7 @@ describe('pot math', () => {
       makePlayer('a6', 'F', 2),
       makePlayer('a7', 'G', 3),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.payoutPerWinner).toBe(Math.floor((7 * GAME_ANTE) / 3));
     expect(result.dustBurned).toBe(0);
@@ -255,7 +258,7 @@ describe('pot math', () => {
       makePlayer('a10', 'J', 2),
       makePlayer('a11', 'K', 3),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
     const winners = result.players.filter((p) => p.wonGame);
 
     expect(result.pot).toBe(11 * GAME_ANTE);
@@ -283,7 +286,7 @@ describe('pot math', () => {
       makePlayer('a12', 'L', 1),
       makePlayer('a13', 'M', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
     const winners = result.players.filter((p) => p.wonGame);
 
     expect(result.pot).toBe(13 * GAME_ANTE);
@@ -313,7 +316,7 @@ describe('forfeited player handling', () => {
         attached: true,
       },
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(false);
     expect(result.pot).toBe(3 * GAME_ANTE);
@@ -334,7 +337,7 @@ describe('forfeited player handling', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', null, false, true, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.playerCount).toBe(2);
     expect(result.pot).toBe(2 * GAME_ANTE);
@@ -351,7 +354,7 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 1),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
     const winners = result.players.filter((p) => p.wonGame);
     const losers = result.players.filter((p) => !p.wonGame);
 
@@ -366,7 +369,7 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(1);
     const alice = must(
@@ -382,7 +385,7 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', 1),
       makePlayer('a3', 'Carol', 2),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.topCount).toBe(1);
     expect(result.players.every((p) => !p.earnsCoordinationCredit)).toBe(true);
@@ -393,7 +396,7 @@ describe('coordination credit rules', () => {
       makePlayer('a1', 'Alice', null, false),
       makePlayer('a2', 'Bob', null, false),
     ];
-    const result = settleGame(players, question);
+    const result = settleGame(players, prompt);
 
     expect(result.voided).toBe(true);
     expect(result.players.every((p) => !p.earnsCoordinationCredit)).toBe(true);

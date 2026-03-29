@@ -1,7 +1,41 @@
 import crypto from 'node:crypto';
-import type { Question } from '../types/domain';
+import type { SchellingPrompt } from '../types/domain';
 
-const QUESTION_POOL: Question[] = [
+const COARSE_COLOR_OPTIONS = [
+  'Red',
+  'Orange',
+  'Yellow',
+  'Green',
+  'Blue',
+  'Purple',
+  'White',
+  'Black',
+  'Gray',
+  'Gold',
+  'Silver',
+] as const;
+
+const FAMILY_ROOTS = new Set([
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'blue',
+  'purple',
+  'white',
+  'black',
+  'gray',
+  'grey',
+  'gold',
+  'silver',
+  'spring',
+  'summer',
+  'autumn',
+  'fall',
+  'winter',
+]);
+
+const PROMPT_POOL: SchellingPrompt[] = [
   {
     id: 1,
     text: 'Pick a number.',
@@ -408,44 +442,6 @@ const QUESTION_POOL: Question[] = [
     ],
   },
   {
-    id: 29,
-    text: 'Pick the most beautiful color.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Red',
-      'Orange',
-      'Yellow',
-      'Green',
-      'Teal',
-      'Blue',
-      'Indigo',
-      'Violet',
-      'Pink',
-      'Gold',
-      'Black',
-      'White',
-    ],
-  },
-  {
-    id: 30,
-    text: 'Pick the most beautiful time of year.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Early spring',
-      'Late spring',
-      'Early summer',
-      'Midsummer',
-      'Late summer',
-      'Early autumn',
-      'Mid autumn',
-      'Late autumn',
-      'Early winter',
-      'Midwinter',
-    ],
-  },
-  {
     id: 31,
     text: 'Pick the most beautiful-sounding instrument.',
     type: 'select',
@@ -536,222 +532,268 @@ const QUESTION_POOL: Question[] = [
     ],
   },
   {
-    id: 36,
-    text: 'Pick the warmest color.',
+    id: 46,
+    text: 'Pick the best season.',
     type: 'select',
     category: 'aesthetics',
-    options: [
-      'White',
-      'Light yellow',
-      'Yellow',
-      'Gold',
-      'Orange',
-      'Coral',
-      'Red',
-      'Crimson',
-      'Maroon',
-      'Brown',
-      'Dark brown',
-      'Black',
-    ],
+    options: ['Spring', 'Summer', 'Autumn', 'Winter'],
   },
   {
-    id: 37,
-    text: 'Pick the coldest color.',
+    id: 47,
+    text: 'Pick the most beautiful color.',
     type: 'select',
     category: 'aesthetics',
-    options: [
-      'White',
-      'Ice blue',
-      'Light cyan',
-      'Cyan',
-      'Teal',
-      'Blue',
-      'Navy',
-      'Indigo',
-      'Dark purple',
-      'Charcoal',
-      'Black',
-    ],
+    options: [...COARSE_COLOR_OPTIONS],
   },
   {
-    id: 38,
-    text: "Pick the shade that best represents 'neutral'.",
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'White',
-      'Ivory',
-      'Light gray',
-      'Silver',
-      'Gray',
-      'Slate',
-      'Dark gray',
-      'Charcoal',
-      'Near-black',
-      'Black',
-    ],
-  },
-  {
-    id: 39,
+    id: 48,
     text: 'Pick the color of trust.',
     type: 'select',
     category: 'aesthetics',
-    options: [
-      'Red',
-      'Orange',
-      'Yellow',
-      'Green',
-      'Teal',
-      'Blue',
-      'Indigo',
-      'Violet',
-      'White',
-      'Gold',
-      'Black',
-      'Gray',
-    ],
+    options: [...COARSE_COLOR_OPTIONS],
   },
   {
-    id: 40,
+    id: 49,
     text: 'Pick the color of danger.',
     type: 'select',
     category: 'aesthetics',
+    options: [...COARSE_COLOR_OPTIONS],
+  },
+  {
+    id: 50,
+    text: 'Pick the color most associated with money in English-speaking culture.',
+    type: 'select',
+    category: 'aesthetics',
+    options: [...COARSE_COLOR_OPTIONS],
+  },
+  {
+    id: 51,
+    text: 'Pick the most comforting weather.',
+    type: 'select',
+    category: 'aesthetics',
+    options: ['Sunny', 'Rainy', 'Snowy', 'Cloudy', 'Breezy', 'Foggy', 'Stormy'],
+  },
+  {
+    id: 52,
+    text: 'Pick the most dramatic weather.',
+    type: 'select',
+    category: 'aesthetics',
     options: [
-      'White',
-      'Yellow',
-      'Gold',
+      'Sunshine',
+      'Rain',
+      'Snow',
+      'Thunderstorm',
+      'Fog',
+      'Strong wind',
+      'Hail',
+    ],
+  },
+  {
+    id: 53,
+    text: 'Pick the best pet.',
+    type: 'select',
+    category: 'lifestyle',
+    options: ['Dog', 'Cat', 'Bird', 'Fish', 'Rabbit', 'Turtle', 'Horse'],
+  },
+  {
+    id: 54,
+    text: 'Pick the most relaxing natural sound.',
+    type: 'select',
+    category: 'aesthetics',
+    options: [
+      'Rain',
+      'Ocean waves',
+      'Wind in trees',
+      'Crackling fire',
+      'Birds at dawn',
+      'Flowing river',
+      'Silence',
+    ],
+  },
+  {
+    id: 55,
+    text: 'Pick the most iconic flower.',
+    type: 'select',
+    category: 'aesthetics',
+    options: [
+      'Rose',
+      'Tulip',
+      'Lily',
+      'Sunflower',
+      'Daisy',
+      'Orchid',
+      'Cherry blossom',
+    ],
+  },
+  {
+    id: 56,
+    text: 'Pick the clearest symbol of peace.',
+    type: 'select',
+    category: 'philosophy',
+    options: [
+      'Dove',
+      'Olive branch',
+      'White flag',
+      'Handshake',
+      'Candle',
+      'Rainbow',
+      'Open hands',
+    ],
+  },
+  {
+    id: 57,
+    text: 'Pick the most iconic fruit.',
+    type: 'select',
+    category: 'lifestyle',
+    options: [
+      'Apple',
+      'Banana',
       'Orange',
-      'Coral',
-      'Red',
-      'Crimson',
-      'Maroon',
-      'Dark red',
-      'Black',
-    ],
-  },
-  {
-    id: 41,
-    text: 'Pick the most calming color.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'White',
-      'Lavender',
-      'Light blue',
-      'Sky blue',
-      'Mint',
-      'Sage',
-      'Seafoam',
-      'Teal',
-      'Periwinkle',
-      'Soft pink',
-      'Cream',
-      'Gray',
-    ],
-  },
-  {
-    id: 42,
-    text: "Pick the color that represents 'moderate'.",
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Pure red',
-      'Warm red',
-      'Orange-red',
-      'Orange',
-      'Amber',
-      'Neutral',
-      'Teal',
-      'Cool blue',
-      'Blue',
-      'Deep blue',
-    ],
-  },
-  {
-    id: 43,
-    text: 'Pick the color of intelligence.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'Red',
-      'Orange',
-      'Yellow',
-      'Green',
-      'Teal',
-      'Blue',
-      'Indigo',
-      'Violet',
-      'Silver',
-      'Gold',
-      'White',
-      'Black',
-    ],
-  },
-  {
-    id: 44,
-    text: 'Pick the color of money.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'White',
-      'Cream',
-      'Light green',
-      'Green',
-      'Dark green',
-      'Gold',
-      'Silver',
-      'Brown',
-      'Blue',
-      'Black',
-    ],
-  },
-  {
-    id: 45,
-    text: 'Pick the color of the future.',
-    type: 'select',
-    category: 'aesthetics',
-    options: [
-      'White',
-      'Silver',
-      'Light blue',
-      'Cyan',
-      'Teal',
-      'Electric blue',
-      'Purple',
-      'Violet',
-      'Neon green',
-      'Chrome',
-      'Black',
+      'Strawberry',
+      'Watermelon',
+      'Grapes',
+      'Mango',
     ],
   },
 ];
 
-export function getPublicPool(): Question[] {
-  return JSON.parse(JSON.stringify(QUESTION_POOL));
+function normalizeOptionIdentity(value: string): string {
+  return value.trim().toLowerCase().replace(/['’]/g, '').replace(/\s+/g, ' ');
 }
 
-export function selectQuestionsForMatch(count = 10): Question[] {
-  const pool = getPublicPool();
-  if (count > pool.length) {
-    throw new RangeError(
-      `Requested ${count} questions but pool only has ${pool.length}`,
+function normalizeWords(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getFamilyRoot(normalized: string): string | null {
+  if (FAMILY_ROOTS.has(normalized)) {
+    return normalized;
+  }
+
+  const tokens = normalized.split(' ');
+  const lastToken = tokens.at(-1);
+  if (!lastToken) {
+    return null;
+  }
+
+  return FAMILY_ROOTS.has(lastToken) ? lastToken : null;
+}
+
+function getFamilyFragmentationIssues(prompt: SchellingPrompt): string[] {
+  const familyOptions = new Map<string, string[]>();
+
+  for (const option of prompt.options) {
+    const normalized = normalizeWords(option);
+    const root = getFamilyRoot(normalized);
+    if (!root) continue;
+
+    const existing = familyOptions.get(root) ?? [];
+    existing.push(option);
+    familyOptions.set(root, existing);
+  }
+
+  const issues: string[] = [];
+  for (const [root, options] of familyOptions.entries()) {
+    if (options.length <= 1) continue;
+    issues.push(
+      `Prompt ${prompt.id} fragments the "${root}" family across multiple options (${options.join(', ')}), which breaks exact-match plurality and mixes abstraction levels.`,
     );
   }
 
-  // Fisher-Yates shuffle using crypto randomness
+  return issues;
+}
+
+function isColorSymbolismPrompt(prompt: SchellingPrompt): boolean {
+  return prompt.category === 'aesthetics' && /\bcolor\b/i.test(prompt.text);
+}
+
+export function getPromptPoolQualityIssues(
+  pool: readonly SchellingPrompt[] = PROMPT_POOL,
+): string[] {
+  const issues: string[] = [];
+  const seenIds = new Set<number>();
+
+  if (pool.length !== 45) {
+    issues.push(
+      `Canonical prompt pool must contain exactly 45 prompts; found ${pool.length}.`,
+    );
+  }
+
+  for (const prompt of pool) {
+    if (seenIds.has(prompt.id)) {
+      issues.push(`Prompt id ${prompt.id} is duplicated.`);
+    }
+    seenIds.add(prompt.id);
+
+    if (prompt.type !== 'select') {
+      issues.push(`Prompt ${prompt.id} must use type "select".`);
+    }
+    if (!Array.isArray(prompt.options) || prompt.options.length === 0) {
+      issues.push(`Prompt ${prompt.id} must define a non-empty options array.`);
+      continue;
+    }
+
+    const normalizedCounts = new Map<string, number>();
+    for (const option of prompt.options) {
+      const normalized = normalizeOptionIdentity(option);
+      normalizedCounts.set(
+        normalized,
+        (normalizedCounts.get(normalized) ?? 0) + 1,
+      );
+    }
+
+    const duplicateOptions = [...normalizedCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([option]) => option);
+    if (duplicateOptions.length > 0) {
+      issues.push(
+        `Prompt ${prompt.id} contains duplicate normalized options: ${duplicateOptions.join(', ')}.`,
+      );
+    }
+
+    issues.push(...getFamilyFragmentationIssues(prompt));
+  }
+
+  const colorPromptCount = pool.filter(isColorSymbolismPrompt).length;
+  if (colorPromptCount > 4) {
+    issues.push(
+      `Canonical prompt pool may contain at most 4 color-symbolism prompts; found ${colorPromptCount}.`,
+    );
+  }
+
+  return issues;
+}
+
+export function getCanonicalPromptPool(): SchellingPrompt[] {
+  return JSON.parse(JSON.stringify(PROMPT_POOL));
+}
+
+export function selectPromptsForMatch(count = 10): SchellingPrompt[] {
+  const pool = getCanonicalPromptPool();
+  if (count > pool.length) {
+    throw new RangeError(
+      `Requested ${count} prompts but pool only has ${pool.length}`,
+    );
+  }
+
   for (let i = pool.length - 1; i > 0; i--) {
     const buf = new Uint32Array(1);
     crypto.getRandomValues(buf);
     const randomValue = buf[0];
     if (randomValue === undefined) {
-      throw new RangeError('Missing random value during question shuffle');
+      throw new RangeError('Missing random value during prompt shuffle');
     }
     const j = randomValue % (i + 1);
     const current = pool[i];
     const swap = pool[j];
     if (current === undefined || swap === undefined) {
-      throw new RangeError('Question shuffle index out of bounds');
+      throw new RangeError('Prompt shuffle index out of bounds');
     }
     pool[i] = swap;
     pool[j] = current;
@@ -760,11 +802,10 @@ export function selectQuestionsForMatch(count = 10): Question[] {
   return pool.slice(0, count);
 }
 
-export function validatePool(): boolean {
-  return QUESTION_POOL.every(
-    (q) =>
-      q.type === 'select' && Array.isArray(q.options) && q.options.length > 0,
-  );
+export function validatePromptPool(
+  pool: readonly SchellingPrompt[] = PROMPT_POOL,
+): boolean {
+  return getPromptPoolQualityIssues(pool).length === 0;
 }
 
-export default QUESTION_POOL;
+export default PROMPT_POOL;

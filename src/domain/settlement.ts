@@ -2,7 +2,7 @@ import type {
   GameResult,
   PlayerResult,
   PlayerSettlementInput,
-  Question,
+  SchellingPrompt,
 } from '../types/domain';
 import { GAME_ANTE } from './constants';
 
@@ -13,7 +13,7 @@ type ValidRevealInput = PlayerSettlementInput & {
 
 export function settleGame(
   players: PlayerSettlementInput[],
-  question: Question,
+  prompt: SchellingPrompt,
 ): GameResult {
   const attached = players.filter((p) => p.attached);
   const gamePlayerCount = attached.length;
@@ -69,7 +69,7 @@ export function settleGame(
       revealedOptionIndex: p.validReveal ? p.optionIndex : null,
       revealedOptionLabel:
         p.validReveal && p.optionIndex != null
-          ? question.options[p.optionIndex] || null
+          ? prompt.options[p.optionIndex] || null
           : null,
       wonGame,
       earnsCoordinationCredit,

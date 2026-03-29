@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
 import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
-import type { Question } from '../../src/types/domain';
+import type { SchellingPrompt } from '../../src/types/domain';
 import type {
   GameResultMessage,
   QueueStateMessage,
@@ -58,7 +58,7 @@ function createConnectionState(displayName: string) {
 }
 
 function createMatch() {
-  const question: Question = {
+  const prompt: SchellingPrompt = {
     id: 1,
     text: 'Pick one',
     type: 'select',
@@ -69,7 +69,7 @@ function createMatch() {
   return {
     matchId: 'match-1',
     players: new Map(),
-    questions: [question],
+    prompts: [prompt],
     currentGame: 1,
     totalGames: 1,
     phase: 'reveal',

@@ -515,7 +515,7 @@ export async function handleHttpRequest(
       'id',
       'match_id',
       'game_number',
-      'question_id',
+      'prompt_id',
       'account_id',
       'display_name_snapshot',
       'revealed_option_index',
