@@ -274,6 +274,55 @@ describe('GameRoom async task tracking', () => {
     expect(prepare).not.toHaveBeenCalled();
   });
 
+  it('does not persist to D1 during mid-settlement results phase (avoids race with in-flight D1 batch)', () => {
+    const prepare = vi.fn();
+    const { room, waitUntil } = createRoom({
+      prepare,
+    } as unknown as D1Database);
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    // phase is 'results' but lastRoundResult still has the previous
+    // round's value: simulates a grace-timer forfeit firing during
+    // _finalizeRound's D1 batch await.
+    match.phase = 'results';
+    match.currentRound = 3;
+    match.totalRounds = 10;
+    match.lastSettledRound = 3;
+    match.lastRoundResult = {
+      roundNum: 2,
+      players: [],
+    } as unknown as RoundResultMessage['result'];
+
+    const player = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 1000,
+      currentBalance: 940,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtRound: null,
+      disconnectedAt: null,
+      graceTimer: null,
+    };
+    match.players.set(player.accountId, player);
+
+    room._forfeitPlayer(match, player.accountId);
+
+    expect(player.currentBalance).toBe(520);
+    expect(player.forfeited).toBe(true);
+    // Must not persist or patch: _finalizeRound will read the live
+    // playerState.currentBalance when it builds the payload.
+    expect(waitUntil).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
   it('tracks match start from _startFormingMatch with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const startMatch = vi

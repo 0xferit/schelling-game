@@ -784,7 +784,11 @@ export class GameRoom {
       }
     }
 
-    // Build round result payload for broadcast and reconnect replay
+    // Build round result payload for broadcast and reconnect replay.
+    // Read newBalance from live player state rather than the snapshot
+    // captured before the D1 await: a grace-timer forfeit could have
+    // burned future-round antes during the batch, making the snapshot
+    // stale.
     const roundResultPayload: RoundResultMessage['result'] = {
       roundNum: match.currentRound,
       voided: result.voided,
@@ -806,7 +810,9 @@ export class GameRoom {
         antePaid: pr.antePaid,
         roundPayout: pr.roundPayout,
         netDelta: pr.netDelta,
-        newBalance: (pr as PlayerResultWithBalance).newBalance,
+        newBalance:
+          match.players.get(pr.accountId)?.currentBalance ??
+          (pr as PlayerResultWithBalance).newBalance,
       })),
     };
     match.lastRoundResult = roundResultPayload;
@@ -1239,15 +1245,20 @@ export class GameRoom {
       currentBalance: player.currentBalance,
     });
 
-    // During results phase the current round is already settled, and the
-    // player will be detached from all future rounds, so _finalizeRound
-    // will never write their balance again. Persist now to close the
-    // window where a DO eviction could leave D1 stale.
+    // Only take the results-phase path when the current round is fully
+    // settled (lastRoundResult built and cached). _finalizeRound sets
+    // phase='results' before the D1 batch await, so checking phase alone
+    // would race: the forfeit burn would fire while the batch is in
+    // flight, and _finalizeRound would later build the payload from a
+    // stale snapshot. Checking roundNum guards against both the mid-await
+    // window and a stale lastRoundResult from a prior round.
     //
     // During commit/reveal the player is still attached for the current
     // round. _finalizeRound will write the correct post-settlement
     // balance to D1, so persisting here would race with that write.
-    if (match.phase === 'results') {
+    const roundFullySettled =
+      match.lastRoundResult?.roundNum === match.currentRound;
+    if (roundFullySettled) {
       this._waitUntil(
         this._persistAccountBalance(accountId, player.currentBalance),
         `persist forfeited balance for ${accountId}`,
