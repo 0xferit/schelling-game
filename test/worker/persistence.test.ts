@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { restoreMatchesFromStorage } from '../../src/worker/persistence';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  checkpointMatch,
+  restoreMatchesFromStorage,
+} from '../../src/worker/persistence';
 import { must } from './helpers';
 
 /**
@@ -10,31 +13,180 @@ function createMockSql(
   matchRows: Record<string, unknown>[],
   playerRows: Record<string, unknown>[],
 ) {
+  const exec = vi.fn((query: string, ...params: unknown[]) => {
+    const results: Record<string, unknown>[] = [];
+
+    if (query.includes('match_checkpoints')) {
+      // Return all match rows for the SELECT query
+      results.push(...matchRows);
+    } else if (query.includes('player_checkpoints')) {
+      const matchId = params[0] as string;
+      results.push(...playerRows.filter((r) => r.match_id === matchId));
+    }
+
+    return {
+      toArray: () => results,
+      [Symbol.iterator]: function* () {
+        yield* results;
+      },
+    };
+  });
+
   return {
-    exec(query: string, ...params: unknown[]) {
-      const results: Record<string, unknown>[] = [];
+    exec,
+    transactionSync: vi.fn((fn: () => unknown) => fn()),
+  };
+}
 
-      if (query.includes('match_checkpoints')) {
-        // Return all match rows for the SELECT query
-        results.push(...matchRows);
-      } else if (query.includes('player_checkpoints')) {
-        const matchId = params[0] as string;
-        results.push(...playerRows.filter((r) => r.match_id === matchId));
-      }
-
-      return {
-        toArray: () => results,
-        [Symbol.iterator]: function* () {
-          yield* results;
+function createCheckpointMatch() {
+  return {
+    matchId: 'match-1',
+    phase: 'results',
+    currentGame: 2,
+    totalGames: 10,
+    prompts: [
+      {
+        id: 1,
+        text: 'Choose one',
+        type: 'select',
+        category: 'culture',
+        options: ['A', 'B'],
+      },
+    ],
+    phaseEnteredAt: Date.now(),
+    lastSettledGame: 1,
+    lastGameResult: null,
+    aiAssisted: false,
+    players: new Map([
+      [
+        '0xplayer',
+        {
+          accountId: '0xplayer',
+          displayName: 'Player',
+          startingBalance: 1000,
+          currentBalance: 980,
+          committed: true,
+          revealed: true,
+          hash: 'abc',
+          optionIndex: 0,
+          answerText: null,
+          normalizedRevealText: null,
+          salt: 'b'.repeat(32),
+          forfeited: false,
+          forfeitedAtGame: null,
+          disconnectedAt: null,
         },
-      };
-    },
+      ],
+    ]),
   };
 }
 
 const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
 describe('restoreMatchesFromStorage', () => {
+  it('wraps checkpoint writes in transactionSync', () => {
+    const exec = vi.fn((query: string) => {
+      if (query.includes('INSERT INTO player_checkpoints')) {
+        throw new Error('write failed');
+      }
+      return {
+        toArray: () => [],
+        [Symbol.iterator]: function* () {
+          yield* [];
+        },
+      };
+    });
+    const transactionSync = vi.fn((fn: () => unknown) => fn());
+    const sql = {
+      exec,
+      transactionSync,
+    };
+
+    expect(() =>
+      checkpointMatch(sql as never, createCheckpointMatch() as never),
+    ).toThrow('write failed');
+    expect(transactionSync).toHaveBeenCalledTimes(1);
+    expect(exec.mock.calls[0]?.[0]).toContain('DELETE FROM player_checkpoints');
+  });
+
+  it('drops malformed checkpoints instead of restoring them', () => {
+    const matchRows = [
+      {
+        match_id: 'match-bad',
+        phase: 'commit',
+        current_game: 1,
+        total_games: 10,
+        prompts_json: '{"id":1,"text":"bad"}',
+        phase_entered_at: Date.now(),
+        last_settled_game: 0,
+      },
+    ];
+    const sql = createMockSql(matchRows, []);
+
+    const restored = restoreMatchesFromStorage(sql, STALE_THRESHOLD_MS);
+
+    expect(restored).toHaveLength(0);
+    expect(
+      sql.exec.mock.calls.some(([query]) =>
+        String(query).includes(
+          'DELETE FROM match_checkpoints WHERE match_id = ?',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('drops malformed player checkpoints instead of restoring them', () => {
+    const matchRows = [
+      {
+        match_id: 'match-1',
+        phase: 'commit',
+        current_game: 1,
+        total_games: 10,
+        prompts_json: JSON.stringify([
+          {
+            id: 1,
+            text: 'Test',
+            type: 'select',
+            category: 'number',
+            options: ['A', 'B'],
+          },
+        ]),
+        phase_entered_at: Date.now(),
+        last_settled_game: 0,
+      },
+    ];
+    const playerRows = [
+      {
+        match_id: 'match-1',
+        account_id: '0xplayer',
+        display_name: 'Player',
+        starting_balance: 'bad',
+        current_balance: 1000,
+        committed: 0,
+        revealed: 0,
+        hash: null,
+        option_index: null,
+        answer_text: null,
+        normalized_reveal_text: null,
+        salt: null,
+        forfeited: 0,
+        disconnected_at: null,
+      },
+    ];
+    const sql = createMockSql(matchRows, playerRows);
+
+    const restored = restoreMatchesFromStorage(sql, STALE_THRESHOLD_MS);
+
+    expect(restored).toHaveLength(0);
+    expect(
+      sql.exec.mock.calls.some(([query]) =>
+        String(query).includes(
+          'DELETE FROM match_checkpoints WHERE match_id = ?',
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it('restores legacy checkpoints that still use questions_json', () => {
     const matchRows = [
       {
