@@ -759,6 +759,8 @@ const S = {
   previousView: 'queue',
   // ws
   ws: null,
+  wsConnected: false,
+  pendingQueueAction: null,
 };
 
 // ── DOM refs ────────────────────────────────────────────────────
@@ -1192,6 +1194,8 @@ $('#forfeit-overlay').addEventListener('click', (e) => {
 
 function onAuthComplete() {
   intentionalClose = false;
+  S.wsConnected = false;
+  S.pendingQueueAction = null;
   connectWebSocket();
   showView('queue');
 }
@@ -1216,6 +1220,8 @@ $('#logout-btn').addEventListener('click', async () => {
   S.isBrowserWallet = false;
   S.inQueue = false;
   S.queuedPlayers = [];
+  S.wsConnected = false;
+  S.pendingQueueAction = null;
   S.matchId = null;
   S.aiAssistedMatch = false;
   $('#header-profile').classList.add('hidden');
@@ -1276,13 +1282,81 @@ let wsRetryCount = 0;
 let intentionalClose = false;
 let wsRetryTimer = null;
 
+function isWebSocketOpen() {
+  return !!S.ws && S.ws.readyState === WebSocket.OPEN;
+}
+
+function ensureWebSocketConnection() {
+  if (!S.accountId) return false;
+  if (
+    S.ws &&
+    (S.ws.readyState === WebSocket.OPEN ||
+      S.ws.readyState === WebSocket.CONNECTING)
+  ) {
+    return true;
+  }
+  intentionalClose = false;
+  if (wsRetryTimer !== null) {
+    clearTimeout(wsRetryTimer);
+    wsRetryTimer = null;
+  }
+  connectWebSocket();
+  return true;
+}
+
+function queueQueueAction(action) {
+  const isNewAction = S.pendingQueueAction !== action;
+  S.pendingQueueAction = action;
+  renderQueue();
+  if (!ensureWebSocketConnection()) {
+    notify('Connection expired. Please sign in again.', 'error');
+    return;
+  }
+  if (isNewAction) {
+    notify(
+      action === 'join'
+        ? 'Connecting to the lobby. Your join will send automatically.'
+        : 'Reconnecting. Your leave will send automatically.',
+      'warn',
+    );
+  }
+}
+
+function flushPendingQueueAction() {
+  if (!isWebSocketOpen() || !S.pendingQueueAction) return;
+  const action = S.pendingQueueAction;
+  S.pendingQueueAction = null;
+  S.ws.send(
+    JSON.stringify({ type: action === 'join' ? 'join_queue' : 'leave_queue' }),
+  );
+  renderQueue();
+}
+
 function connectWebSocket() {
+  if (!S.accountId) return;
   wsRetryTimer = null;
+  S.wsConnected = false;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   S.ws = new WebSocket(`${proto}//${location.host}/ws`);
   const thisWs = S.ws;
-  S.ws.onopen = () => { wsRetryCount = 0; wsRetryTimer = null; };
+  renderQueue();
+  S.ws.onopen = () => {
+    wsRetryCount = 0;
+    wsRetryTimer = null;
+    S.wsConnected = true;
+    flushPendingQueueAction();
+    renderQueue();
+  };
+  S.ws.onerror = () => {
+    if (thisWs !== S.ws) return;
+    S.wsConnected = false;
+    renderQueue();
+  };
   S.ws.onclose = () => {
+    if (thisWs === S.ws) {
+      S.wsConnected = false;
+      renderQueue();
+    }
     if (intentionalClose || thisWs !== S.ws) return;
     if (wsRetryCount >= WS_MAX_RETRIES) {
       notify('Connection lost. Please refresh the page.', 'error');
@@ -1300,9 +1374,11 @@ function connectWebSocket() {
 }
 
 function wsSend(obj) {
-  if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+  if (isWebSocketOpen()) {
     S.ws.send(JSON.stringify(obj));
+    return true;
   }
+  return false;
 }
 
 function handleMessage(msg) {
@@ -1333,19 +1409,23 @@ function syncAiAssistedUi() {
 //  QUEUE VIEW
 // ═══════════════════════════════════════════════════════════════
 $('#join-queue-btn').addEventListener('click', () => {
-  wsSend({ type: 'join_queue' });
   S.autoRequeue = true;
   S.startNow = false;
   syncStartNowUI();
   syncAutoRequeueUI();
+  if (!wsSend({ type: 'join_queue' })) {
+    queueQueueAction('join');
+  }
 });
 
 $('#leave-queue-btn').addEventListener('click', () => {
-  wsSend({ type: 'leave_queue' });
   S.autoRequeue = false;
   S.startNow = false;
   syncStartNowUI();
   syncAutoRequeueUI();
+  if (!wsSend({ type: 'leave_queue' })) {
+    queueQueueAction('leave');
+  }
 });
 
 function returnToGame() {
@@ -1379,6 +1459,7 @@ function syncStartNowUI() {
 }
 
 function onQueueState(msg) {
+  S.pendingQueueAction = null;
   S.inQueue = msg.status === 'queued' || msg.status === 'forming';
   S.queuedPlayers = msg.queuedPlayers || [];
   S.formingMatch = msg.formingMatch || null;
@@ -1450,9 +1531,25 @@ function renderQueue() {
   }
 
   // buttons
+  const joinBtn = $('#join-queue-btn');
+  const leaveBtn = $('#leave-queue-btn');
   $('#return-to-game-btn').classList.toggle('hidden', !activeMatch);
-  $('#join-queue-btn').classList.toggle('hidden', activeMatch || S.inQueue);
-  $('#leave-queue-btn').classList.toggle('hidden', activeMatch || !S.inQueue);
+  joinBtn.classList.toggle('hidden', activeMatch || S.inQueue);
+  leaveBtn.classList.toggle('hidden', activeMatch || !S.inQueue);
+  joinBtn.disabled = S.pendingQueueAction === 'join';
+  leaveBtn.disabled = S.pendingQueueAction === 'leave';
+  joinBtn.textContent =
+    S.pendingQueueAction === 'join'
+      ? S.wsConnected
+        ? 'Joining...'
+        : 'Connecting...'
+      : 'Join Queue';
+  leaveBtn.textContent =
+    S.pendingQueueAction === 'leave'
+      ? S.wsConnected
+        ? 'Leaving...'
+        : 'Connecting...'
+      : 'Leave Queue';
 }
 
 function updateFormingTimer() {
@@ -1474,6 +1571,7 @@ function onMatchStarted(msg) {
   if (S.matchId && S.matchId !== msg.matchId) {
     clearPersistedGameHistory(S.matchId);
   }
+  S.pendingQueueAction = null;
   S.matchId = msg.matchId;
   S.aiAssistedMatch = !!msg.aiAssisted;
   S.inQueue = false;

@@ -116,6 +116,32 @@ function parseIssuedAtFromChallengeMessage(message: string): number | null {
   return issuedAt;
 }
 
+async function ensureAccountWithStats(
+  db: D1Database,
+  accountId: string,
+): Promise<Awaited<ReturnType<typeof fetchAccountWithStats>>> {
+  const existing = await fetchAccountWithStats(db, accountId);
+  if (existing) return existing;
+
+  const createdAt = new Date().toISOString();
+  await db.batch([
+    db
+      .prepare(
+        'INSERT INTO accounts (account_id, token_balance, leaderboard_eligible, created_at) VALUES (?, 0, 1, ?) ' +
+          'ON CONFLICT(account_id) DO NOTHING',
+      )
+      .bind(accountId, createdAt),
+    db
+      .prepare(
+        'INSERT INTO player_stats (account_id, matches_played, games_played, coherent_games, current_streak, longest_streak) ' +
+          'VALUES (?, 0, 0, 0, 0, 0) ON CONFLICT(account_id) DO NOTHING',
+      )
+      .bind(accountId),
+  ]);
+
+  return fetchAccountWithStats(db, accountId);
+}
+
 export async function handleHttpRequest(
   request: Request,
   env: Env,
@@ -129,10 +155,10 @@ export async function handleHttpRequest(
     const accountId = verifySessionCookie(cookies.session);
     if (!accountId) return new Response('Unauthorized', { status: 401 });
 
-    const account = await fetchAccountWithStats(env.DB, accountId);
+    const account = await ensureAccountWithStats(env.DB, accountId);
 
     if (!account) {
-      return new Response('Account not found', { status: 403 });
+      return new Response('Failed to provision account', { status: 500 });
     }
 
     const displayName =
@@ -252,23 +278,7 @@ export async function handleHttpRequest(
       .bind(challengeId)
       .run();
 
-    // Upsert account
-    await env.DB.prepare(
-      'INSERT INTO accounts (account_id, token_balance, leaderboard_eligible, created_at) VALUES (?, 0, 1, ?) ' +
-        'ON CONFLICT(account_id) DO NOTHING',
-    )
-      .bind(normalized, new Date().toISOString())
-      .run();
-
-    // Upsert player_stats
-    await env.DB.prepare(
-      'INSERT INTO player_stats (account_id, matches_played, games_played, coherent_games, current_streak, longest_streak) ' +
-        'VALUES (?, 0, 0, 0, 0, 0) ON CONFLICT(account_id) DO NOTHING',
-    )
-      .bind(normalized)
-      .run();
-
-    const account = await fetchAccountWithStats(env.DB, normalized);
+    const account = await ensureAccountWithStats(env.DB, normalized);
     if (!account) {
       return errorResponse('Failed to fetch account after upsert', 500);
     }
@@ -301,8 +311,8 @@ export async function handleHttpRequest(
     const accountId = await getAuthenticatedAccountId(request);
     if (!accountId) return errorResponse('Unauthorized', 401);
 
-    const account = await fetchAccountWithStats(env.DB, accountId);
-    if (!account) return errorResponse('Account not found', 404);
+    const account = await ensureAccountWithStats(env.DB, accountId);
+    if (!account) return errorResponse('Failed to provision account', 500);
 
     const queueStatus = await fetchPlayerDOStatus(env, request.url, accountId);
 
