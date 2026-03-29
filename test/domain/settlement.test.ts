@@ -209,18 +209,21 @@ describe('all distinct (topCount=1)', () => {
 });
 
 describe('pot math', () => {
-  it.each([{ playerCount: 3 }, { playerCount: 5 }, { playerCount: 7 }])(
-    '$playerCount players: pot = playerCount * GAME_ANTE',
-    ({ playerCount }) => {
-      const players = Array.from({ length: playerCount }, (_, i) =>
-        makePlayer(`a${i + 1}`, String.fromCharCode(65 + i), 0),
-      );
-      const result = settleGame(players, question);
+  it.each([
+    { playerCount: 3 },
+    { playerCount: 5 },
+    { playerCount: 7 },
+  ])('$playerCount players: pot = playerCount * GAME_ANTE', ({
+    playerCount,
+  }) => {
+    const players = Array.from({ length: playerCount }, (_, i) =>
+      makePlayer(`a${i + 1}`, String.fromCharCode(65 + i), 0),
+    );
+    const result = settleGame(players, question);
 
-      expect(result.pot).toBe(playerCount * GAME_ANTE);
-      expect(result.dustBurned).toBe(0);
-    },
-  );
+    expect(result.pot).toBe(playerCount * GAME_ANTE);
+    expect(result.dustBurned).toBe(0);
+  });
 
   it('7 players, 3 winners still divide exactly', () => {
     const players = [
