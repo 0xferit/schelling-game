@@ -13,7 +13,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-  --text:#e8e4de;--muted:#807a6f;--accent:#c9a84c;--accent2:#dfc06a;
+  --text:#e8e4de;--muted:#9a9488;--accent:#c9a84c;--accent2:#dfc06a;
   --green:#4caf50;--red:#e53935;--orange:#ff9800;--yellow:#fdd835;
   --radius:3px;--serif:'Cormorant Garamond',Georgia,serif;--sans:'Outfit',system-ui,sans-serif;
 }
@@ -27,6 +27,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
 .btn-danger{background:var(--red);color:#fff}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);font-size:.84rem;letter-spacing:.08em;font-weight:500}
 .btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--sans);font-size:.95rem;padding:.5rem .75rem;width:100%;outline:none;transition:border-color .15s}
 input:focus{border-color:var(--accent)}
 label{font-size:.92rem;color:var(--muted);display:block;margin-bottom:.3rem}
@@ -56,7 +57,11 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #auth-view{max-width:420px;margin:2rem auto;text-align:center}
 #auth-view h2{margin-bottom:1rem}
 #auth-view .card{display:flex;flex-direction:column;gap:.75rem;align-items:stretch}
-#auth-status{font-size:.9rem;color:var(--muted);min-height:1.5em}
+#auth-status{font-size:.9rem;color:var(--muted);min-height:1.5em;line-height:1.55;transition:color .2s ease}
+#auth-status[data-tone='pending']{color:var(--accent)}
+#auth-status[data-tone='success']{color:#8fcf92}
+#auth-status[data-tone='error']{color:#d79a97}
+#auth-status a{color:var(--accent);text-decoration:underline}
 #name-section{display:flex;flex-direction:column;gap:.5rem}
 #name-section .row{display:flex;gap:.5rem}
 #name-section input{flex:1}
@@ -93,6 +98,10 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 .queue-stat-block{display:flex;flex-direction:column;align-items:flex-end;gap:.3rem;min-width:10rem}
 .queue-stat-label{font-size:.78rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .queue-stat-value{font-family:var(--serif);font-size:clamp(2.4rem,5vw,3.4rem);font-weight:600;line-height:.88}
+.queue-inline-roster{display:none;flex-direction:column;gap:.85rem;padding:1rem 0 1.05rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.queue-inline-roster-head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.queue-inline-roster-title{font-size:.78rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+.queue-inline-roster-meta{font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .queue-flow{display:flex;flex-direction:column;gap:1rem;max-width:48rem}
 #active-match-banner{display:flex;flex-direction:column;gap:.35rem;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:var(--radius);padding:.85rem 1rem;font-size:.92rem;color:var(--text)}
 #active-match-banner strong{font-size:.72rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
@@ -125,10 +134,10 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 .queue-side-head{padding-bottom:.9rem;border-bottom:1px solid rgba(255,255,255,.06)}
 .queue-side-title{font-size:.78rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
 .queue-side-copy{font-size:.96rem;line-height:1.65;color:var(--muted);margin-top:.45rem}
-#queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.65rem;margin:0}
-#queue-players li{display:inline-flex;align-items:center;max-width:100%;padding:.48rem .82rem;background:transparent;border:1px solid var(--border);border-radius:999px;font-size:.9rem;letter-spacing:.03em;color:var(--text);line-height:1.25;overflow-wrap:anywhere;transition:border-color .2s,background .2s,color .2s}
-#queue-players li.is-self{border-color:rgba(201,168,76,.55);background:rgba(201,168,76,.08);color:var(--accent);font-weight:600}
-#queue-players:empty::after{content:'No visible players in queue yet.';display:block;width:100%;padding:1rem 0;color:var(--muted);font-size:.9rem;line-height:1.6}
+.queue-players-list{list-style:none;display:flex;flex-wrap:wrap;align-content:flex-start;gap:.65rem;margin:0;padding:0}
+.queue-players-list li{display:inline-flex;align-items:center;max-width:100%;padding:.48rem .82rem;background:transparent;border:1px solid var(--border);border-radius:999px;font-size:.9rem;letter-spacing:.03em;color:var(--text);line-height:1.25;overflow-wrap:anywhere;transition:border-color .2s,background .2s,color .2s}
+.queue-players-list li.is-self{border-color:rgba(201,168,76,.55);background:rgba(201,168,76,.08);color:var(--accent);font-weight:600}
+.queue-empty-state{display:block;width:100%;padding:.15rem 0;color:var(--muted);font-size:.92rem;letter-spacing:.01em;line-height:1.65}
 .queue-side-note{font-size:.88rem;color:var(--muted);line-height:1.65;padding-top:.2rem;border-top:1px solid rgba(255,255,255,.06)}
 /* Play */
 #play-view.active{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,360px);gap:clamp(1rem,2vw,1.75rem);align-items:start}
@@ -149,10 +158,11 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #off-record-banner strong{font-size:.78rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--accent2);white-space:nowrap}
 #question-text{font-family:var(--serif);font-size:1.4rem;font-weight:600;margin-bottom:1rem;line-height:1.3}
 #select-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
-.opt-btn{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:.75rem 1rem;cursor:pointer;text-align:left;font-family:var(--sans);font-size:.96rem;font-weight:400;color:var(--text);transition:border-color .2s,background .2s,color .2s;user-select:none}
+.opt-btn{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:.75rem 1rem;cursor:pointer;text-align:left;font-family:var(--sans);font-size:.96rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);transition:border-color .2s,background .2s,color .2s;user-select:none;appearance:none}
 .opt-btn:hover:not(.disabled){border-color:var(--accent);color:var(--accent)}
 .opt-btn.selected{border-color:var(--accent);background:rgba(201,168,76,.08);color:var(--accent);font-weight:500}
 .opt-btn.disabled{opacity:.4;cursor:default;pointer-events:none}
+.opt-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .text-answer-wrap{display:flex;flex-direction:column;gap:.45rem}
 .text-answer-wrap input{font-size:1rem;padding:.8rem .95rem}
 .text-answer-hint{font-size:.8rem;color:var(--muted);line-height:1.45}
@@ -181,7 +191,8 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #players-panel h3{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.25em;color:var(--accent);margin-bottom:.6rem}
 .player-row{display:flex;align-items:center;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--border);font-size:.92rem}
 .player-row:last-child{border-bottom:none}
-.player-name{display:flex;align-items:center;gap:.4rem}
+.player-name{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.player-status-text{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0}
 .dot.committed{background:var(--orange)}
 .dot.revealed{background:var(--green)}
@@ -310,8 +321,8 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 }
 @media(max-width:960px){
   .queue-shell{grid-template-columns:1fr}
-  .queue-side{border-top:1px solid rgba(255,255,255,.06);padding-left:0;padding-top:1rem}
-  .queue-side::before{display:none}
+  .queue-inline-roster{display:flex}
+  .queue-side{display:none}
 }
 /* ── Narrow viewport (phones) ─────────────────────────────────── */
 @media(max-width:650px){
@@ -319,6 +330,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   #select-grid{grid-template-columns:1fr}
   .queue-main-top{align-items:flex-start}
   .queue-stat-block{align-items:flex-start}
+  .queue-inline-roster-head{align-items:flex-start;flex-direction:column;gap:.3rem}
   #forming-banner{grid-template-columns:1fr}
   .forming-side{align-items:flex-start}
   .forming-banner-foot{align-items:stretch}
@@ -422,6 +434,13 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
             <strong class="queue-stat-value" id="queue-count">0</strong>
           </div>
         </div>
+        <section class="queue-inline-roster" aria-labelledby="queue-inline-roster-title">
+          <div class="queue-inline-roster-head">
+            <div class="queue-inline-roster-title" id="queue-inline-roster-title">Live Queue Roster</div>
+            <div class="queue-inline-roster-meta" id="queue-inline-count">0 visible</div>
+          </div>
+          <ul class="queue-players-list" id="queue-players-inline"></ul>
+        </section>
         <div class="queue-flow">
           <div id="active-match-banner" class="hidden"></div>
           <div id="forming-banner" class="hidden">
@@ -454,7 +473,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
           <div class="queue-side-title" id="queue-roster-title">Queue Roster</div>
           <p class="queue-side-copy">Anyone visible in the public lobby appears here in real time.</p>
         </div>
-        <ul id="queue-players"></ul>
+        <ul class="queue-players-list" id="queue-players"></ul>
         <p class="queue-side-note">Updates live as players join or leave the public queue.</p>
       </aside>
     </div>
@@ -463,10 +482,11 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   <!-- ── PLAY ──────────────────────────────────────────────────── -->
   <div id="play-view" class="view">
     <div id="play-main">
+      <div id="phase-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
       <!-- Timer -->
       <div class="timer-wrap">
         <div id="phase-timer-label" style="min-width:3.5rem;font-size:.86rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Commit</div>
-        <div class="timer-bar-outer"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
+        <div class="timer-bar-outer" id="timer-progress" role="progressbar" aria-labelledby="phase-timer-label" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30" aria-valuetext="30 seconds remaining"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
         <div class="timer-num" id="timer-num">30</div>
       </div>
 
@@ -967,7 +987,7 @@ function showView(name) {
 // ── Name-claim UI (shared by authenticateWithWallet + checkSession) ──
 function showNameClaim(statusText) {
   updateHeaderProfile();
-  $('#auth-status').textContent = statusText;
+  setAuthStatus(statusText, 'success');
   $('#name-section').classList.remove('hidden');
   $('#connect-wallet-btn').classList.add('hidden');
   $('#browser-wallet-btn').classList.add('hidden');
@@ -991,24 +1011,66 @@ async function api(method, path, body) {
   return res.json();
 }
 
+function setAuthStatus(message, tone = 'hint', { html = false } = {}) {
+  const status = $('#auth-status');
+  status.dataset.tone = tone;
+  if (html) {
+    status.innerHTML = message;
+    return;
+  }
+  status.textContent = message;
+}
+
+function describeAuthError(err, action) {
+  const raw = err instanceof Error ? err.message : String(err || 'Unexpected error');
+  const normalized = raw.toLowerCase();
+
+  if (
+    normalized.includes('user rejected') ||
+    normalized.includes('user denied') ||
+    normalized.includes('cancelled') ||
+    normalized.includes('canceled')
+  ) {
+    return 'Request canceled. Nothing changed.';
+  }
+
+  if (
+    normalized.includes('failed to fetch') ||
+    normalized.includes('networkerror') ||
+    normalized.includes('load failed')
+  ) {
+    return 'Could not reach the local game server. Refresh and try again.';
+  }
+
+  if (normalized.includes('display name already claimed')) {
+    return 'That display name is already taken. Try another one.';
+  }
+
+  if (normalized.includes('cannot change display name while queued')) {
+    return 'Leave the queue before changing your display name.';
+  }
+
+  return `Could not ${action}. Please try again.`;
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  AUTH VIEW
 // ═══════════════════════════════════════════════════════════════
 async function authenticateWithWallet(address, signFn, { signingMsg, successMsg, isBrowserWallet }) {
-  const status = $('#auth-status');
-
-  status.textContent = 'Requesting challenge...';
+  setAuthStatus('Requesting challenge...', 'pending');
   const challenge = await api('POST', '/api/auth/challenge', { walletAddress: address });
 
-  status.textContent = signingMsg;
+  setAuthStatus(signingMsg, 'pending');
   const signature = await signFn(challenge.message);
 
-  status.textContent = 'Verifying signature...';
+  setAuthStatus('Verifying signature...', 'pending');
   const result = await api('POST', '/api/auth/verify', {
     challengeId: challenge.challengeId,
     walletAddress: address,
     signature,
   });
+
+  setAuthStatus(successMsg, 'success');
 
   S.walletAddress = address;
   S.accountId = result.accountId;
@@ -1020,13 +1082,16 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
 }
 
 $('#connect-wallet-btn').addEventListener('click', async () => {
-  const status = $('#auth-status');
   if (!window.ethereum) {
-    status.innerHTML = 'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">install a wallet</a>.';
+    setAuthStatus(
+      'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener">install a wallet</a>.',
+      'hint',
+      { html: true },
+    );
     return;
   }
   try {
-    status.textContent = 'Requesting wallet connection...';
+    setAuthStatus('Requesting wallet connection...', 'pending');
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const address = await signer.getAddress();
@@ -1036,14 +1101,13 @@ $('#connect-wallet-btn').addEventListener('click', async () => {
       isBrowserWallet: false,
     });
   } catch (err) {
-    status.textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'connect your wallet'), 'error');
   }
 });
 
 $('#browser-wallet-btn').addEventListener('click', async () => {
-  const status = $('#auth-status');
   try {
-    status.textContent = 'Setting up your wallet...';
+    setAuthStatus('Setting up your wallet...', 'pending');
     const wallet = getOrCreateBrowserWallet();
     await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
       signingMsg: 'Signing in...',
@@ -1051,23 +1115,23 @@ $('#browser-wallet-btn').addEventListener('click', async () => {
       isBrowserWallet: true,
     });
   } catch (err) {
-    status.textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'set up your browser wallet'), 'error');
   }
 });
 
 $('#claim-name-btn').addEventListener('click', async () => {
   const name = $('#name-input').value.trim();
   if (!/^[A-Za-z0-9_-]{1,20}$/.test(name)) {
-    $('#auth-status').textContent = 'Invalid name. Use 1-20 chars: A-Z, 0-9, _ or -';
+    setAuthStatus('Use 1-20 characters: A-Z, 0-9, _ or -.', 'error');
     return;
   }
   try {
-    $('#auth-status').textContent = 'Claiming name...';
+    setAuthStatus('Claiming your display name...', 'pending');
     await api('PATCH', '/api/me/profile', { displayName: name });
     S.displayName = name;
     onAuthComplete();
   } catch (err) {
-    $('#auth-status').textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'claim that display name'), 'error');
   }
 });
 
@@ -1080,11 +1144,10 @@ $('#show-import-btn').addEventListener('click', () => {
 });
 
 $('#import-btn').addEventListener('click', async () => {
-  const status = $('#auth-status');
   const input = $('#import-input').value;
-  if (!input.trim()) { status.textContent = 'Please enter a seed phrase or private key.'; return; }
+  if (!input.trim()) { setAuthStatus('Enter a seed phrase or private key to import a wallet.', 'error'); return; }
   try {
-    status.textContent = 'Importing wallet...';
+    setAuthStatus('Importing wallet...', 'pending');
     const { wallet, storageValue } = parseBrowserWallet(input);
     await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
       signingMsg: 'Signing challenge...',
@@ -1102,7 +1165,7 @@ $('#import-btn').addEventListener('click', async () => {
     $('#import-section').classList.add('hidden');
     $('#show-import-btn').setAttribute('aria-expanded', 'false');
   } catch (err) {
-    status.textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'import that wallet'), 'error');
   }
 });
 
@@ -1295,7 +1358,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#import-input').value = '';
   $('#seed-overlay').classList.add('hidden');
   $('#seed-phrase-text').value = '';
-  $('#auth-status').textContent = 'Choose how to identify yourself.';
+  setAuthStatus('Choose how to identify yourself.');
   showView('auth');
 });
 
@@ -1325,7 +1388,11 @@ async function checkSession() {
   } catch (_) {
     // not logged in; check if wallet is available
     if (!window.ethereum) {
-      $('#auth-status').innerHTML = 'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">install a wallet</a>.';
+      setAuthStatus(
+        'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener">install a wallet</a>.',
+        'hint',
+        { html: true },
+      );
     }
   }
 }
@@ -1526,7 +1593,10 @@ function renderQueue() {
   const activeMatch = hasActiveMatch();
   const selfForfeited = hasSelfForfeited();
   const activeMatchBanner = $('#active-match-banner');
-  $('#queue-count').textContent = S.queuedPlayers.length;
+  const queueCount = S.queuedPlayers.length;
+  $('#queue-count').textContent = queueCount;
+  $('#queue-inline-count').textContent =
+    queueCount === 1 ? '1 visible' : queueCount + ' visible';
   activeMatchBanner.classList.toggle('hidden', !activeMatch);
   activeMatchBanner.classList.toggle('is-forfeited', activeMatch && selfForfeited);
   if (activeMatch) {
@@ -1538,14 +1608,8 @@ function renderQueue() {
   }
   syncReturnToMatchUi();
 
-  const list = $('#queue-players');
-  list.innerHTML = '';
-  S.queuedPlayers.forEach(name => {
-    const li = document.createElement('li');
-    li.textContent = name;
-    if (name === S.displayName) li.classList.add('is-self');
-    list.appendChild(li);
-  });
+  renderQueuePlayersList($('#queue-players-inline'));
+  renderQueuePlayersList($('#queue-players'));
 
   // forming match
   if (S.formingMatch) {
@@ -1590,6 +1654,24 @@ function renderQueue() {
         ? 'Leaving...'
         : 'Connecting...'
       : 'Leave Queue';
+}
+
+function renderQueuePlayersList(list) {
+  if (!list) return;
+  list.innerHTML = '';
+  if (S.queuedPlayers.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'queue-empty-state';
+    empty.textContent = 'No visible players in queue yet.';
+    list.appendChild(empty);
+    return;
+  }
+  S.queuedPlayers.forEach(name => {
+    const li = document.createElement('li');
+    li.textContent = name;
+    if (name === S.displayName) li.classList.add('is-self');
+    list.appendChild(li);
+  });
 }
 
 function updateFormingTimer() {
@@ -1641,10 +1723,14 @@ function onMatchStarted(msg) {
   renderLiveReadout();
   $('#game-result-banner').classList.add('hidden');
   $('#phase-timer-label').textContent = 'Commit';
+  $('#timer-progress').setAttribute('aria-valuemax', '100');
+  $('#timer-progress').setAttribute('aria-valuenow', '0');
+  $('#timer-progress').setAttribute('aria-valuetext', 'Waiting for first game');
   $('#timer-bar').style.width = '100%';
   $('#timer-bar').style.background = 'var(--accent)';
   $('#timer-num').textContent = '';
   $('#timer-num').classList.remove('urgent');
+  announcePhase('Match started. Waiting for first game.');
   $('#question-text').textContent = 'Match started. Waiting for first game...';
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
@@ -1711,6 +1797,7 @@ function onGameStarted(msg) {
     : msg.phase === 'results' ? 'Settle'
     : msg.phase === 'commit' ? 'Commit' : '';
   $('#phase-timer-label').textContent = phaseTimerLabel;
+  announcePhase(`Game ${msg.game} of ${S.totalGames}. ${phaseLabel} phase.`);
   $('#question-text').textContent = msg.prompt.text;
   $('#game-result-banner').classList.add('hidden');
 
@@ -1772,16 +1859,16 @@ function renderPromptInput(prompt, disabled) {
 
   if (prompt.type === 'select') {
     prompt.options.forEach((opt, idx) => {
-      const btn = document.createElement('div');
+      const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'opt-btn' + (disabled ? ' disabled' : '');
       if (S.selectedOption === idx) {
         btn.classList.add('selected');
       }
       btn.textContent = opt;
       btn.dataset.idx = idx;
-      if (!disabled) {
-        btn.addEventListener('click', () => selectOption(idx));
-      }
+      btn.disabled = disabled;
+      btn.addEventListener('click', () => selectOption(idx));
       grid.appendChild(btn);
     });
     return;
@@ -1867,6 +1954,7 @@ function onPhaseChange(msg) {
     S.phase = 'reveal';
     $('#phase-label').textContent = `Game ${S.game} / ${S.totalGames} : Auto-Reveal`;
     $('#phase-timer-label').textContent = 'Auto-Reveal';
+    announcePhase(`Game ${S.game} of ${S.totalGames}. Auto-reveal phase.`);
     $('#commit-area').classList.add('hidden');
 
     const revealPayload = getCurrentRevealPayload();
@@ -1918,6 +2006,7 @@ function onGameResult(msg) {
 
   $('#phase-label').textContent = `Game ${S.game} / ${S.totalGames} : Settle`;
   $('#phase-timer-label').textContent = 'Settle';
+  announcePhase(`Game ${S.game} settled. Results phase.`);
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
 
@@ -2010,26 +2099,15 @@ function updatePlayerDots() {
   $$('.player-row .dot').forEach(dot => {
     const name = dot.dataset.name;
     if (!name) return;
-
-    // Check forfeited / disconnected first
-    if (S.playerStatuses[name] === 'forfeited') {
-      dot.className = 'dot forfeited';
-      return;
-    }
-    if (S.playerStatuses[name] === 'disconnected') {
-      dot.className = 'dot disconnected';
-      return;
-    }
-
-    // Commit/reveal status
-    const c = S.commitStatuses.find(s => s.displayName === name);
-    const r = S.revealStatuses.find(s => s.displayName === name);
-    if (r && r.hasRevealed) {
-      dot.className = 'dot revealed';
-    } else if (c && c.hasCommitted) {
-      dot.className = 'dot committed';
-    } else {
-      dot.className = 'dot';
+    const row = dot.closest('.player-row');
+    const status = getPlayerStatusInfo(name);
+    dot.className = `dot ${status.className}`.trim();
+    dot.setAttribute('aria-hidden', 'true');
+    if (row) {
+      const statusText = row.querySelector('.player-status-text');
+      const balance = row.querySelector('.balance-badge')?.textContent?.trim() ?? '';
+      if (statusText) statusText.textContent = status.label;
+      row.setAttribute('aria-label', `${name}, ${status.label}${balance ? `, balance ${balance}` : ''}`);
     }
   });
 }
@@ -2041,11 +2119,13 @@ function renderPlayers() {
     const row = document.createElement('div');
     row.className = 'player-row';
     const bal = p.currentBalance !== undefined ? p.currentBalance : p.startingBalance;
-    const statusClass = S.playerStatuses[p.displayName] || '';
+    const status = getPlayerStatusInfo(p.displayName);
+    row.setAttribute('aria-label', `${p.displayName}, ${status.label}, balance ${bal}`);
     row.innerHTML = `
       <div class="player-name">
-        <span class="dot ${statusClass}" data-name="${esc(p.displayName)}"></span>
+        <span class="dot ${status.className}" data-name="${esc(p.displayName)}" aria-hidden="true"></span>
         <span>${esc(p.displayName)}</span>
+        <span class="player-status-text">${esc(status.label)}</span>
       </div>
       <span class="balance-badge">${bal}</span>
     `;
@@ -2297,6 +2377,10 @@ function startTimer(seconds) {
   clearInterval(S.timerInterval);
   S.timerDuration = seconds;
   S.timerEnd = Date.now() + seconds * 1000;
+  const progress = $('#timer-progress');
+  progress.setAttribute('aria-valuemax', String(seconds));
+  progress.setAttribute('aria-valuenow', String(seconds));
+  progress.setAttribute('aria-valuetext', `${seconds} seconds remaining`);
   tickTimer();
   S.timerInterval = setInterval(tickTimer, 250);
 }
@@ -2306,8 +2390,12 @@ function tickTimer() {
   const pct = Math.max(0, remaining / S.timerDuration * 100);
   const bar = $('#timer-bar');
   const num = $('#timer-num');
+  const progress = $('#timer-progress');
+  const remainingSeconds = Math.ceil(remaining);
   bar.style.width = pct + '%';
-  num.textContent = Math.ceil(remaining);
+  num.textContent = remainingSeconds;
+  progress.setAttribute('aria-valuenow', String(remainingSeconds));
+  progress.setAttribute('aria-valuetext', `${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'} remaining`);
   if (remaining <= 5) {
     bar.style.background = 'var(--red)';
     num.classList.add('urgent');
@@ -2316,6 +2404,31 @@ function tickTimer() {
     num.classList.remove('urgent');
   }
   if (remaining <= 0) clearInterval(S.timerInterval);
+}
+
+function getPlayerStatusInfo(name) {
+  if (S.playerStatuses[name] === 'forfeited') {
+    return { className: 'forfeited', label: 'Forfeited' };
+  }
+  if (S.playerStatuses[name] === 'disconnected') {
+    return { className: 'disconnected', label: 'Disconnected' };
+  }
+
+  const revealed = S.revealStatuses.find((s) => s.displayName === name);
+  if (revealed && revealed.hasRevealed) {
+    return { className: 'revealed', label: 'Revealed' };
+  }
+
+  const committed = S.commitStatuses.find((s) => s.displayName === name);
+  if (committed && committed.hasCommitted) {
+    return { className: 'committed', label: 'Committed' };
+  }
+
+  return { className: '', label: 'Connected' };
+}
+
+function announcePhase(message) {
+  $('#phase-announcer').textContent = message;
 }
 
 // ── Prompt rating ───────────────────────────────────────────────
