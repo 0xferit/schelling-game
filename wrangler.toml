@@ -14,6 +14,14 @@ database_name = "schelling-game-db"
 database_id = "ccf25d5a-0c4e-4520-9e08-e3f2a02b78d1"
 migrations_dir = "d1-migrations"
 
+[ai]
+binding = "AI"
+
+[vars]
+AI_BOT_ENABLED = "true"
+AI_BOT_MODEL = "@cf/meta/llama-3.2-3b-instruct"
+AI_BOT_TIMEOUT_MS = "2500"
+
 [env.staging]
 name = "schelling-game-staging"
 
