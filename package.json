@@ -8,6 +8,7 @@
     "dev": "npx wrangler dev",
     "test": "vitest run",
     "test:worker": "vitest run --config vitest.config.worker.ts",
+    "smoke:staging": "node scripts/smoke-staging.mjs",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",

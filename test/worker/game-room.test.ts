@@ -10,6 +10,8 @@ import {
 } from './helpers';
 
 const BASE = 'https://test.local';
+const MATCH_START_TIMEOUT_MS = 40_000;
+const GAME_START_TIMEOUT_MS = 45_000;
 
 /** Helper: collect WebSocket messages into an array for a short window. */
 function collectMessages(
@@ -109,7 +111,7 @@ async function formMatch(
   }
 
   const startedPromises = players.map((p) =>
-    waitForMessage(p.ws, 'match_started', 25_000),
+    waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
   );
 
   for (const p of players) {
@@ -136,7 +138,7 @@ describe('GameRoom Durable Object', () => {
     expect(resp.status).toBe(401);
   });
 
-  it('rejects WebSocket without display name (403)', async () => {
+  it('WebSocket falls back to a wallet-derived display name', async () => {
     // Use wallet 5 so it does not collide with later tests.
     const wallet = createTestWallet(5);
     const { accountId, cookie } = await createTestSession(wallet);
@@ -150,7 +152,13 @@ describe('GameRoom Durable Object', () => {
         },
       }),
     );
-    expect(resp.status).toBe(403);
+    expect(resp.status).toBe(101);
+    const ws = must(resp.webSocket, 'Expected WebSocket upgrade response');
+    ws.accept();
+    const messages = await collectMessages(ws);
+    const queueMsg = messages.find((m) => m.type === 'queue_state');
+    expect(queueMsg).toBeDefined();
+    ws.close();
   });
 
   it('WebSocket connects with valid session + display name', async () => {
@@ -187,9 +195,9 @@ describe('GameRoom Durable Object', () => {
     ws.close();
   });
 
-  // The fill timer is 20 seconds; the match starts after it expires.
+  // The fill timer is 30 seconds; the match starts after it expires.
   it('3 players joining queue triggers match formation', {
-    timeout: 30_000,
+    timeout: 45_000,
   }, async () => {
     const players = await formMatch([
       [0, 'Player1'],
@@ -217,16 +225,28 @@ describe('GameRoom Durable Object', () => {
   });
 
   it('reconnect after commit replays game_started with yourCommitted flag', {
-    timeout: 35_000,
+    timeout: 55_000,
   }, async () => {
     // Form a match with 3 players (wallet indices 3/4/8 to avoid collisions)
     const p1 = await connectPlayer(3, 'Reconnector');
     const p2 = await connectPlayer(4, 'Bystander1');
     const p3 = await connectPlayer(8, 'Bystander2');
 
-    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -234,7 +254,11 @@ describe('GameRoom Durable Object', () => {
 
     // Listen for game_started before awaiting match_started to avoid missing
     // back-to-back messages from the server.
-    const p1GameStart = waitForMessage(p1.ws, 'game_started', 28_000);
+    const p1GameStart = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
 
     const [gs1] = await Promise.all([p1Started, p2Started, p3Started]);
     const originalMatchId = gs1.matchId;
@@ -274,19 +298,35 @@ describe('GameRoom Durable Object', () => {
   });
 
   it('reconnect replays player_disconnected for peers in grace period', {
-    timeout: 35_000,
+    timeout: 55_000,
   }, async () => {
     // Use wallet indices 19/20/21 to avoid collisions with other tests.
     const p1 = await connectPlayer(19, 'ReconP1');
     const p2 = await connectPlayer(20, 'ReconP2');
     const p3 = await connectPlayer(21, 'ReconP3');
 
-    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
 
     // Listen for game_started before joining to avoid missing it
-    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
+    const p1Round = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -326,7 +366,7 @@ describe('GameRoom Durable Object', () => {
   });
 
   it('reconnect during results phase replays game_result', {
-    timeout: 35_000,
+    timeout: 55_000,
   }, async () => {
     // Use wallet indices 10/11/12 to avoid collisions with other tests.
     // Give players a balance so settlement can deduct ante.
@@ -335,14 +375,38 @@ describe('GameRoom Durable Object', () => {
     const p3 = await connectPlayer(12, 'ResultP3', 1000);
 
     // Listen for match_started before joining queue
-    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
 
     // Listen for game_started on all players before joining
-    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
-    const p2Round = waitForMessage(p2.ws, 'game_started', 28_000);
-    const p3Round = waitForMessage(p3.ws, 'game_started', 28_000);
+    const p1Round = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p2Round = waitForMessage(
+      p2.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p3Round = waitForMessage(
+      p3.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -403,7 +467,7 @@ describe('GameRoom Durable Object', () => {
   });
 
   it('results-phase reconnect sends remaining time, not full duration', {
-    timeout: 40_000,
+    timeout: 65_000,
   }, async () => {
     const WAIT_SECONDS = 3;
     // Use wallet indices 13/14/15 to avoid collisions with other tests.
@@ -411,13 +475,37 @@ describe('GameRoom Durable Object', () => {
     const p2 = await connectPlayer(14, 'RemP2', 1000);
     const p3 = await connectPlayer(15, 'RemP3', 1000);
 
-    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
 
-    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
-    const p2Round = waitForMessage(p2.ws, 'game_started', 28_000);
-    const p3Round = waitForMessage(p3.ws, 'game_started', 28_000);
+    const p1Round = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p2Round = waitForMessage(
+      p2.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p3Round = waitForMessage(
+      p3.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -470,7 +558,7 @@ describe('GameRoom Durable Object', () => {
   });
 
   it('reconnect during results phase replays rating tally and own rating', {
-    timeout: 35_000,
+    timeout: 55_000,
   }, async () => {
     // Use wallet indices 16/17/18 to avoid collisions with other tests.
     const p1 = await connectPlayer(16, 'RatingP1', 1000);
@@ -478,13 +566,37 @@ describe('GameRoom Durable Object', () => {
     const p3 = await connectPlayer(18, 'RatingP3', 1000);
 
     // Listen for match_started and game_started before joining queue
-    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
 
-    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
-    const p2Round = waitForMessage(p2.ws, 'game_started', 28_000);
-    const p3Round = waitForMessage(p3.ws, 'game_started', 28_000);
+    const p1Round = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p2Round = waitForMessage(
+      p2.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p3Round = waitForMessage(
+      p3.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -552,7 +664,7 @@ describe('GameRoom Durable Object', () => {
   });
 
   it('reconnect after a settled game replays match_started with currentBalance', {
-    timeout: 60_000,
+    timeout: 90_000,
   }, async () => {
     // Use wallet indices 22/23/24 to avoid collisions with other tests.
     // Give players a balance so settlement can deduct ante.
@@ -562,13 +674,37 @@ describe('GameRoom Durable Object', () => {
     const p3 = await connectPlayer(24, 'BalP3', STARTING_BALANCE);
 
     // Listen for match_started and game_started before joining queue
-    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
 
-    const p1Game1 = waitForMessage(p1.ws, 'game_started', 28_000);
-    const p2Game1 = waitForMessage(p2.ws, 'game_started', 28_000);
-    const p3Game1 = waitForMessage(p3.ws, 'game_started', 28_000);
+    const p1Game1 = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p2Game1 = waitForMessage(
+      p2.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+    const p3Game1 = waitForMessage(
+      p3.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -605,7 +741,7 @@ describe('GameRoom Durable Object', () => {
     expect(roundResult.type).toBe('game_result');
 
     // Wait for game 2 to start (auto-advances after RESULTS_DURATION)
-    const p1Game2 = waitForMessage(p1.ws, 'game_started', 25_000);
+    const p1Game2 = waitForMessage(p1.ws, 'game_started', 30_000);
     await p1Game2;
 
     // Disconnect player 1 and reconnect during game 2 commit phase
