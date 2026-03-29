@@ -48,15 +48,33 @@ function createRoom(envOverrides: Partial<Env> = {}) {
   return { room, waitUntil };
 }
 
-function createConnectionState(displayName: string) {
+function createConnectionState(displayName: string, wsOverride?: WebSocket) {
   return {
-    ws: {
-      send: vi.fn(),
-    } as unknown as WebSocket,
+    ws:
+      wsOverride ??
+      ({
+        send: vi.fn(),
+      } as unknown as WebSocket),
     displayName,
     startNow: false,
     previousOpponents: new Set<string>(),
+    lastActivityAt: Date.now(),
+    livenessTimer: null,
   };
+}
+
+function createSocketWithListeners() {
+  const listeners = new Map<string, (evt?: MessageEvent) => void>();
+  const ws = {
+    send: vi.fn(),
+    close: vi.fn(),
+    addEventListener: vi.fn(
+      (type: string, handler: (evt?: MessageEvent) => void) => {
+        listeners.set(type, handler);
+      },
+    ),
+  } as unknown as WebSocket;
+  return { ws, listeners };
 }
 
 function createMatch() {
@@ -91,15 +109,8 @@ describe('GameRoom async task tracking', () => {
     const handleMessage = vi
       .spyOn(room, '_handleMessage')
       .mockResolvedValue(undefined);
-
-    const listeners = new Map<string, (evt: MessageEvent) => void>();
-    const ws = {
-      addEventListener: vi.fn(
-        (type: string, handler: (evt: MessageEvent) => void) => {
-          listeners.set(type, handler);
-        },
-      ),
-    } as unknown as WebSocket;
+    const { ws, listeners } = createSocketWithListeners();
+    room.connections.set('acct-1', createConnectionState('Alice', ws));
 
     room._setupWsListeners(ws, 'acct-1');
 
@@ -118,6 +129,105 @@ describe('GameRoom async task tracking', () => {
     expect(handleMessage).toHaveBeenCalledWith('acct-1', {
       type: 'join_queue',
     });
+  });
+
+  it('rejects malformed websocket payloads without dispatching handlers', async () => {
+    const { room, waitUntil } = createRoom();
+    const handleMessage = vi
+      .spyOn(room, '_handleMessage')
+      .mockResolvedValue(undefined);
+    const sendTo = vi.spyOn(room, '_sendTo').mockImplementation(() => {});
+    const { ws, listeners } = createSocketWithListeners();
+    room.connections.set('acct-1', createConnectionState('Alice', ws));
+
+    room._setupWsListeners(ws, 'acct-1');
+
+    const onMessage = must(
+      listeners.get('message'),
+      'Expected message listener',
+    );
+    onMessage({
+      data: '{"type":"join_queue"',
+    } as MessageEvent);
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
+    expect(handleMessage).not.toHaveBeenCalled();
+    expect(sendTo).toHaveBeenCalledWith('acct-1', {
+      type: 'error',
+      message: 'Invalid message payload.',
+    });
+  });
+
+  it('sanitizes websocket handler exceptions before responding', async () => {
+    const { room, waitUntil } = createRoom();
+    vi.spyOn(room, '_handleMessage').mockRejectedValue(
+      new Error('internal stack detail'),
+    );
+    const sendTo = vi.spyOn(room, '_sendTo').mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const { ws, listeners } = createSocketWithListeners();
+    room.connections.set('acct-1', createConnectionState('Alice', ws));
+
+    try {
+      room._setupWsListeners(ws, 'acct-1');
+
+      const onMessage = must(
+        listeners.get('message'),
+        'Expected message listener',
+      );
+      onMessage({
+        data: JSON.stringify({ type: 'join_queue' }),
+      } as MessageEvent);
+
+      expect(waitUntil).toHaveBeenCalledTimes(1);
+      await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
+      expect(sendTo).toHaveBeenCalledWith('acct-1', {
+        type: 'error',
+        message: 'Unable to process message.',
+      });
+      expect(sendTo).not.toHaveBeenCalledWith(
+        'acct-1',
+        expect.objectContaining({ message: 'internal stack detail' }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('responds to ping with pong metadata', async () => {
+    const { room } = createRoom();
+    const sendTo = vi.spyOn(room, '_sendTo').mockImplementation(() => {});
+
+    await room._handleMessage('acct-1', { type: 'ping', sentAt: 1234 });
+
+    expect(sendTo).toHaveBeenCalledWith(
+      'acct-1',
+      expect.objectContaining({
+        type: 'pong',
+        sentAt: 1234,
+        serverTime: expect.any(Number),
+      }),
+    );
+  });
+
+  it('closes idle websocket connections after heartbeat timeout', () => {
+    vi.useFakeTimers();
+    try {
+      const { room } = createRoom();
+      const { ws } = createSocketWithListeners();
+      room.connections.set('acct-1', createConnectionState('Alice', ws));
+
+      room._setupWsListeners(ws, 'acct-1');
+      vi.advanceTimersByTime(40_000);
+
+      expect(ws.close).toHaveBeenCalledWith(4000, 'Heartbeat timeout');
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('tracks reveal-triggered game finalization with state.waitUntil', async () => {
