@@ -1178,7 +1178,7 @@ export class GameRoom {
                   'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
                   'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
                   'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
-                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
               ).bind(
                 match.matchId,
                 match.currentGame,
