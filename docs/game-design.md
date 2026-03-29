@@ -19,7 +19,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 
 ## 2. Core Concepts
 
-- Match: one complete session with any odd number of players from `3` to `21`.
+- Match: one complete session with any number of players from `3` to `21`.
 - Game: one `commit -> reveal -> results` cycle built around one question.
 - Question: a prompt with a fixed ordered list of discrete answer options.
 - Attached player: a player still counted for game accounting. A forfeited player is attached only for the game in which they forfeit; they are detached for all subsequent games.
@@ -28,7 +28,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 
 ## 3. Match Format
 
-- Match size is any odd number from `3` to `21`.
+- Match size is any number from `3` to `21`.
 - Every match lasts `10` games unless it ends early under the rule in section 4.
 - Every game uses one `select` question from the canonical public question pool.
 - Questions are used without replacement inside a match.

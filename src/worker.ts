@@ -101,7 +101,7 @@ const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 function buildAllowedMatchSizes(availablePlayers: number): number[] {
   const sizes: number[] = [];
   const maxAllowed = Math.min(availablePlayers, MAX_MATCH_SIZE);
-  for (let size = MIN_MATCH_SIZE; size <= maxAllowed; size += 2) {
+  for (let size = MIN_MATCH_SIZE; size <= maxAllowed; size += 1) {
     sizes.push(size);
   }
   return sizes;
@@ -473,7 +473,6 @@ export class GameRoom {
   _tryStartReadyMatch(): boolean {
     if (!this.formingMatch) return false;
     if (this.formingMatch.players.length < MIN_MATCH_SIZE) return false;
-    if (this.formingMatch.players.length % 2 === 0) return false;
     if (!this._allFormingHumansWantStartNow()) return false;
 
     this._startFormingMatch();
@@ -702,16 +701,6 @@ export class GameRoom {
     }
 
     const players = this.formingMatch.players;
-    let returnedToQueue: string[] = [];
-
-    // Ensure odd count: take largest odd <= current size
-    if (players.length % 2 === 0) {
-      // Return the most recently reserved extra player(s) to front of queue
-      const extras = players.splice(players.length - 1, 1);
-      returnedToQueue = extras;
-      this._clearStartNowFlags(extras);
-      this.waitingQueue.unshift(...extras);
-    }
 
     // Should still have at least 3
     if (players.length < MIN_MATCH_SIZE) {
@@ -724,7 +713,6 @@ export class GameRoom {
     }
 
     this._clearStartNowFlags(players);
-    this._clearStartNowFlags(returnedToQueue);
 
     const matchId = crypto.randomUUID();
     this.formingMatch = null;
