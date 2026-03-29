@@ -75,9 +75,8 @@ const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
-const AI_BOT_DISPLAY_NAME = 'AI Backfill';
-const DEFAULT_AI_BOT_MODEL = '@cf/meta/llama-3.2-3b-instruct';
-const DEFAULT_AI_BOT_TIMEOUT_MS = 2_500;
+const DEFAULT_AI_BOT_MODEL = '@cf/nvidia/nemotron-3-120b-a12b';
+const DEFAULT_AI_BOT_TIMEOUT_MS = 5_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 
 function buildAllowedMatchSizes(availablePlayers: number): number[] {
@@ -359,9 +358,15 @@ export class GameRoom {
     return `${AI_BOT_ACCOUNT_PREFIX}${crypto.randomUUID()}`;
   }
 
+  _getAiBotDisplayName(): string {
+    const model = this._getAiBotModel();
+    const lastSegment = model.split('/').pop() || model;
+    return lastSegment;
+  }
+
   _getDisplayName(accountId: string): string {
     if (this._isAiBot(accountId)) {
-      return AI_BOT_DISPLAY_NAME;
+      return this._getAiBotDisplayName();
     }
     return this.connections.get(accountId)?.displayName || 'unknown';
   }
