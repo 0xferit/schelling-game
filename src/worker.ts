@@ -24,6 +24,7 @@ import type {
   SchellingPrompt,
 } from './types/domain';
 import type {
+  ClientMessage,
   GameResultMessage,
   QueueStateMessage,
   ServerMessage,
@@ -52,6 +53,8 @@ interface ConnectionState {
   displayName: string;
   startNow: boolean;
   previousOpponents: Set<string>;
+  lastActivityAt: number;
+  livenessTimer: ReturnType<typeof setInterval> | null;
 }
 
 interface WorkerPlayerState extends PersistedPlayerState {
@@ -123,6 +126,8 @@ const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
+const WS_LIVENESS_CHECK_INTERVAL_MS = 10_000;
+const WS_IDLE_TIMEOUT_MS = 35_000;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -243,7 +248,9 @@ export class GameRoom {
           }
           playerState.disconnectedAt = null;
           playerState.ws = ws;
+          this._clearConnectionLivenessMonitor(accountId);
           existingConn.ws = ws;
+          existingConn.lastActivityAt = Date.now();
           this._checkpointPlayerAction(existingMatchId, accountId, {
             disconnectedAt: null,
           });
@@ -274,6 +281,8 @@ export class GameRoom {
             displayName,
             startNow: false,
             previousOpponents: new Set(),
+            lastActivityAt: Date.now(),
+            livenessTimer: null,
           });
           if (playerState.graceTimer) {
             clearTimeout(playerState.graceTimer);
@@ -312,6 +321,7 @@ export class GameRoom {
 
     // Close previous connection if any (not a match reconnect)
     if (existingConn) {
+      this._clearConnectionLivenessMonitor(accountId);
       try {
         existingConn.ws.close(1000, 'Replaced by new connection');
       } catch {}
@@ -328,6 +338,8 @@ export class GameRoom {
       previousOpponents: existingConn
         ? existingConn.previousOpponents
         : new Set(),
+      lastActivityAt: Date.now(),
+      livenessTimer: null,
     });
 
     this._setupWsListeners(ws, accountId);
@@ -336,20 +348,91 @@ export class GameRoom {
     this._sendQueueState(accountId);
   }
 
+  _noteConnectionActivity(accountId: string, ws: WebSocket): void {
+    const conn = this.connections.get(accountId);
+    if (!conn || conn.ws !== ws) return;
+    conn.lastActivityAt = Date.now();
+  }
+
+  _clearConnectionLivenessMonitor(accountId: string): void {
+    const conn = this.connections.get(accountId);
+    if (!conn?.livenessTimer) return;
+    clearInterval(conn.livenessTimer);
+    conn.livenessTimer = null;
+  }
+
+  _startConnectionLivenessMonitor(accountId: string, ws: WebSocket): void {
+    this._clearConnectionLivenessMonitor(accountId);
+    const conn = this.connections.get(accountId);
+    if (!conn || conn.ws !== ws) return;
+    conn.lastActivityAt = Date.now();
+    conn.livenessTimer = setInterval(() => {
+      const current = this.connections.get(accountId);
+      if (!current || current.ws !== ws) {
+        this._clearConnectionLivenessMonitor(accountId);
+        return;
+      }
+      if (Date.now() - current.lastActivityAt < WS_IDLE_TIMEOUT_MS) return;
+
+      this._clearConnectionLivenessMonitor(accountId);
+      try {
+        ws.close(4000, 'Heartbeat timeout');
+      } catch {}
+    }, WS_LIVENESS_CHECK_INTERVAL_MS);
+  }
+
   _setupWsListeners(ws: WebSocket, accountId: string): void {
+    this._startConnectionLivenessMonitor(accountId, ws);
+    const isCurrentConnection = (): boolean =>
+      this.connections.get(accountId)?.ws === ws;
+
     ws.addEventListener('message', (evt: MessageEvent) => {
+      if (!isCurrentConnection()) return;
+      this._noteConnectionActivity(accountId, ws);
       this._waitUntil(
         (async () => {
-          try {
-            const msg = JSON.parse(evt.data as string) as {
-              type: string;
-              [key: string]: unknown;
-            };
-            await this._handleMessage(accountId, msg);
-          } catch (e) {
+          const raw = evt.data;
+          if (typeof raw !== 'string') {
             this._sendTo(accountId, {
               type: 'error',
-              message: (e as Error).message || 'Internal error',
+              message: 'Invalid message payload.',
+            });
+            return;
+          }
+
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            this._sendTo(accountId, {
+              type: 'error',
+              message: 'Invalid message payload.',
+            });
+            return;
+          }
+
+          if (
+            !parsed ||
+            typeof parsed !== 'object' ||
+            typeof (parsed as { type?: unknown }).type !== 'string'
+          ) {
+            this._sendTo(accountId, {
+              type: 'error',
+              message: 'Invalid message payload.',
+            });
+            return;
+          }
+
+          try {
+            await this._handleMessage(accountId, parsed as ClientMessage);
+          } catch (error) {
+            console.error('WebSocket message handling failed', {
+              accountId,
+              error,
+            });
+            this._sendTo(accountId, {
+              type: 'error',
+              message: 'Unable to process message.',
             });
           }
         })(),
@@ -358,10 +441,14 @@ export class GameRoom {
     });
 
     ws.addEventListener('close', () => {
+      if (!isCurrentConnection()) return;
+      this._clearConnectionLivenessMonitor(accountId);
       this._handleDisconnect(accountId);
     });
 
     ws.addEventListener('error', () => {
+      if (!isCurrentConnection()) return;
+      this._clearConnectionLivenessMonitor(accountId);
       this._handleDisconnect(accountId);
     });
   }
@@ -389,6 +476,13 @@ export class GameRoom {
         return this._handleReveal(accountId, msg);
       case 'prompt_rating':
         return this._handlePromptRating(accountId, msg);
+      case 'ping':
+        this._sendTo(accountId, {
+          type: 'pong',
+          serverTime: Date.now(),
+          ...(typeof msg.sentAt === 'number' ? { sentAt: msg.sentAt } : {}),
+        });
+        return;
       default:
         this._sendTo(accountId, {
           type: 'error',
@@ -2162,6 +2256,7 @@ export class GameRoom {
   // -------------------------------------------------------------------------
 
   _handleDisconnect(accountId: string): void {
+    this._clearConnectionLivenessMonitor(accountId);
     const matchId = this.playerMatchIndex.get(accountId);
 
     if (!matchId) {

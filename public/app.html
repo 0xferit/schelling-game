@@ -857,6 +857,28 @@ function notify(msg, type = '') {
   setTimeout(() => el.remove(), 4000);
 }
 
+const GLOBAL_ERROR_NOTIFY_COOLDOWN_MS = 8000;
+let lastGlobalErrorNoticeAt = 0;
+function notifyUnexpectedClientError() {
+  const now = Date.now();
+  if (now - lastGlobalErrorNoticeAt < GLOBAL_ERROR_NOTIFY_COOLDOWN_MS) return;
+  lastGlobalErrorNoticeAt = now;
+  notify(
+    'Unexpected client error. Reconnect in progress; refresh if it persists.',
+    'error',
+  );
+}
+
+window.addEventListener('error', (event) => {
+  console.error('Client runtime error', event.error || event.message);
+  notifyUnexpectedClientError();
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection', event.reason);
+  notifyUnexpectedClientError();
+});
+
 // ── Header profile ──────────────────────────────────────────────
 function updateHeaderProfile() {
   if (S.accountId) {
@@ -1262,6 +1284,7 @@ function onAuthComplete() {
 $('#logout-btn').addEventListener('click', async () => {
   intentionalClose = true;
   wsRetryCount = 0;
+  stopWebSocketHeartbeat();
   if (wsRetryTimer !== null) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
   if (S.ws) { S.ws.close(); S.ws = null; }
   try {
@@ -1336,9 +1359,57 @@ async function checkSession() {
 const WS_MAX_RETRIES = 10;
 const WS_BASE_DELAY = 1000;
 const WS_MAX_DELAY = 30000;
+const WS_HEARTBEAT_INTERVAL_MS = 10000;
+const WS_HEARTBEAT_TIMEOUT_MS = 12000;
 let wsRetryCount = 0;
 let intentionalClose = false;
 let wsRetryTimer = null;
+let wsHeartbeatTimer = null;
+let wsPongTimeoutTimer = null;
+let wsHeartbeatSocket = null;
+let wsAwaitingPong = false;
+
+function stopWebSocketHeartbeat(targetSocket = null) {
+  if (targetSocket && wsHeartbeatSocket !== targetSocket) return;
+  if (wsHeartbeatTimer !== null) {
+    clearInterval(wsHeartbeatTimer);
+    wsHeartbeatTimer = null;
+  }
+  if (wsPongTimeoutTimer !== null) {
+    clearTimeout(wsPongTimeoutTimer);
+    wsPongTimeoutTimer = null;
+  }
+  wsAwaitingPong = false;
+  wsHeartbeatSocket = null;
+}
+
+function acknowledgeWebSocketLiveness() {
+  wsAwaitingPong = false;
+  if (wsPongTimeoutTimer !== null) {
+    clearTimeout(wsPongTimeoutTimer);
+    wsPongTimeoutTimer = null;
+  }
+}
+
+function startWebSocketHeartbeat(targetSocket) {
+  stopWebSocketHeartbeat();
+  wsHeartbeatSocket = targetSocket;
+  wsHeartbeatTimer = setInterval(() => {
+    if (targetSocket !== S.ws || !isWebSocketOpen()) return;
+    if (wsAwaitingPong) {
+      notify('Connection heartbeat timed out. Reconnecting...', 'warn');
+      try { targetSocket.close(4000, 'Heartbeat timeout'); } catch (_) {}
+      return;
+    }
+    wsAwaitingPong = true;
+    wsSend({ type: 'ping', sentAt: Date.now() });
+    wsPongTimeoutTimer = setTimeout(() => {
+      if (targetSocket !== S.ws || !wsAwaitingPong) return;
+      notify('Connection heartbeat timed out. Reconnecting...', 'warn');
+      try { targetSocket.close(4000, 'Heartbeat timeout'); } catch (_) {}
+    }, WS_HEARTBEAT_TIMEOUT_MS);
+  }, WS_HEARTBEAT_INTERVAL_MS);
+}
 
 function isWebSocketOpen() {
   return !!S.ws && S.ws.readyState === WebSocket.OPEN;
@@ -1394,6 +1465,7 @@ function connectWebSocket() {
   if (!S.accountId) return;
   wsRetryTimer = null;
   S.wsConnected = false;
+  stopWebSocketHeartbeat();
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   S.ws = new WebSocket(`${proto}//${location.host}/ws`);
   const thisWs = S.ws;
@@ -1402,15 +1474,18 @@ function connectWebSocket() {
     wsRetryCount = 0;
     wsRetryTimer = null;
     S.wsConnected = true;
+    startWebSocketHeartbeat(thisWs);
     flushPendingQueueAction();
     renderQueue();
   };
   S.ws.onerror = () => {
     if (thisWs !== S.ws) return;
+    stopWebSocketHeartbeat(thisWs);
     S.wsConnected = false;
     renderQueue();
   };
   S.ws.onclose = () => {
+    stopWebSocketHeartbeat(thisWs);
     if (thisWs === S.ws) {
       S.wsConnected = false;
       renderQueue();
@@ -1426,7 +1501,18 @@ function connectWebSocket() {
     wsRetryTimer = setTimeout(connectWebSocket, delay);
   };
   S.ws.onmessage = (evt) => {
-    const msg = JSON.parse(evt.data);
+    let msg;
+    try {
+      msg = JSON.parse(evt.data);
+    } catch (error) {
+      console.error('WS: invalid message payload', error);
+      notify('Received invalid server payload. Reconnecting...', 'warn');
+      if (thisWs === S.ws) {
+        try { thisWs.close(4002, 'Invalid payload'); } catch (_) {}
+      }
+      return;
+    }
+    acknowledgeWebSocketLiveness();
     handleMessage(msg);
   };
 }
@@ -1453,6 +1539,7 @@ function handleMessage(msg) {
     case 'player_reconnected': onPlayerReconnected(msg); break;
     case 'player_forfeited': onPlayerForfeited(msg); break;
     case 'prompt_rating_tally': onPromptRatingTally(msg); break;
+    case 'pong': break;
     case 'error': notify(msg.message, 'error'); break;
     default: break;
   }
