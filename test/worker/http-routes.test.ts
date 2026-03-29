@@ -1,5 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LEADERBOARD_LIMIT } from '../../src/domain/constants';
 import type { Env } from '../../src/types/worker-env';
 import { handleHttpRequest } from '../../src/worker/httpHandler';
@@ -334,6 +334,70 @@ describe('HTTP routes', () => {
     expect(data.expiresAt).toBeTruthy();
   });
 
+  it('POST /api/auth/challenge rejects malformed wallet addresses', async () => {
+    const resp = await post('/api/auth/challenge', {
+      walletAddress: 'not-a-wallet',
+    });
+    expect(resp.status).toBe(400);
+    const data = (await resp.json()) as { error: string };
+    expect(data.error).toContain('0x-prefixed address');
+  });
+
+  it('POST /api/auth/challenge rate limits repeated requests per IP', async () => {
+    const wallet = createTestWallet(20);
+    const headers = { 'CF-Connecting-IP': '203.0.113.205' };
+
+    let lastStatus = 0;
+    for (let i = 0; i < 13; i += 1) {
+      const resp = await post(
+        '/api/auth/challenge',
+        { walletAddress: wallet.address },
+        headers,
+      );
+      lastStatus = resp.status;
+    }
+
+    expect(lastStatus).toBe(429);
+  });
+
+  it('POST /api/auth/challenge opportunistically cleans up expired challenges', async () => {
+    const wallet = createTestWallet(21);
+    const now = Date.now();
+    const expiredChallengeId = 'ch_expired_cleanup_probe';
+    await env.DB.prepare(
+      'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at, issued_at) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+      .bind(
+        expiredChallengeId,
+        wallet.address.toLowerCase(),
+        crypto.randomUUID(),
+        'expired',
+        new Date(now - 60_000).toISOString(),
+        now - 60_000,
+      )
+      .run();
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(now + 5 * 60_000));
+      const challengeResp = await post(
+        '/api/auth/challenge',
+        { walletAddress: wallet.address },
+        { 'CF-Connecting-IP': '203.0.113.206' },
+      );
+      expect(challengeResp.status).toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const stale = await env.DB.prepare(
+      'SELECT challenge_id FROM auth_challenges WHERE challenge_id = ?',
+    )
+      .bind(expiredChallengeId)
+      .first<{ challenge_id: string }>();
+    expect(stale).toBeNull();
+  });
+
   it('POST /api/auth/verify with valid signature sets session cookie', async () => {
     const wallet = createTestWallet(1);
     const normalized = wallet.address.toLowerCase();
@@ -405,6 +469,17 @@ describe('HTTP routes', () => {
     };
     expect(body.accountId).toBe(wallet.address.toLowerCase());
     expect(body.requiresDisplayName).toBe(true);
+  });
+
+  it('POST /api/auth/verify rejects malformed wallet addresses', async () => {
+    const resp = await post('/api/auth/verify', {
+      challengeId: 'ch_example',
+      walletAddress: 'not-a-wallet',
+      signature: `0x${'a'.repeat(130)}`,
+    });
+    expect(resp.status).toBe(400);
+    const data = (await resp.json()) as { error: string };
+    expect(data.error).toContain('0x-prefixed address');
   });
 
   it('GET /api/me with valid session returns account data', async () => {
@@ -608,6 +683,16 @@ describe('HTTP routes', () => {
     expect(
       must(entry, 'Expected tally entry for option 8').count,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('POST /api/example-vote rate limits write bursts per IP', async () => {
+    const headers = { 'CF-Connecting-IP': '203.0.113.207' };
+    let lastStatus = 0;
+    for (let i = 0; i < 41; i += 1) {
+      const resp = await post('/api/example-vote', {}, headers);
+      lastStatus = resp.status;
+    }
+    expect(lastStatus).toBe(429);
   });
 
   // ---- Cookie Secure attribute regression tests (issue #83) ----
