@@ -1084,11 +1084,21 @@ describe('GameRoom async task tracking', () => {
       'match_started',
       'player_forfeited',
       'game_started',
+      'commit_status',
     ]);
     expect(sentMessages[1]).toMatchObject({
       type: 'player_forfeited',
       displayName: 'Alice',
       futureGamesPenaltyApplied: true,
+    });
+    expect(sentMessages[3]).toMatchObject({
+      type: 'commit_status',
+      committed: [
+        {
+          displayName: 'Alice',
+          hasCommitted: false,
+        },
+      ],
     });
   });
   it('tracks match end after results with state.waitUntil', async () => {
