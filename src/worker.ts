@@ -92,6 +92,30 @@ interface NormalizationRun {
   responseJson: string | null;
 }
 
+interface PersistedVoteLogRow {
+  account_id: string;
+  display_name_snapshot: string | null;
+  revealed_option_index: number | null;
+  revealed_option_label: string | null;
+  revealed_input_text: string | null;
+  revealed_bucket_key: string | null;
+  revealed_bucket_label: string | null;
+  won_game: number;
+  earns_coordination_credit: number;
+  ante_amount: number;
+  game_payout: number;
+  net_delta: number;
+  player_count: number;
+  valid_reveal_count: number;
+  top_count: number;
+  winner_count: number;
+  winning_option_indexes_json: string | null;
+  winning_bucket_keys_json: string | null;
+  voided: number;
+  void_reason: string | null;
+  normalization_mode: NormalizationMode;
+}
+
 function neutralizeAiAssistedResult(result: GameResult): GameResult {
   return {
     ...result,
@@ -1123,260 +1147,312 @@ export class GameRoom {
     const alreadySettled =
       match.currentGame <= match.lastSettledGame && !recoveringSettlingWrite;
 
-    // Build player array for settlement
-    const settlementPlayers: PlayerSettlementInput[] = [
-      ...match.players.values(),
-    ].map((p) => {
-      const validReveal = p.committed && p.revealed && !p.forfeited;
-      const revealedOptionLabel =
-        validReveal &&
-        prompt.type === 'select' &&
-        p.optionIndex !== null &&
-        p.optionIndex >= 0 &&
-        p.optionIndex < prompt.options.length
-          ? (prompt.options[p.optionIndex] ?? null)
-          : null;
+    let recoveredGameResult: GameResultMessage['result'] | null = null;
+    let persistedVoteLogs: boolean | null = null;
 
-      return {
-        accountId: p.accountId,
-        displayName: p.displayName,
-        optionIndex: validReveal ? p.optionIndex : null,
-        inputText: validReveal ? p.answerText : null,
-        normalizedRevealText: validReveal ? p.normalizedRevealText : null,
-        bucketKey:
+    if (recoveringSettlingWrite) {
+      if (!match.aiAssisted) {
+        try {
+          recoveredGameResult = await this._loadPersistedGameResult(match);
+          persistedVoteLogs = recoveredGameResult !== null;
+        } catch (error) {
+          console.error(
+            'D1: failed to load persisted game result for',
+            match.matchId,
+            error,
+          );
+          this._checkpointMatch(match);
+          this._scheduleFinalizeRetry(match);
+          return;
+        }
+      } else {
+        persistedVoteLogs =
+          await this._hasPersistedVoteLogsForCurrentGame(match);
+        if (persistedVoteLogs === null) {
+          this._checkpointMatch(match);
+          this._scheduleFinalizeRetry(match);
+          return;
+        }
+      }
+    }
+
+    let result: GameResult | null = null;
+
+    if (recoveredGameResult) {
+      for (const recoveredPlayer of recoveredGameResult.players) {
+        const playerState = match.players.get(recoveredPlayer.accountId);
+        if (!playerState) continue;
+        playerState.currentBalance = recoveredPlayer.newBalance;
+      }
+      match.lastSettledGame = match.currentGame;
+    } else {
+      // Build player array for settlement
+      const settlementPlayers: PlayerSettlementInput[] = [
+        ...match.players.values(),
+      ].map((p) => {
+        const validReveal = p.committed && p.revealed && !p.forfeited;
+        const revealedOptionLabel =
           validReveal &&
           prompt.type === 'select' &&
           p.optionIndex !== null &&
-          revealedOptionLabel
-            ? `option:${p.optionIndex}`
-            : null,
-        bucketLabel:
-          validReveal && prompt.type === 'select' ? revealedOptionLabel : null,
-        validReveal,
-        forfeited: p.forfeited,
-        attached: !p.forfeited || p.forfeitedAtGame === match.currentGame,
+          p.optionIndex >= 0 &&
+          p.optionIndex < prompt.options.length
+            ? (prompt.options[p.optionIndex] ?? null)
+            : null;
+
+        return {
+          accountId: p.accountId,
+          displayName: p.displayName,
+          optionIndex: validReveal ? p.optionIndex : null,
+          inputText: validReveal ? p.answerText : null,
+          normalizedRevealText: validReveal ? p.normalizedRevealText : null,
+          bucketKey:
+            validReveal &&
+            prompt.type === 'select' &&
+            p.optionIndex !== null &&
+            revealedOptionLabel
+              ? `option:${p.optionIndex}`
+              : null,
+          bucketLabel:
+            validReveal && prompt.type === 'select'
+              ? revealedOptionLabel
+              : null,
+          validReveal,
+          forfeited: p.forfeited,
+          attached: !p.forfeited || p.forfeitedAtGame === match.currentGame,
+        };
+      });
+
+      let normalizationRun: NormalizationRun = {
+        runId: null,
+        mode: null,
+        verdicts: new Map(),
+        model: null,
+        normalizerPrompt: null,
+        requestJson: null,
+        responseJson: null,
       };
-    });
 
-    let normalizationRun: NormalizationRun = {
-      runId: null,
-      mode: null,
-      verdicts: new Map(),
-      model: null,
-      normalizerPrompt: null,
-      requestJson: null,
-      responseJson: null,
-    };
+      if (prompt.type === 'open_text') {
+        const normalizedInputs = [
+          ...new Set(
+            settlementPlayers
+              .filter((player) => player.validReveal)
+              .map((player) => player.normalizedRevealText)
+              .filter((value): value is string => !!value),
+          ),
+        ].sort();
 
-    if (prompt.type === 'open_text') {
-      const normalizedInputs = [
-        ...new Set(
-          settlementPlayers
-            .filter((player) => player.validReveal)
-            .map((player) => player.normalizedRevealText)
-            .filter((value): value is string => !!value),
-        ),
-      ].sort();
+        normalizationRun = await this._normalizeOpenTextReveals(
+          prompt,
+          normalizedInputs,
+        );
 
-      normalizationRun = await this._normalizeOpenTextReveals(
+        for (const player of settlementPlayers) {
+          if (!player.validReveal || !player.normalizedRevealText) continue;
+          const verdict =
+            normalizationRun.verdicts.get(player.normalizedRevealText) || null;
+          if (verdict) {
+            player.bucketKey = verdict.bucketKey;
+            player.bucketLabel = verdict.bucketLabel;
+          } else {
+            player.bucketKey = player.normalizedRevealText;
+            player.bucketLabel = player.normalizedRevealText;
+          }
+        }
+      }
+
+      const settledResult = settleGame(
+        settlementPlayers,
         prompt,
-        normalizedInputs,
+        prompt.type === 'open_text' ? normalizationRun.mode : null,
       );
+      result = match.aiAssisted
+        ? neutralizeAiAssistedResult(settledResult)
+        : settledResult;
 
-      for (const player of settlementPlayers) {
-        if (!player.validReveal || !player.normalizedRevealText) continue;
-        const verdict =
-          normalizationRun.verdicts.get(player.normalizedRevealText) || null;
-        if (verdict) {
-          player.bucketKey = verdict.bucketKey;
-          player.bucketLabel = verdict.bucketLabel;
-        } else {
-          player.bucketKey = player.normalizedRevealText;
-          player.bucketLabel = player.normalizedRevealText;
+      const projectedBalances = new Map<string, number>();
+      const shouldProjectSettledBalances =
+        !alreadySettled || recoveringSettlingWrite;
+
+      // Compute post-settlement balances without mutating in-memory player
+      // state until D1 persistence is confirmed (or explicitly recovered).
+      for (const pr of result.players) {
+        const playerState = match.players.get(pr.accountId);
+        if (!playerState) continue;
+        let projectedBalance =
+          playerState.currentBalance +
+          (shouldProjectSettledBalances ? pr.netDelta : 0);
+        if (!match.aiAssisted && projectedBalance < MIN_ALLOWED_BALANCE) {
+          projectedBalance = MIN_ALLOWED_BALANCE;
         }
-      }
-    }
-
-    const settledResult = settleGame(
-      settlementPlayers,
-      prompt,
-      prompt.type === 'open_text' ? normalizationRun.mode : null,
-    );
-    const result: GameResult = match.aiAssisted
-      ? neutralizeAiAssistedResult(settledResult)
-      : settledResult;
-
-    const projectedBalances = new Map<string, number>();
-    const shouldProjectSettledBalances =
-      !alreadySettled || recoveringSettlingWrite;
-
-    // Compute post-settlement balances without mutating in-memory player state
-    // until D1 persistence is confirmed (or explicitly recovered).
-    for (const pr of result.players) {
-      const playerState = match.players.get(pr.accountId);
-      if (!playerState) continue;
-      let projectedBalance =
-        playerState.currentBalance +
-        (shouldProjectSettledBalances ? pr.netDelta : 0);
-      if (!match.aiAssisted && projectedBalance < MIN_ALLOWED_BALANCE) {
-        projectedBalance = MIN_ALLOWED_BALANCE;
-      }
-      projectedBalances.set(pr.accountId, projectedBalance);
-      (pr as PlayerResultWithBalance).newBalance = projectedBalance;
-    }
-
-    // Write to D1 only if this game hasn't been settled before (prevents duplicates after restore)
-    if (!alreadySettled) {
-      let shouldWriteGame = true;
-      if (recoveringSettlingWrite) {
-        shouldWriteGame =
-          !(await this._hasPersistedVoteLogsForCurrentGame(match));
+        projectedBalances.set(pr.accountId, projectedBalance);
+        (pr as PlayerResultWithBalance).newBalance = projectedBalance;
       }
 
-      if (shouldWriteGame) {
-        // Mark this game as in-flight before issuing D1 writes so restore can retry.
-        match.phase = 'settling';
-        match.phaseEnteredAt = Date.now();
-        this._checkpointMatch(match);
-
-        const stmts: D1PreparedStatement[] = [];
-        const now = new Date().toISOString();
-
-        if (prompt.type === 'open_text' && normalizationRun.runId) {
-          stmts.push(
-            this.env.DB.prepare(
-              'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            ).bind(
-              normalizationRun.runId,
-              match.matchId,
-              match.currentGame,
-              prompt.id,
-              normalizationRun.mode,
-              normalizationRun.model,
-              normalizationRun.normalizerPrompt,
-              normalizationRun.requestJson,
-              normalizationRun.responseJson,
-              now,
-            ),
-          );
-
-          for (const verdict of normalizationRun.verdicts.values()) {
-            stmts.push(
-              this.env.DB.prepare(
-                'INSERT INTO normalization_verdicts (run_id, match_id, game_number, prompt_id, normalized_input_text, bucket_key, bucket_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-              ).bind(
-                normalizationRun.runId,
-                match.matchId,
-                match.currentGame,
-                prompt.id,
-                verdict.normalizedInputText,
-                verdict.bucketKey,
-                verdict.bucketLabel,
-                now,
-              ),
-            );
+      // Write to D1 only if this game hasn't been settled before
+      // (prevents duplicates after restore).
+      if (!alreadySettled) {
+        let shouldWriteGame = true;
+        if (recoveringSettlingWrite) {
+          if (persistedVoteLogs === null) {
+            persistedVoteLogs =
+              await this._hasPersistedVoteLogsForCurrentGame(match);
           }
-        }
-
-        for (const pr of result.players) {
-          const projectedBalance = projectedBalances.get(pr.accountId);
-          if (projectedBalance === undefined) continue;
-
-          if (!this._isAiBot(pr.accountId)) {
-            if (!match.aiAssisted) {
-              stmts.push(
-                this.env.DB.prepare(
-                  'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-                ).bind(projectedBalance, pr.accountId),
-              );
-            }
-
-            if (!result.voided && !match.aiAssisted) {
-              stmts.push(
-                this.env.DB.prepare(
-                  'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
-                ).bind(pr.accountId),
-              );
-              if (pr.earnsCoordinationCredit) {
-                stmts.push(
-                  this.env.DB.prepare(
-                    'UPDATE player_stats SET coherent_games = coherent_games + 1, ' +
-                      'current_streak = current_streak + 1, ' +
-                      'longest_streak = MAX(longest_streak, current_streak + 1) ' +
-                      'WHERE account_id = ?',
-                  ).bind(pr.accountId),
-                );
-              } else {
-                stmts.push(
-                  this.env.DB.prepare(
-                    'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
-                  ).bind(pr.accountId),
-                );
-              }
-            }
-          }
-
-          if (!this._isAiBot(pr.accountId)) {
-            stmts.push(
-              this.env.DB.prepare(
-                'INSERT INTO vote_logs (match_id, game_number, prompt_id, account_id, display_name_snapshot, ' +
-                  'prompt_type, revealed_option_index, revealed_option_label, revealed_input_text, ' +
-                  'revealed_bucket_key, revealed_bucket_label, normalization_mode, normalization_run_id, ' +
-                  'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
-                  'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
-                  'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
-                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-              ).bind(
-                match.matchId,
-                match.currentGame,
-                prompt.id,
-                pr.accountId,
-                pr.displayName,
-                prompt.type,
-                pr.revealedOptionIndex,
-                pr.revealedOptionLabel,
-                pr.revealedInputText,
-                pr.revealedBucketKey,
-                pr.revealedBucketLabel,
-                result.normalizationMode,
-                normalizationRun.runId,
-                pr.wonGame ? 1 : 0,
-                pr.earnsCoordinationCredit ? 1 : 0,
-                pr.antePaid,
-                pr.gamePayout,
-                pr.netDelta,
-                result.playerCount,
-                result.validRevealCount,
-                result.topCount,
-                result.winnerCount,
-                JSON.stringify(result.winningOptionIndexes),
-                JSON.stringify(result.winningBucketKeys),
-                result.voided ? 1 : 0,
-                result.voidReason,
-                now,
-              ),
-            );
-          }
-        }
-
-        if (stmts.length > 0) {
-          try {
-            await this.env.DB.batch(stmts);
-          } catch (error) {
-            console.error('D1: batch finalizeGame for', match.matchId, error);
+          if (persistedVoteLogs === null) {
             this._checkpointMatch(match);
             this._scheduleFinalizeRetry(match);
             return;
           }
+          shouldWriteGame = !persistedVoteLogs;
         }
-      }
 
-      for (const [accountId, projectedBalance] of projectedBalances) {
-        const playerState = match.players.get(accountId);
-        if (!playerState) continue;
-        playerState.currentBalance = projectedBalance;
+        if (shouldWriteGame) {
+          // Mark this game as in-flight before issuing D1 writes so restore
+          // can retry.
+          match.phase = 'settling';
+          match.phaseEnteredAt = Date.now();
+          this._checkpointMatch(match);
+
+          const stmts: D1PreparedStatement[] = [];
+          const now = new Date().toISOString();
+
+          if (prompt.type === 'open_text' && normalizationRun.runId) {
+            stmts.push(
+              this.env.DB.prepare(
+                'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              ).bind(
+                normalizationRun.runId,
+                match.matchId,
+                match.currentGame,
+                prompt.id,
+                normalizationRun.mode,
+                normalizationRun.model,
+                normalizationRun.normalizerPrompt,
+                normalizationRun.requestJson,
+                normalizationRun.responseJson,
+                now,
+              ),
+            );
+
+            for (const verdict of normalizationRun.verdicts.values()) {
+              stmts.push(
+                this.env.DB.prepare(
+                  'INSERT INTO normalization_verdicts (run_id, match_id, game_number, prompt_id, normalized_input_text, bucket_key, bucket_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                ).bind(
+                  normalizationRun.runId,
+                  match.matchId,
+                  match.currentGame,
+                  prompt.id,
+                  verdict.normalizedInputText,
+                  verdict.bucketKey,
+                  verdict.bucketLabel,
+                  now,
+                ),
+              );
+            }
+          }
+
+          for (const pr of result.players) {
+            const projectedBalance = projectedBalances.get(pr.accountId);
+            if (projectedBalance === undefined) continue;
+
+            if (!this._isAiBot(pr.accountId)) {
+              if (!match.aiAssisted) {
+                stmts.push(
+                  this.env.DB.prepare(
+                    'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+                  ).bind(projectedBalance, pr.accountId),
+                );
+              }
+
+              if (!result.voided && !match.aiAssisted) {
+                stmts.push(
+                  this.env.DB.prepare(
+                    'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
+                  ).bind(pr.accountId),
+                );
+                if (pr.earnsCoordinationCredit) {
+                  stmts.push(
+                    this.env.DB.prepare(
+                      'UPDATE player_stats SET coherent_games = coherent_games + 1, ' +
+                        'current_streak = current_streak + 1, ' +
+                        'longest_streak = MAX(longest_streak, current_streak + 1) ' +
+                        'WHERE account_id = ?',
+                    ).bind(pr.accountId),
+                  );
+                } else {
+                  stmts.push(
+                    this.env.DB.prepare(
+                      'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
+                    ).bind(pr.accountId),
+                  );
+                }
+              }
+            }
+
+            if (!this._isAiBot(pr.accountId)) {
+              stmts.push(
+                this.env.DB.prepare(
+                  'INSERT INTO vote_logs (match_id, game_number, prompt_id, account_id, display_name_snapshot, ' +
+                    'prompt_type, revealed_option_index, revealed_option_label, revealed_input_text, ' +
+                    'revealed_bucket_key, revealed_bucket_label, normalization_mode, normalization_run_id, ' +
+                    'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
+                    'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
+                    'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                ).bind(
+                  match.matchId,
+                  match.currentGame,
+                  prompt.id,
+                  pr.accountId,
+                  pr.displayName,
+                  prompt.type,
+                  pr.revealedOptionIndex,
+                  pr.revealedOptionLabel,
+                  pr.revealedInputText,
+                  pr.revealedBucketKey,
+                  pr.revealedBucketLabel,
+                  result.normalizationMode,
+                  normalizationRun.runId,
+                  pr.wonGame ? 1 : 0,
+                  pr.earnsCoordinationCredit ? 1 : 0,
+                  pr.antePaid,
+                  pr.gamePayout,
+                  pr.netDelta,
+                  result.playerCount,
+                  result.validRevealCount,
+                  result.topCount,
+                  result.winnerCount,
+                  JSON.stringify(result.winningOptionIndexes),
+                  JSON.stringify(result.winningBucketKeys),
+                  result.voided ? 1 : 0,
+                  result.voidReason,
+                  now,
+                ),
+              );
+            }
+          }
+
+          if (stmts.length > 0) {
+            try {
+              await this.env.DB.batch(stmts);
+            } catch (error) {
+              console.error('D1: batch finalizeGame for', match.matchId, error);
+              this._checkpointMatch(match);
+              this._scheduleFinalizeRetry(match);
+              return;
+            }
+          }
+        }
+
+        for (const [accountId, projectedBalance] of projectedBalances) {
+          const playerState = match.players.get(accountId);
+          if (!playerState) continue;
+          playerState.currentBalance = projectedBalance;
+        }
+        match.lastSettledGame = match.currentGame;
       }
-      match.lastSettledGame = match.currentGame;
     }
 
     match.phase = 'results';
@@ -1387,38 +1463,49 @@ export class GameRoom {
     // captured before the D1 await: a grace-timer forfeit could have
     // burned future-game antes during the batch, making the snapshot
     // stale.
-    const gameResultPayload: GameResultMessage['result'] = {
-      gameNum: match.currentGame,
-      voided: result.voided,
-      voidReason: result.voidReason,
-      playerCount: result.playerCount,
-      pot: result.pot,
-      dustBurned: result.dustBurned,
-      validRevealCount: result.validRevealCount,
-      topCount: result.topCount,
-      winningOptionIndexes: result.winningOptionIndexes,
-      winningBucketKeys: result.winningBucketKeys,
-      winnerCount: result.winnerCount,
-      payoutPerWinner: result.payoutPerWinner,
-      normalizationMode: result.normalizationMode,
-      players: result.players.map((pr) => ({
-        accountId: pr.accountId,
-        displayName: pr.displayName,
-        revealedOptionIndex: pr.revealedOptionIndex,
-        revealedOptionLabel: pr.revealedOptionLabel,
-        revealedInputText: pr.revealedInputText,
-        revealedBucketKey: pr.revealedBucketKey,
-        revealedBucketLabel: pr.revealedBucketLabel,
-        wonGame: pr.wonGame,
-        earnsCoordinationCredit: pr.earnsCoordinationCredit,
-        antePaid: pr.antePaid,
-        gamePayout: pr.gamePayout,
-        netDelta: pr.netDelta,
-        newBalance:
-          match.players.get(pr.accountId)?.currentBalance ??
-          (pr as PlayerResultWithBalance).newBalance,
-      })),
-    };
+    let gameResultPayload: GameResultMessage['result'];
+    if (recoveredGameResult) {
+      gameResultPayload = recoveredGameResult;
+    } else {
+      const computedResult = result;
+      if (!computedResult) {
+        throw new Error(
+          `Missing game result for ${match.matchId}:${match.currentGame}`,
+        );
+      }
+      gameResultPayload = {
+        gameNum: match.currentGame,
+        voided: computedResult.voided,
+        voidReason: computedResult.voidReason,
+        playerCount: computedResult.playerCount,
+        pot: computedResult.pot,
+        dustBurned: computedResult.dustBurned,
+        validRevealCount: computedResult.validRevealCount,
+        topCount: computedResult.topCount,
+        winningOptionIndexes: computedResult.winningOptionIndexes,
+        winningBucketKeys: computedResult.winningBucketKeys,
+        winnerCount: computedResult.winnerCount,
+        payoutPerWinner: computedResult.payoutPerWinner,
+        normalizationMode: computedResult.normalizationMode,
+        players: computedResult.players.map((pr) => ({
+          accountId: pr.accountId,
+          displayName: pr.displayName,
+          revealedOptionIndex: pr.revealedOptionIndex,
+          revealedOptionLabel: pr.revealedOptionLabel,
+          revealedInputText: pr.revealedInputText,
+          revealedBucketKey: pr.revealedBucketKey,
+          revealedBucketLabel: pr.revealedBucketLabel,
+          wonGame: pr.wonGame,
+          earnsCoordinationCredit: pr.earnsCoordinationCredit,
+          antePaid: pr.antePaid,
+          gamePayout: pr.gamePayout,
+          netDelta: pr.netDelta,
+          newBalance:
+            match.players.get(pr.accountId)?.currentBalance ??
+            (pr as PlayerResultWithBalance).newBalance,
+        })),
+      };
+    }
     match.lastGameResult = gameResultPayload;
 
     // Checkpoint after setting lastGameResult so it survives DO eviction
@@ -1478,6 +1565,11 @@ export class GameRoom {
     const alreadyCompletedInD1 = await this._isMatchAlreadyCompleted(
       match.matchId,
     );
+    if (alreadyCompletedInD1 === null) {
+      this._checkpointMatch(match);
+      this._scheduleEndMatchRetry(match);
+      return;
+    }
 
     if (!alreadyCompletedInD1) {
       // Batch all endMatch D1 writes
@@ -2832,9 +2924,163 @@ export class GameRoom {
     }
   }
 
+  _parsePersistedNumberArray(value: string | null, field: string): number[] {
+    if (!value) return [];
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.some((entry) => typeof entry !== 'number')
+    ) {
+      throw new Error(`Persisted ${field} is not a number array`);
+    }
+    return parsed;
+  }
+
+  _parsePersistedStringArray(value: string | null, field: string): string[] {
+    if (!value) return [];
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.some((entry) => typeof entry !== 'string')
+    ) {
+      throw new Error(`Persisted ${field} is not a string array`);
+    }
+    return parsed;
+  }
+
+  async _loadPersistedGameResult(
+    match: WorkerMatchState,
+  ): Promise<GameResultMessage['result'] | null> {
+    const rows = await this.env.DB.prepare(
+      'SELECT account_id, display_name_snapshot, revealed_option_index, revealed_option_label, ' +
+        'revealed_input_text, revealed_bucket_key, revealed_bucket_label, won_game, ' +
+        'earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
+        'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
+        'winning_bucket_keys_json, voided, void_reason, normalization_mode ' +
+        'FROM vote_logs WHERE match_id = ? AND game_number = ? ORDER BY id ASC',
+    )
+      .bind(match.matchId, match.currentGame)
+      .all();
+
+    const voteLogs = rows.results as unknown as PersistedVoteLogRow[];
+    if (voteLogs.length === 0) {
+      return null;
+    }
+
+    const attachedHumanPlayers = [...match.players.values()].filter(
+      (player) =>
+        !this._isAiBot(player.accountId) &&
+        (!player.forfeited || player.forfeitedAtGame === match.currentGame),
+    );
+    if (voteLogs.length !== attachedHumanPlayers.length) {
+      throw new Error(
+        `Persisted vote log count mismatch for ${match.matchId}:${match.currentGame}`,
+      );
+    }
+
+    const voteLogsByAccountId = new Map(
+      voteLogs.map((voteLog) => [voteLog.account_id, voteLog]),
+    );
+    if (voteLogsByAccountId.size !== voteLogs.length) {
+      throw new Error(
+        `Duplicate persisted vote logs detected for ${match.matchId}:${match.currentGame}`,
+      );
+    }
+
+    const summary = voteLogs[0];
+    if (!summary) {
+      return null;
+    }
+
+    for (const voteLog of voteLogs) {
+      if (
+        voteLog.player_count !== summary.player_count ||
+        voteLog.valid_reveal_count !== summary.valid_reveal_count ||
+        voteLog.top_count !== summary.top_count ||
+        voteLog.winner_count !== summary.winner_count ||
+        voteLog.voided !== summary.voided ||
+        voteLog.void_reason !== summary.void_reason ||
+        voteLog.normalization_mode !== summary.normalization_mode ||
+        voteLog.winning_option_indexes_json !==
+          summary.winning_option_indexes_json ||
+        voteLog.winning_bucket_keys_json !== summary.winning_bucket_keys_json
+      ) {
+        throw new Error(
+          `Persisted vote log summary mismatch for ${match.matchId}:${match.currentGame}`,
+        );
+      }
+    }
+
+    const winningOptionIndexes = this._parsePersistedNumberArray(
+      summary.winning_option_indexes_json,
+      'winning_option_indexes_json',
+    );
+    const winningBucketKeys = this._parsePersistedStringArray(
+      summary.winning_bucket_keys_json,
+      'winning_bucket_keys_json',
+    );
+
+    const players = attachedHumanPlayers.map((playerState) => {
+      const voteLog = voteLogsByAccountId.get(playerState.accountId);
+      if (!voteLog) {
+        throw new Error(
+          `Missing persisted vote log for ${playerState.accountId} in ${match.matchId}:${match.currentGame}`,
+        );
+      }
+
+      let newBalance = playerState.currentBalance + voteLog.net_delta;
+      if (newBalance < MIN_ALLOWED_BALANCE) {
+        newBalance = MIN_ALLOWED_BALANCE;
+      }
+
+      return {
+        accountId: voteLog.account_id,
+        displayName: voteLog.display_name_snapshot ?? playerState.displayName,
+        revealedOptionIndex: voteLog.revealed_option_index,
+        revealedOptionLabel: voteLog.revealed_option_label,
+        revealedInputText: voteLog.revealed_input_text,
+        revealedBucketKey: voteLog.revealed_bucket_key,
+        revealedBucketLabel: voteLog.revealed_bucket_label,
+        wonGame: voteLog.won_game === 1,
+        earnsCoordinationCredit: voteLog.earns_coordination_credit === 1,
+        antePaid: voteLog.ante_amount,
+        gamePayout: voteLog.game_payout,
+        netDelta: voteLog.net_delta,
+        newBalance,
+      };
+    });
+
+    const pot = voteLogs.reduce((sum, voteLog) => sum + voteLog.ante_amount, 0);
+    const totalPayout = voteLogs.reduce(
+      (sum, voteLog) => sum + voteLog.game_payout,
+      0,
+    );
+    const payoutPerWinner =
+      summary.winner_count > 0
+        ? Math.max(...players.map((player) => player.gamePayout))
+        : 0;
+
+    return {
+      gameNum: match.currentGame,
+      voided: summary.voided === 1,
+      voidReason: summary.void_reason,
+      playerCount: summary.player_count,
+      pot,
+      dustBurned: pot - totalPayout,
+      validRevealCount: summary.valid_reveal_count,
+      topCount: summary.top_count,
+      winningOptionIndexes,
+      winningBucketKeys,
+      winnerCount: summary.winner_count,
+      payoutPerWinner,
+      normalizationMode: summary.normalization_mode,
+      players,
+    };
+  }
+
   async _hasPersistedVoteLogsForCurrentGame(
     match: WorkerMatchState,
-  ): Promise<boolean> {
+  ): Promise<boolean | null> {
     try {
       const row = await this.env.DB.prepare(
         'SELECT 1 AS found FROM vote_logs WHERE match_id = ? AND game_number = ? LIMIT 1',
@@ -2848,11 +3094,11 @@ export class GameRoom {
         match.matchId,
         error,
       );
-      return false;
+      return null;
     }
   }
 
-  async _isMatchAlreadyCompleted(matchId: string): Promise<boolean> {
+  async _isMatchAlreadyCompleted(matchId: string): Promise<boolean | null> {
     try {
       const row = await this.env.DB.prepare(
         'SELECT status FROM matches WHERE match_id = ?',
@@ -2862,7 +3108,7 @@ export class GameRoom {
       return row?.status === 'completed';
     } catch (error) {
       console.error('D1: failed to check match completion for', matchId, error);
-      return false;
+      return null;
     }
   }
 

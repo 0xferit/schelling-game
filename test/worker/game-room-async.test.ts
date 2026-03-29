@@ -28,6 +28,7 @@ function createRoom(envOverrides: Partial<Env> = {}) {
     prepare: vi.fn(() => ({
       bind: vi.fn(() => ({
         first: vi.fn().mockResolvedValue({ token_balance: 0 }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
         run: vi.fn().mockResolvedValue(undefined),
       })),
     })),
@@ -1338,11 +1339,15 @@ describe('GameRoom async task tracking', () => {
     vi.useFakeTimers();
 
     try {
-      const voteLogFirst = vi.fn().mockResolvedValue(null);
+      const voteLogsAll = vi.fn().mockResolvedValue({ results: [] });
       const prepare = vi.fn((sql: string) => ({
         bind: (...args: unknown[]) => {
-          if (sql.includes('SELECT 1 AS found FROM vote_logs')) {
-            return { first: voteLogFirst };
+          if (
+            sql.includes(
+              'FROM vote_logs WHERE match_id = ? AND game_number = ?',
+            )
+          ) {
+            return { all: voteLogsAll };
           }
           return { sql, args };
         },
@@ -1452,6 +1457,306 @@ describe('GameRoom async task tracking', () => {
           ([, payload]) => payload?.type === 'game_result',
         ),
       ).toBe(true);
+
+      if (match.resultsTimer) clearTimeout(match.resultsTimer);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reuses persisted vote logs during non-AI recovery without rerunning normalization', async () => {
+    const voteLogsAll = vi.fn().mockResolvedValue({
+      results: [
+        {
+          account_id: 'acct-1',
+          display_name_snapshot: 'Alice',
+          revealed_option_index: null,
+          revealed_option_label: null,
+          revealed_input_text: 'Paris',
+          revealed_bucket_key: 'bucket:paris',
+          revealed_bucket_label: 'Paris',
+          won_game: 1,
+          earns_coordination_credit: 1,
+          ante_amount: GAME_ANTE,
+          game_payout: GAME_ANTE + Math.floor(GAME_ANTE / 2),
+          net_delta: Math.floor(GAME_ANTE / 2),
+          player_count: 3,
+          valid_reveal_count: 3,
+          top_count: 2,
+          winner_count: 2,
+          winning_option_indexes_json: '[]',
+          winning_bucket_keys_json: '["bucket:paris"]',
+          voided: 0,
+          void_reason: null,
+          normalization_mode: 'llm',
+        },
+        {
+          account_id: 'acct-2',
+          display_name_snapshot: 'Bob',
+          revealed_option_index: null,
+          revealed_option_label: null,
+          revealed_input_text: 'paris',
+          revealed_bucket_key: 'bucket:paris',
+          revealed_bucket_label: 'Paris',
+          won_game: 1,
+          earns_coordination_credit: 1,
+          ante_amount: GAME_ANTE,
+          game_payout: GAME_ANTE + Math.floor(GAME_ANTE / 2),
+          net_delta: Math.floor(GAME_ANTE / 2),
+          player_count: 3,
+          valid_reveal_count: 3,
+          top_count: 2,
+          winner_count: 2,
+          winning_option_indexes_json: '[]',
+          winning_bucket_keys_json: '["bucket:paris"]',
+          voided: 0,
+          void_reason: null,
+          normalization_mode: 'llm',
+        },
+        {
+          account_id: 'acct-3',
+          display_name_snapshot: 'Carol',
+          revealed_option_index: null,
+          revealed_option_label: null,
+          revealed_input_text: 'London',
+          revealed_bucket_key: 'bucket:london',
+          revealed_bucket_label: 'London',
+          won_game: 0,
+          earns_coordination_credit: 0,
+          ante_amount: GAME_ANTE,
+          game_payout: 0,
+          net_delta: -GAME_ANTE,
+          player_count: 3,
+          valid_reveal_count: 3,
+          top_count: 2,
+          winner_count: 2,
+          winning_option_indexes_json: '[]',
+          winning_bucket_keys_json: '["bucket:paris"]',
+          voided: 0,
+          void_reason: null,
+          normalization_mode: 'llm',
+        },
+      ],
+    });
+    const prepare = vi.fn((sql: string) => ({
+      bind: (...args: unknown[]) => {
+        if (
+          sql.includes('FROM vote_logs WHERE match_id = ? AND game_number = ?')
+        ) {
+          return { all: voteLogsAll };
+        }
+        return { sql, args };
+      },
+    }));
+    const batch = vi.fn();
+    const { room } = createRoom({
+      DB: { prepare, batch } as unknown as D1Database,
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    const normalizeOpenTextReveals = vi.spyOn(
+      room,
+      '_normalizeOpenTextReveals',
+    );
+    const broadcastToMatch = vi
+      .spyOn(room, '_broadcastToMatch')
+      .mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'settling';
+    match.currentGame = 1;
+    match.prompts = [
+      {
+        id: 101,
+        text: 'Name the most iconic city.',
+        type: 'open_text',
+        category: 'culture',
+        maxLength: 64,
+        placeholder: 'e.g. Paris',
+      },
+    ];
+    match.players.set('acct-1', {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 5_000,
+      currentBalance: 5_000,
+      committed: true,
+      revealed: true,
+      hash: createOpenTextCommitHash('Paris', 'a'.repeat(64)),
+      optionIndex: null,
+      answerText: 'Paris',
+      normalizedRevealText: 'paris',
+      salt: 'a'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('acct-2', {
+      accountId: 'acct-2',
+      displayName: 'Bob',
+      ws: null,
+      startingBalance: 5_000,
+      currentBalance: 5_000,
+      committed: true,
+      revealed: true,
+      hash: createOpenTextCommitHash('paris', 'b'.repeat(64)),
+      optionIndex: null,
+      answerText: 'paris',
+      normalizedRevealText: 'paris',
+      salt: 'b'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('acct-3', {
+      accountId: 'acct-3',
+      displayName: 'Carol',
+      ws: null,
+      startingBalance: 5_000,
+      currentBalance: 5_000,
+      committed: true,
+      revealed: true,
+      hash: createOpenTextCommitHash('London', 'c'.repeat(64)),
+      optionIndex: null,
+      answerText: 'London',
+      normalizedRevealText: 'london',
+      salt: 'c'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+
+    await room._finalizeGame(match);
+
+    expect(voteLogsAll).toHaveBeenCalledTimes(1);
+    expect(normalizeOpenTextReveals).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+    expect(match.phase).toBe('results');
+    expect(match.lastSettledGame).toBe(1);
+    expect(match.players.get('acct-1')?.currentBalance).toBe(
+      5_000 + Math.floor(GAME_ANTE / 2),
+    );
+    expect(match.players.get('acct-3')?.currentBalance).toBe(5_000 - GAME_ANTE);
+    expect(match.lastGameResult).toMatchObject({
+      gameNum: 1,
+      normalizationMode: 'llm',
+      winningBucketKeys: ['bucket:paris'],
+    });
+    expect(
+      broadcastToMatch.mock.calls.find(
+        ([, payload]) => payload?.type === 'game_result',
+      )?.[1],
+    ).toMatchObject({
+      type: 'game_result',
+      result: {
+        normalizationMode: 'llm',
+        players: [
+          {
+            accountId: 'acct-1',
+            revealedBucketKey: 'bucket:paris',
+            newBalance: 5_000 + Math.floor(GAME_ANTE / 2),
+          },
+          {
+            accountId: 'acct-2',
+            revealedBucketKey: 'bucket:paris',
+            newBalance: 5_000 + Math.floor(GAME_ANTE / 2),
+          },
+          {
+            accountId: 'acct-3',
+            revealedBucketKey: 'bucket:london',
+            newBalance: 5_000 - GAME_ANTE,
+          },
+        ],
+      },
+    });
+
+    if (match.resultsTimer) clearTimeout(match.resultsTimer);
+  });
+
+  it('retries settling recovery when the persisted vote-log read fails', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const voteLogsAll = vi.fn().mockRejectedValue(new Error('read flake'));
+      const prepare = vi.fn((sql: string) => ({
+        bind: (...args: unknown[]) => {
+          if (
+            sql.includes(
+              'FROM vote_logs WHERE match_id = ? AND game_number = ?',
+            )
+          ) {
+            return { all: voteLogsAll };
+          }
+          return { sql, args };
+        },
+      }));
+      const batch = vi.fn();
+      const { room } = createRoom({
+        DB: { prepare, batch } as unknown as D1Database,
+      });
+      vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+      const normalizeOpenTextReveals = vi.spyOn(
+        room,
+        '_normalizeOpenTextReveals',
+      );
+      const broadcastToMatch = vi
+        .spyOn(room, '_broadcastToMatch')
+        .mockImplementation(() => {});
+
+      const match = createMatch();
+      match.phase = 'settling';
+      match.currentGame = 1;
+      match.prompts = [
+        {
+          id: 101,
+          text: 'Name the most iconic city.',
+          type: 'open_text',
+          category: 'culture',
+          maxLength: 64,
+          placeholder: 'e.g. Paris',
+        },
+      ];
+      match.players.set('acct-1', {
+        accountId: 'acct-1',
+        displayName: 'Alice',
+        ws: null,
+        startingBalance: 5_000,
+        currentBalance: 5_000,
+        committed: true,
+        revealed: true,
+        hash: createOpenTextCommitHash('Paris', 'a'.repeat(64)),
+        optionIndex: null,
+        answerText: 'Paris',
+        normalizedRevealText: 'paris',
+        salt: 'a'.repeat(64),
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+
+      await room._finalizeGame(match);
+
+      expect(voteLogsAll).toHaveBeenCalledTimes(1);
+      expect(normalizeOpenTextReveals).not.toHaveBeenCalled();
+      expect(batch).not.toHaveBeenCalled();
+      expect(match.phase).toBe('settling');
+      expect(match.lastSettledGame).toBe(0);
+      expect(match.lastGameResult).toBeNull();
+      expect(match.resultsTimer).not.toBeNull();
+      expect(
+        broadcastToMatch.mock.calls.some(
+          ([, payload]) => payload?.type === 'game_result',
+        ),
+      ).toBe(false);
 
       if (match.resultsTimer) clearTimeout(match.resultsTimer);
     } finally {
@@ -1588,6 +1893,74 @@ describe('GameRoom async task tracking', () => {
           ([, payload]) => payload?.type === 'match_over',
         ),
       ).toBe(true);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries end-match recovery when the completion probe read fails', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const statusFirst = vi.fn().mockRejectedValue(new Error('read flake'));
+      const prepare = vi.fn((sql: string) => ({
+        bind: (...args: unknown[]) => {
+          if (sql.includes('SELECT status FROM matches')) {
+            return { first: statusFirst };
+          }
+          return { sql, args };
+        },
+      }));
+      const batch = vi.fn();
+      const { room } = createRoom({
+        DB: { prepare, batch } as unknown as D1Database,
+      });
+      vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+      const deleteMatchCheckpoint = vi
+        .spyOn(room, '_deleteMatchCheckpoint')
+        .mockImplementation(() => {});
+      const broadcastToMatch = vi
+        .spyOn(room, '_broadcastToMatch')
+        .mockImplementation(() => {});
+
+      const match = createMatch();
+      match.phase = 'results';
+      match.players.set('acct-1', {
+        accountId: 'acct-1',
+        displayName: 'Alice',
+        ws: null,
+        startingBalance: 100,
+        currentBalance: 120,
+        committed: true,
+        revealed: true,
+        hash: null,
+        optionIndex: 0,
+        answerText: null,
+        normalizedRevealText: null,
+        salt: 'a'.repeat(64),
+        forfeited: false,
+        forfeitedAtGame: null,
+        disconnectedAt: null,
+        graceTimer: null,
+        pendingAiCommit: false,
+      });
+      room.activeMatches.set(match.matchId, match);
+
+      await room._endMatch(match);
+
+      expect(statusFirst).toHaveBeenCalledTimes(1);
+      expect(batch).not.toHaveBeenCalled();
+      expect(match.phase).toBe('ending');
+      expect(match.resultsTimer).not.toBeNull();
+      expect(deleteMatchCheckpoint).not.toHaveBeenCalled();
+      expect(
+        broadcastToMatch.mock.calls.some(
+          ([, payload]) => payload?.type === 'match_over',
+        ),
+      ).toBe(false);
+
+      if (match.resultsTimer) clearTimeout(match.resultsTimer);
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();
