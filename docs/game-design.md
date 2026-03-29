@@ -8,49 +8,49 @@ Authentication, transport, persistence, leaderboard implementation, and UI are o
 
 ## 1. Game Summary
 
-The Schelling Game is a multiplayer coordination game. In each round, every player independently picks the option they expect the most other players to pick. Answers are hidden during commit, opened during reveal, and settled by exact-match plurality.
+The Schelling Game is a multiplayer coordination game played as matches. In each game within a match, every player independently picks the option they expect the most other players to pick. Answers are hidden during commit, opened during reveal, and settled by exact-match plurality.
 
-The game distinguishes between two outcomes:
+Each game distinguishes between two outcomes:
 
-- economic outcome: who wins the round pot
+- economic outcome: who wins the game pot
 - coordination outcome: whether a winning choice showed actual shared convergence
 
 The intended skill is not specialist knowledge. It is identifying focal points that other ordinary players will also identify.
 
 ## 2. Core Concepts
 
-- Match: one complete game with any odd number of players from `3` to `21`.
-- Round: one `commit -> reveal -> results` cycle built around one question.
+- Match: one complete session with any odd number of players from `3` to `21`.
+- Game: one `commit -> reveal -> results` cycle built around one question.
 - Question: a prompt with a fixed ordered list of discrete answer options.
-- Attached player: a player still counted for round accounting. A forfeited player is attached only for the round in which they forfeit; they are detached for all subsequent rounds.
+- Attached player: a player still counted for game accounting. A forfeited player is attached only for the game in which they forfeit; they are detached for all subsequent games.
 - Valid reveal: a reveal from an attached, non-forfeited player who committed in time, revealed in time, and passed commitment verification.
-- `topCount`: the largest number of valid reveals on any single option in a round.
+- `topCount`: the largest number of valid reveals on any single option in a game.
 
 ## 3. Match Format
 
 - Match size is any odd number from `3` to `21`.
-- Every match lasts `10` rounds unless it ends early under the rule in section 4.
-- Every round uses one `select` question from the canonical public question pool.
+- Every match lasts `10` games unless it ends early under the rule in section 4.
+- Every game uses one `select` question from the canonical public question pool.
 - Questions are used without replacement inside a match.
 - Phase timings are fixed (source of truth: `src/domain/constants.ts`):
   - commit: `60` seconds
   - reveal: `15` seconds
   - results: `20` seconds
 
-## 4. Round Flow
+## 4. Game Flow
 
-For each round:
+For each game:
 
 1. A select question is presented.
 2. Every attached player is scheduled to ante `60`.
 3. During commit, each player chooses one option and submits a commitment hash.
-4. The round enters reveal when either all non-forfeited players have committed or the commit timer expires.
+4. The game enters reveal when either all non-forfeited players have committed or the commit timer expires.
 5. During reveal, each committed non-forfeited player reveals the exact option index and salt used in the commitment.
-6. The round finalizes when either all committed non-forfeited players have revealed or the reveal timer expires.
-7. The round is settled and the results phase runs for `20` seconds.
-8. The next round starts unless the match has ended.
+6. The game finalizes when either all committed non-forfeited players have revealed or the reveal timer expires.
+7. The game is settled and the results phase runs for `20` seconds.
+8. The next game starts unless the match has ended.
 
-The match ends after `10` rounds, or earlier only if no non-forfeited player remains able to reveal in future rounds.
+The match ends after `10` games, or earlier only if no non-forfeited player remains able to reveal in future games.
 
 ## 5. Disconnects, Reconnects, and Forfeits
 
@@ -66,14 +66,14 @@ If the player reconnects within `15` seconds:
 
 - they resume the same match
 - they may act only if the relevant phase is still open for them
-- if the phase already closed, they simply miss that action and are settled under the normal round rules
+- if the phase already closed, they simply miss that action and are settled under the normal game rules
 
 If the player does not reconnect within `15` seconds, they forfeit:
 
-- they are attached for the current round: the round settles normally with them included in the pot
+- they are attached for the current game: the game settles normally with them included in the pot
 - they may no longer commit or reveal
-- all future-round antes are charged as a one-time penalty when the forfeit round settles (burned: not redistributed to other players)
-- from the next round onward the player is detached: pot and results are calculated as if the match shrunk
+- all future-game antes are charged as a one-time penalty when the forfeit game settles (burned: not redistributed to other players)
+- from the next game onward the player is detached: pot and results are calculated as if the match shrunk
 
 ## 6. Questions and Commit-Reveal
 
@@ -84,7 +84,7 @@ Question rules:
 - each option has a stable zero-based index
 - clients must preserve the provided option order
 - scoring uses exact option identity, not numeric distance or proximity
-- option order must not be randomized within a round
+- option order must not be randomized within a game
 
 The commitment preimage is:
 
@@ -107,9 +107,9 @@ Reveal verification succeeds only if the recomputed hash exactly matches the com
 
 ## 7. Settlement and Coordination Credit
 
-### Round Ante
+### Game Ante
 
-Each round uses a fixed ante:
+Each game uses a fixed ante:
 
 `ante = 60`
 
@@ -121,20 +121,20 @@ Only valid reveals participate in plurality counting.
 
 A reveal is valid only if the player:
 
-- was attached and not already forfeited before the round began
+- was attached and not already forfeited before the game began
 - committed during commit phase
 - revealed during reveal phase
 - passed commitment verification
 
 ### Void Rule
 
-A round is voided only if there are zero valid reveals.
+A game is voided only if there are zero valid reveals.
 
-In a voided round:
+In a voided game:
 
-- all round antes are refunded
+- all game antes are refunded
 - no player receives coordination credit
-- no round winner is recorded
+- no game winner is recorded
 
 ### Exact-Match Plurality Winners
 
@@ -144,32 +144,32 @@ Definitions:
 - `topCount`: maximum value of `count(optionIndex)` across revealed options
 - `winningOptions`: every option index whose count equals `topCount`
 - `winnerCount`: number of players whose valid reveal is on a winning option
-- `roundPlayerCount`: number of attached players in the round
-- `pot = roundPlayerCount * 60`
+- `gamePlayerCount`: number of attached players in the game
+- `pot = gamePlayerCount * 60`
 
-A player wins the round if and only if:
+A player wins the game if and only if:
 
 - they produced a valid reveal, and
 - their revealed option index is in `winningOptions`
 
-All attached players who do not win lose the round.
+All attached players who do not win lose the game.
 
 Consequences:
 
 - if exactly one player reveals validly, that player wins the whole pot
 - if multiple options tie for top count, all players on those tied top options win
-- missing commit or missing reveal is equivalent to losing the round
+- missing commit or missing reveal is equivalent to losing the game
 
 ### Pot and Payout
 
-In a non-voided round:
+In a non-voided game:
 
 - every attached player contributes `60` to the pot
 - winners receive equal integer payouts computed as `floor(pot / winnerCount)`
-- losers receive no round payout
+- losers receive no game payout
 - if the pot does not divide evenly, the remainder is not distributed
 
-Per-player net round delta:
+Per-player net game delta:
 
 - winner: `floor(pot / winnerCount) - 60`
 - loser: `-60`
@@ -180,15 +180,15 @@ Economic settlement and coordination credit are intentionally separate.
 
 A player earns coordination credit if and only if:
 
-- the round is non-voided
-- the player won the round
+- the game is non-voided
+- the player won the game
 - `topCount >= 2`
 
 Consequences:
 
-- rounds with `topCount = 1` can still settle economically, but they do not count as successful coordination
-- this includes all-distinct rounds and single-valid-revealer rounds
-- unanimous rounds do award coordination credit
+- games with `topCount = 1` can still settle economically, but they do not count as successful coordination
+- this includes all-distinct games and single-valid-revealer games
+- unanimous games do award coordination credit
 - tied pluralities such as `2-2-1` award coordination credit to all winners on the tied top options
 
 ## 8. Question Design Policy
@@ -213,22 +213,22 @@ Canonical prompts may not rely on:
 
 Because settlement uses exact-match plurality, prompts should present discrete focal alternatives rather than numeric scales.
 
-The canonical pool may include a small calibration subset of intentionally obvious prompts. Calibration prompts are optional, must be answerable without lookup, and a `10`-round match may contain at most one such prompt.
+The canonical pool may include a small calibration subset of intentionally obvious prompts. Calibration prompts are optional, must be answerable without lookup, and a `10`-game match may contain at most one such prompt.
 
 ## 9. Worked Examples
 
 ### Zero Valid Reveals
 
-In a `3`-player round, if nobody produces a valid reveal:
+In a `3`-player game, if nobody produces a valid reveal:
 
-- the round is voided
+- the game is voided
 - the pot is effectively refunded rather than paid out
 - every player's net delta is `0`
 - nobody earns coordination credit
 
 ### Single Valid Revealer
 
-In a `3`-player round, if exactly one player reveals validly:
+In a `3`-player game, if exactly one player reveals validly:
 
 - `pot = 3 * 60 = 180`
 - `winnerCount = 1`
@@ -239,7 +239,7 @@ In a `3`-player round, if exactly one player reveals validly:
 
 ### `2-1` Split
 
-In a `3`-player round where two players pick the same winning option and one player picks another:
+In a `3`-player game where two players pick the same winning option and one player picks another:
 
 - `pot = 180`
 - `winnerCount = 2`
@@ -250,7 +250,7 @@ In a `3`-player round where two players pick the same winning option and one pla
 
 ### `2-2-1` Split
 
-In a `5`-player round where two options tie for first with two valid reveals each:
+In a `5`-player game where two options tie for first with two valid reveals each:
 
 - `pot = 5 * 60 = 300`
 - `winnerCount = 4`
@@ -261,7 +261,7 @@ In a `5`-player round where two options tie for first with two valid reveals eac
 
 ### Unanimous Convergence
 
-In a `5`-player round where all five players reveal the same option:
+In a `5`-player game where all five players reveal the same option:
 
 - `pot = 300`
 - `winnerCount = 5`
@@ -269,15 +269,15 @@ In a `5`-player round where all five players reveal the same option:
 - every player's net delta is `0`
 - every player earns coordination credit because `topCount = 5`
 
-### Forfeited Player in a Later Round
+### Forfeited Player in a Later Game
 
-In a `3`-player match, one player forfeited in round 2. In round 3 the two remaining active players reveal the same option:
+In a `3`-player match, one player forfeited in game 2. In game 3 the two remaining active players reveal the same option:
 
-- the forfeited player is detached, so `roundPlayerCount = 2` and `pot = 2 * 60 = 120`
+- the forfeited player is detached, so `gamePlayerCount = 2` and `pot = 2 * 60 = 120`
 - the two active players each pay `60`; both win
 - each winner gets `60`
 - each winner's net delta is `0`
-- the forfeited player is not part of this round at all
+- the forfeited player is not part of this game at all
 - both active players earn coordination credit because `topCount = 2`
 
 ## 10. Out of Scope

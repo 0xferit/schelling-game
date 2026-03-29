@@ -302,7 +302,7 @@ nav{display:flex;gap:.5rem}
   <!-- ── SUMMARY ───────────────────────────────────────────────── -->
   <div id="summary-view" class="view">
     <div class="card">
-      <h2>Game Over</h2>
+      <h2>Match Over</h2>
       <table id="summary-table">
         <thead><tr>
           <th>Player</th><th>Start</th><th>End</th><th>Net</th><th>Status</th>
@@ -369,8 +369,8 @@ nav{display:flex;gap:.5rem}
     </div>
 
     <div>
-      <p class="rules-section-label">Round Flow</p>
-      <p class="rules-text">Each round has three phases: Commit (60s), Reveal (15s), Results (20s). Every attached player antes 60 per round.</p>
+      <p class="rules-section-label">Game Flow</p>
+      <p class="rules-text">Each game has three phases: Commit (60s), Reveal (15s), Results (20s). Every attached player antes 60 per game.</p>
     </div>
 
     <div>
@@ -384,8 +384,8 @@ nav{display:flex;gap:.5rem}
     </div>
 
     <div>
-      <p class="rules-section-label">Voided Rounds</p>
-      <p class="rules-text">If nobody reveals in time, the round is voided and all antes are refunded.</p>
+      <p class="rules-section-label">Voided Games</p>
+      <p class="rules-text">If nobody reveals in time, the game is voided and all antes are refunded.</p>
     </div>
 
     <div>
@@ -395,12 +395,12 @@ nav{display:flex;gap:.5rem}
 
     <div>
       <p class="rules-section-label">Coordination Credit</p>
-      <p class="rules-text">Awarded only when a winner's option was picked by at least 2 players. Solo wins and all-distinct rounds give zero coordination credit.</p>
+      <p class="rules-text">Awarded only when a winner's option was picked by at least 2 players. Solo wins and all-distinct games give zero coordination credit.</p>
     </div>
 
     <div>
       <p class="rules-section-label">Disconnect / Forfeit</p>
-      <p class="rules-text">A disconnected player has 15 seconds to reconnect. After that they forfeit: all remaining antes are charged as a one-time penalty and they are removed from all subsequent rounds.</p>
+      <p class="rules-text">A disconnected player has 15 seconds to reconnect. After that they forfeit: all remaining antes are charged as a one-time penalty and they are removed from all subsequent games.</p>
     </div>
 
     <div>
@@ -1081,7 +1081,7 @@ function onRoundStart(msg) {
     if (alreadyCommitted) {
       $('#commit-status').textContent = hasPreimage
         ? 'Committed. Waiting for others...'
-        : 'Committed, but reveal key was lost (page reload). Cannot reveal this round.';
+        : 'Committed, but reveal key was lost (page reload). Cannot reveal this game.';
     } else {
       $('#commit-status').textContent = '';
     }
@@ -1098,7 +1098,7 @@ function onRoundStart(msg) {
       $('#commit-area').classList.remove('hidden');
       $('#commit-status').textContent = hasPreimage
         ? 'Committed. Waiting for reveal phase...'
-        : 'Committed, but reveal key was lost (page reload). Cannot reveal this round.';
+        : 'Committed, but reveal key was lost (page reload). Cannot reveal this game.';
     }
   }
 
@@ -1189,7 +1189,7 @@ function onPhaseChange(msg) {
     } else if (S.committed && !S.revealed) {
       // Committed but preimage lost (page reload after commit): can't reveal
       $('#commit-area').classList.remove('hidden');
-      $('#commit-status').textContent = 'Committed, but reveal key was lost. Cannot reveal this round.';
+      $('#commit-status').textContent = 'Committed, but reveal key was lost. Cannot reveal this game.';
     } else if (!S.committed) {
       $('#reveal-area').classList.add('hidden');
       $('#commit-status').textContent = 'You did not commit in time.';
