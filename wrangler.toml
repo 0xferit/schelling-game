@@ -16,6 +16,7 @@ migrations_dir = "d1-migrations"
 
 [ai]
 binding = "AI"
+remote = true
 
 [vars]
 AI_BOT_ENABLED = "true"
@@ -37,6 +38,7 @@ migrations_dir = "d1-migrations"
 
 [env.staging.ai]
 binding = "AI"
+remote = true
 
 [env.staging.vars]
 AI_BOT_ENABLED = "true"
