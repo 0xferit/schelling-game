@@ -931,7 +931,7 @@ footer{
       <div class="mech-step reveal reveal-delay-2">
         <span class="icon">II</span>
         <h3>Reveal</h3>
-        <p>Everyone opens their sealed answer. The server verifies each hash matches. <span id="reveal-seconds">15</span> seconds.</p>
+        <p>Reveal happens automatically when commit closes. Submitted answers are opened and each hash is verified before settlement.</p>
       </div>
       <div class="mech-step reveal reveal-delay-3">
         <span class="icon">III</span>
@@ -1381,8 +1381,8 @@ footer{
 
 /* ── Phase durations from server (single source of truth) ── */
 fetch('/api/game-config').then(function(r) { return r.json(); }).then(function(cfg) {
-  document.getElementById('commit-seconds').textContent = cfg.commitDuration;
-  document.getElementById('reveal-seconds').textContent = cfg.revealDuration;
+  var commitSeconds = document.getElementById('commit-seconds');
+  if (commitSeconds) commitSeconds.textContent = cfg.commitDuration;
 }).catch(function() {});
 
 /* ── Landing stats ───────────────────────── */
