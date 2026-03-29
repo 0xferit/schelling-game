@@ -49,6 +49,7 @@ function createConnectionState(displayName: string) {
     } as unknown as WebSocket,
     displayName,
     autoRequeue: false,
+    startNow: false,
     previousOpponents: new Set<string>(),
   };
 }
@@ -394,6 +395,107 @@ describe('GameRoom async task tracking', () => {
     expect(room.waitingQueue).toEqual(['acct-10']);
     expect(waitUntil).toHaveBeenCalledTimes(1);
     await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
+  });
+
+  it('starts immediately when all humans in an odd forming match vote start now', () => {
+    const { room } = createRoom();
+    const startFormingMatch = vi
+      .spyOn(room, '_startFormingMatch')
+      .mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+    room.formingMatch = {
+      players: ['acct-1', 'acct-2', 'acct-3'],
+      timer: null,
+      fillDeadlineMs: Date.now() + 30_000,
+    };
+
+    room._handleSetStartNow('acct-1', { value: true });
+    room._handleSetStartNow('acct-2', { value: true });
+    expect(startFormingMatch).not.toHaveBeenCalled();
+
+    room._handleSetStartNow('acct-3', { value: true });
+    expect(startFormingMatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start immediately on unanimous start-now votes for an even forming match', () => {
+    const { room } = createRoom();
+    const startFormingMatch = vi
+      .spyOn(room, '_startFormingMatch')
+      .mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+    room.connections.set('acct-4', createConnectionState('Drew'));
+    room.formingMatch = {
+      players: ['acct-1', 'acct-2', 'acct-3', 'acct-4'],
+      timer: null,
+      fillDeadlineMs: Date.now() + 30_000,
+    };
+
+    room._handleSetStartNow('acct-1', { value: true });
+    room._handleSetStartNow('acct-2', { value: true });
+    room._handleSetStartNow('acct-3', { value: true });
+    room._handleSetStartNow('acct-4', { value: true });
+
+    expect(startFormingMatch).not.toHaveBeenCalled();
+  });
+
+  it('includes start-now readiness data in queue state', () => {
+    const { room } = createRoom();
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+    room.connections.set('acct-4', createConnectionState('Spectator'));
+
+    must(room.connections.get('acct-1'), 'Expected Alice connection').startNow =
+      true;
+    must(room.connections.get('acct-3'), 'Expected Carol connection').startNow =
+      true;
+
+    room.formingMatch = {
+      players: ['acct-1', 'acct-2', 'acct-3'],
+      timer: null,
+      fillDeadlineMs: Date.now() + 30_000,
+    };
+
+    const participantState = room._buildQueueStateMsg(
+      'acct-1',
+      true,
+      false,
+    ) as {
+      startNow: boolean;
+      formingMatch: {
+        humanPlayerCount: number;
+        readyHumanCount: number;
+        youCanVoteStartNow: boolean;
+      } | null;
+    };
+    const spectatorState = room._buildQueueStateMsg('acct-4', false, false) as {
+      startNow: boolean;
+      formingMatch: {
+        humanPlayerCount: number;
+        readyHumanCount: number;
+        youCanVoteStartNow: boolean;
+      } | null;
+    };
+
+    expect(participantState.startNow).toBe(true);
+    expect(participantState.formingMatch).toMatchObject({
+      humanPlayerCount: 3,
+      readyHumanCount: 2,
+      youCanVoteStartNow: true,
+    });
+    expect(spectatorState.startNow).toBe(false);
+    expect(spectatorState.formingMatch).toMatchObject({
+      humanPlayerCount: 3,
+      readyHumanCount: 2,
+      youCanVoteStartNow: false,
+    });
   });
 
   it('caps immediately formed public matches at 21 players', () => {

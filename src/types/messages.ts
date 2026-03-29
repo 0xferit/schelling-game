@@ -5,6 +5,7 @@ import type { GameResultWithBalances, Question } from './domain';
 export type ClientMessage =
   | { type: 'join_queue' }
   | { type: 'leave_queue' }
+  | { type: 'set_start_now'; value: boolean }
   | { type: 'commit'; hash: string }
   | { type: 'reveal'; optionIndex: number; salt: string }
   | { type: 'question_rating'; rating: 'like' | 'dislike' };
@@ -17,11 +18,15 @@ export interface QueueStateMessage {
   queuedCount: number;
   queuedPlayers: string[];
   autoRequeue?: boolean;
+  startNow?: boolean;
   formingMatch: {
     playerCount: number;
+    humanPlayerCount: number;
+    readyHumanCount: number;
     players: string[];
     allowedSizes: number[];
-    fillDeadlineMs: number;
+    fillDeadlineMs: number | null;
+    youCanVoteStartNow: boolean;
   } | null;
 }
 

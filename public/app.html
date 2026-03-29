@@ -77,7 +77,24 @@ nav{display:flex;gap:.5rem}
 #queue-view .card{max-width:520px;margin:0 auto}
 #queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
 #queue-players li{background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:.2rem .75rem;font-size:.8rem;letter-spacing:.04em}
-#forming-banner{background:rgba(255,152,0,.1);border:1px solid var(--orange);border-radius:var(--radius);padding:.6rem 1rem;font-size:.9rem;color:var(--orange);text-align:center;margin-top:.75rem}
+#forming-banner{display:flex;flex-direction:column;gap:.9rem;background:linear-gradient(135deg,rgba(201,168,76,.08),rgba(255,152,0,.06));border:1px solid rgba(201,168,76,.35);border-radius:var(--radius);padding:.9rem 1rem;margin-top:.75rem;color:var(--text);transition:border-color .2s ease,background .2s ease,transform .2s ease}
+#forming-banner.is-armed{border-color:rgba(201,168,76,.7);background:linear-gradient(135deg,rgba(201,168,76,.14),rgba(255,152,0,.08));transform:translateY(-1px)}
+.forming-banner-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.forming-kicker{font-size:.68rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+.forming-title{font-size:1rem;line-height:1.25}
+.forming-title strong{font-family:var(--serif);font-size:1.4rem;font-weight:700;color:var(--accent2);margin-right:.3rem}
+.forming-timer-block{display:flex;align-items:baseline;gap:.45rem;white-space:nowrap;font-size:.82rem;color:var(--muted)}
+.forming-timer-block strong{font-family:var(--serif);font-size:1.35rem;line-height:1;color:var(--accent2)}
+.forming-banner-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:.85rem;flex-wrap:wrap}
+.forming-readiness{display:flex;flex-direction:column;gap:.1rem;max-width:27rem}
+#start-now-meta{font-size:.76rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text)}
+#start-now-note{font-size:.8rem;color:var(--muted);line-height:1.45}
+#start-now-btn{min-width:170px}
+#start-now-btn[aria-pressed='true']{border-color:var(--accent);color:var(--accent);background:rgba(201,168,76,.08)}
+@media(max-width:560px){
+  .forming-banner-foot{align-items:stretch}
+  #start-now-btn{width:100%}
+}
 .toggle-row{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--muted);margin-top:.75rem}
 .toggle-row input[type=checkbox]{width:auto;accent-color:var(--accent)}
 /* Play */
@@ -271,8 +288,23 @@ nav{display:flex;gap:.5rem}
       <div style="font-size:.9rem;color:var(--muted)">Players in queue: <strong id="queue-count">0</strong></div>
       <ul id="queue-players"></ul>
       <div id="forming-banner" class="hidden">
-        Match forming: <strong id="forming-count">0</strong> players reserved.
-        Fill closes in <strong id="forming-timer">--</strong>s
+        <div class="forming-banner-head">
+          <div>
+            <div class="forming-kicker">Forming Match</div>
+            <div class="forming-title"><strong id="forming-count">0</strong> players reserved</div>
+          </div>
+          <div class="forming-timer-block">
+            <span>Fill closes in</span>
+            <strong id="forming-timer">--</strong>s
+          </div>
+        </div>
+        <div class="forming-banner-foot">
+          <div class="forming-readiness">
+            <span id="start-now-meta">0 / 0 humans ready to start</span>
+            <span id="start-now-note">When every human in this forming match votes yes, the match launches immediately.</span>
+          </div>
+          <button class="btn-ghost hidden" id="start-now-btn" type="button" aria-pressed="false">Vote Start Now</button>
+        </div>
       </div>
       <div class="action-row">
         <button class="btn-primary hidden" id="return-to-game-btn">Back to Game</button>
@@ -508,6 +540,7 @@ const S = {
   tokenBalance: 0,
   autoRequeue: true,
   aiAssistedMatch: false,
+  startNow: false,
   // queue
   inQueue: false,
   queuedPlayers: [],
@@ -1011,12 +1044,16 @@ function syncAiAssistedUi() {
 $('#join-queue-btn').addEventListener('click', () => {
   wsSend({ type: 'join_queue' });
   S.autoRequeue = true;
+  S.startNow = false;
+  syncStartNowUI();
   syncAutoRequeueUI();
 });
 
 $('#leave-queue-btn').addEventListener('click', () => {
   wsSend({ type: 'leave_queue' });
   S.autoRequeue = false;
+  S.startNow = false;
+  syncStartNowUI();
   syncAutoRequeueUI();
 });
 
@@ -1032,18 +1069,36 @@ $('#auto-requeue-toggle').addEventListener('change', (e) => {
   // auto-requeue is session state; toggling while not queued is just a preference
 });
 
+$('#start-now-btn').addEventListener('click', () => {
+  const nextValue = !S.startNow;
+  S.startNow = nextValue;
+  syncStartNowUI();
+  wsSend({ type: 'set_start_now', value: nextValue });
+});
+
 function syncAutoRequeueUI() {
   $('#auto-requeue-toggle').checked = S.autoRequeue;
   $('#summary-auto-requeue').checked = S.autoRequeue;
 }
 
+function syncStartNowUI() {
+  const btn = $('#start-now-btn');
+  btn.setAttribute('aria-pressed', S.startNow ? 'true' : 'false');
+  btn.textContent = S.startNow ? 'Ready to Start' : 'Vote Start Now';
+}
+
 function onQueueState(msg) {
-  S.inQueue = msg.status === 'queued';
+  S.inQueue = msg.status === 'queued' || msg.status === 'forming';
   S.queuedPlayers = msg.queuedPlayers || [];
   S.formingMatch = msg.formingMatch || null;
   if (msg.autoRequeue !== undefined) {
     S.autoRequeue = msg.autoRequeue;
     syncAutoRequeueUI();
+  }
+  if (msg.startNow !== undefined) {
+    S.startNow = msg.startNow;
+  } else if (!S.formingMatch) {
+    S.startNow = false;
   }
   updateNavigation();
 
@@ -1073,9 +1128,26 @@ function renderQueue() {
   if (S.formingMatch) {
     $('#forming-banner').classList.remove('hidden');
     $('#forming-count').textContent = S.formingMatch.playerCount;
+    const readyCount = S.formingMatch.readyHumanCount || 0;
+    const humanCount = S.formingMatch.humanPlayerCount || 0;
+    const oddSized = S.formingMatch.playerCount % 2 === 1;
+    $('#start-now-meta').textContent = readyCount + ' / ' + humanCount + ' humans ready to start';
+    let note = 'When every human in this forming match votes yes, the match launches immediately.';
+    if (!oddSized) {
+      note = 'Start now arms the lobby now, but launch still waits for an odd reserved count.';
+    } else if (S.startNow) {
+      note = 'Your vote is in. The match starts as soon as every other human votes yes.';
+    }
+    $('#start-now-note').textContent = note;
+    $('#forming-banner').classList.toggle('is-armed', oddSized && readyCount > 0);
+    $('#start-now-btn').classList.toggle('hidden', !S.formingMatch.youCanVoteStartNow);
+    syncStartNowUI();
     updateFormingTimer();
   } else {
     $('#forming-banner').classList.add('hidden');
+    $('#forming-banner').classList.remove('is-armed');
+    S.startNow = false;
+    syncStartNowUI();
   }
 
   // buttons
@@ -1103,6 +1175,7 @@ function onMatchStarted(msg) {
   S.matchId = msg.matchId;
   S.aiAssistedMatch = !!msg.aiAssisted;
   S.inQueue = false;
+  S.startNow = false;
   S.queuedPlayers = [];
   S.formingMatch = null;
   S.players = msg.players;
@@ -1857,6 +1930,8 @@ function quoteLabel(label) {
 
 $('#requeue-btn').addEventListener('click', () => {
   S.autoRequeue = true;
+  S.startNow = false;
+  syncStartNowUI();
   syncAutoRequeueUI();
   wsSend({ type: 'join_queue' });
   showView('queue');
