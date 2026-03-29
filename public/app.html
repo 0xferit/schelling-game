@@ -73,6 +73,8 @@ nav{display:flex;gap:.5rem}
 #rules-overlay .rules-example strong{color:var(--accent)}
 .info-banner{background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.45);border-radius:var(--radius);padding:.8rem 1rem;font-size:.85rem;line-height:1.5;color:var(--text)}
 .info-banner strong{color:var(--orange)}
+.danger-banner{background:linear-gradient(135deg,rgba(229,57,53,.16),rgba(229,57,53,.06));border:1px solid rgba(229,57,53,.4);border-radius:var(--radius);padding:.9rem 1rem;font-size:.86rem;line-height:1.5;color:var(--text)}
+.danger-banner strong{color:#ffb3a9}
 /* Queue */
 #queue-view .card{max-width:520px;margin:0 auto}
 #queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
@@ -149,6 +151,21 @@ nav{display:flex;gap:.5rem}
 .dot.forfeited{background:var(--red)}
 .dot.disconnected{background:var(--red);animation:pulse 1s infinite alternate}
 .balance-badge{font-family:var(--serif);font-size:.8rem;color:var(--muted)}
+#forfeit-panel{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(229,57,53,.1),rgba(17,17,17,.96) 60%);border:1px solid rgba(229,57,53,.24);border-radius:var(--radius);padding:1rem}
+#forfeit-panel::before{content:'';position:absolute;inset:auto -20% 0 35%;height:140px;background:radial-gradient(circle at center,rgba(229,57,53,.16),transparent 70%);pointer-events:none;opacity:.8;transform:translateY(45%);transition:transform .25s ease,opacity .25s ease}
+#forfeit-panel:hover::before{transform:translateY(30%);opacity:1}
+#forfeit-panel.is-locked{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(17,17,17,.96) 65%);border-color:rgba(255,255,255,.08)}
+.forfeit-kicker{font-size:.68rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#ffb3a9}
+.forfeit-copy{margin-top:.45rem;font-size:.83rem;line-height:1.55;color:var(--muted)}
+#forfeit-match-btn{position:relative;width:100%;display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin-top:.9rem;padding:.95rem 1rem;border:1px solid rgba(229,57,53,.4);border-radius:calc(var(--radius) + 1px);background:rgba(229,57,53,.08);color:var(--text);font-weight:500;text-align:left;text-transform:none;letter-spacing:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+#forfeit-match-btn:hover:not(:disabled){transform:translateY(-1px);border-color:rgba(229,57,53,.72);background:rgba(229,57,53,.15);box-shadow:0 12px 28px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.04)}
+#forfeit-match-btn:disabled{opacity:1;cursor:default;transform:none;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08);box-shadow:none}
+.forfeit-btn-copy{display:flex;flex-direction:column;gap:.26rem}
+.forfeit-btn-label{font-family:var(--serif);font-size:1.18rem;font-weight:600;line-height:1}
+.forfeit-btn-meta{font-size:.79rem;line-height:1.45;color:var(--muted)}
+.forfeit-btn-state{align-self:center;font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:#ffb3a9}
+#forfeit-panel.is-locked .forfeit-kicker,#forfeit-panel.is-locked .forfeit-btn-state{color:rgba(255,255,255,.5)}
+#forfeit-panel.is-locked .forfeit-copy,#forfeit-panel.is-locked .forfeit-btn-meta{color:var(--muted)}
 /* Summary */
 #summary-view .card{max-width:760px;margin:0 auto}
 #summary-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
@@ -206,6 +223,17 @@ nav{display:flex;gap:.5rem}
 /* Action rows & rating */
 .action-row{display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap}
 #rating-row{display:flex;align-items:center;gap:.75rem;margin-top:.75rem;font-size:.85rem;color:var(--muted)}
+#forfeit-overlay{position:fixed;inset:0;background:rgba(0,0,0,.76);display:flex;align-items:center;justify-content:center;z-index:210;padding:1rem;backdrop-filter:blur(12px)}
+#forfeit-overlay .forfeit-dialog{width:min(440px,100%);background:linear-gradient(180deg,rgba(50,14,14,.98),rgba(17,17,17,.98) 72%);border:1px solid rgba(229,57,53,.3);border-radius:var(--radius);padding:1.4rem;box-shadow:0 28px 60px rgba(0,0,0,.5);animation:forfeitDialogIn .2s ease-out}
+.forfeit-dialog-eyebrow{font-size:.68rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#ffb3a9}
+#forfeit-overlay h3{margin-top:.4rem;font-size:2rem;line-height:.95}
+#forfeit-overlay p{margin-top:.75rem;font-size:.9rem;line-height:1.6;color:var(--muted)}
+.forfeit-dialog-rule{margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.08);font-size:.78rem;line-height:1.5;color:var(--text)}
+.forfeit-dialog-rule strong{display:block;font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;color:#ffb3a9}
+.forfeit-dialog-actions{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1.1rem;flex-wrap:wrap}
+#confirm-forfeit-btn{background:linear-gradient(180deg,rgba(229,57,53,.92),rgba(188,32,28,.92));border:1px solid rgba(255,179,169,.16);color:#fff}
+#confirm-forfeit-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 14px 26px rgba(92,10,8,.34)}
+@keyframes forfeitDialogIn{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
 /* ── Narrow viewport (phones) ─────────────────────────────────── */
 @media(max-width:480px){
   header{flex-direction:column;align-items:stretch;text-align:center}
@@ -217,6 +245,10 @@ nav{display:flex;gap:.5rem}
   .action-row{flex-direction:column}
   .action-row button{width:100%}
   .action-row .toggle-row{margin-left:0;justify-content:center}
+  #forfeit-match-btn{align-items:flex-start;flex-direction:column}
+  .forfeit-btn-state{align-self:flex-start}
+  .forfeit-dialog-actions{flex-direction:column}
+  .forfeit-dialog-actions button{width:100%}
 }
 @media(max-width:560px){
   #summary-stats,#summary-highlights-grid{grid-template-columns:1fr}
@@ -334,6 +366,9 @@ nav{display:flex;gap:.5rem}
         <div id="off-record-banner" class="info-banner hidden" style="margin-bottom:1rem">
           <strong>Off the record.</strong> An AI backfill joined this match, so balances, streaks, and leaderboard standing will not change.
         </div>
+        <div id="forfeit-status-banner" class="danger-banner hidden" style="margin-bottom:1rem">
+          <strong>Forfeit locked in.</strong> The rest of this run will settle without you. Final standings appear when the match closes.
+        </div>
         <div id="question-text">Waiting for game...</div>
         <div id="select-grid"></div>
         <div id="commit-area" class="hidden">
@@ -370,6 +405,17 @@ nav{display:flex;gap:.5rem}
       <div id="players-panel">
         <h3>Players</h3>
         <div id="players-list"></div>
+      </div>
+      <div id="forfeit-panel">
+        <div class="forfeit-kicker">Exit Match</div>
+        <p class="forfeit-copy" id="forfeit-panel-copy">Leave the current run if you do not want to keep taking turns.</p>
+        <button id="forfeit-match-btn" type="button">
+          <span class="forfeit-btn-copy">
+            <span class="forfeit-btn-label">Forfeit Match</span>
+            <span class="forfeit-btn-meta" id="forfeit-btn-meta">Stops your future turns immediately.</span>
+          </span>
+          <span class="forfeit-btn-state" id="forfeit-btn-state">Irreversible</span>
+        </button>
       </div>
     </div>
   </div>
@@ -518,6 +564,22 @@ nav{display:flex;gap:.5rem}
       <div class="rules-example">
         <strong>Solo reveal</strong> (3 players, 1 valid reveal, pot = 7560): That player wins the full 7560 (net +5040) but earns no coordination credit because only one option was revealed.
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="forfeit-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="forfeit-dialog-title">
+  <div class="forfeit-dialog">
+    <div class="forfeit-dialog-eyebrow">Leave Match</div>
+    <h3 id="forfeit-dialog-title">Forfeit this run?</h3>
+    <p>The current match will continue without you. Once this is sent, the decision cannot be reversed.</p>
+    <div class="forfeit-dialog-rule">
+      <strong>What happens next</strong>
+      You stop taking future turns right away, and the final standings screen will appear when the rest of the match finishes.
+    </div>
+    <div class="forfeit-dialog-actions">
+      <button class="btn-ghost" id="cancel-forfeit-btn" type="button">Keep Playing</button>
+      <button id="confirm-forfeit-btn" type="button">Forfeit Match</button>
     </div>
   </div>
 </div>
@@ -899,6 +961,71 @@ $('#rules-overlay').addEventListener('click', (e) => {
   if (e.target === $('#rules-overlay')) closeRulesOverlay();
 });
 
+function hasSelfForfeited() {
+  return !!S.displayName && S.playerStatuses[S.displayName] === 'forfeited';
+}
+
+function closeForfeitOverlay({ restoreFocus = true } = {}) {
+  $('#forfeit-overlay').classList.add('hidden');
+  $('#confirm-forfeit-btn').disabled = false;
+  if (restoreFocus && !$('#forfeit-match-btn').disabled) {
+    $('#forfeit-match-btn').focus();
+  }
+}
+
+function openForfeitOverlay() {
+  if (!hasActiveMatch() || hasSelfForfeited()) return;
+  $('#forfeit-overlay').classList.remove('hidden');
+  $('#cancel-forfeit-btn').focus();
+}
+
+function syncForfeitUi() {
+  const activeMatch = hasActiveMatch();
+  const selfForfeited = hasSelfForfeited();
+
+  $('#forfeit-panel').classList.toggle('hidden', !activeMatch);
+  $('#forfeit-panel').classList.toggle('is-locked', selfForfeited);
+  $('#forfeit-match-btn').disabled = !activeMatch || selfForfeited;
+  $('#forfeit-status-banner').classList.toggle('hidden', !selfForfeited);
+
+  $('#forfeit-panel-copy').textContent = selfForfeited
+    ? 'Your match is settling in the background. Final standings arrive when the run closes.'
+    : 'Leave the current run if you do not want to keep taking turns.';
+  $('#forfeit-btn-meta').textContent = selfForfeited
+    ? 'Waiting for the final standings screen.'
+    : 'Stops your future turns immediately.';
+  $('#forfeit-btn-state').textContent = selfForfeited
+    ? 'Locked'
+    : 'Irreversible';
+
+  if (!activeMatch || selfForfeited) {
+    closeForfeitOverlay({ restoreFocus: false });
+  }
+}
+
+$('#forfeit-match-btn').addEventListener('click', openForfeitOverlay);
+$('#cancel-forfeit-btn').addEventListener('click', () => closeForfeitOverlay());
+$('#confirm-forfeit-btn').addEventListener('click', () => {
+  $('#confirm-forfeit-btn').disabled = true;
+  wsSend({ type: 'forfeit_match' });
+  closeForfeitOverlay({ restoreFocus: false });
+});
+
+document.addEventListener('keydown', (e) => {
+  if ($('#forfeit-overlay').classList.contains('hidden')) return;
+  if (e.key === 'Escape') { closeForfeitOverlay(); return; }
+  if (e.key === 'Tab') {
+    const focusable = $('#forfeit-overlay').querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
+$('#forfeit-overlay').addEventListener('click', (e) => {
+  if (e.target === $('#forfeit-overlay')) closeForfeitOverlay();
+});
+
 function onAuthComplete() {
   intentionalClose = false;
   connectWebSocket();
@@ -1188,8 +1315,14 @@ function onMatchStarted(msg) {
 
   showView('play');
   syncAiAssistedUi();
+  syncForfeitUi();
   renderPlayers();
   $('#game-result-banner').classList.add('hidden');
+  $('#phase-timer-label').textContent = 'Commit';
+  $('#timer-bar').style.width = '100%';
+  $('#timer-bar').style.background = 'var(--accent)';
+  $('#timer-num').textContent = '';
+  $('#timer-num').classList.remove('urgent');
   $('#question-text').textContent = 'Match started. Waiting for first game...';
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
@@ -1566,12 +1699,29 @@ function onPlayerReconnected(msg) {
 
 function onPlayerForfeited(msg) {
   S.playerStatuses[msg.displayName] = 'forfeited';
-  if (msg.futureGamesPenaltyApplied) {
+  if (msg.displayName === S.displayName) {
+    $('#commit-area').classList.add('hidden');
+    $('#reveal-area').classList.add('hidden');
+    $$('.opt-btn').forEach((btn) => btn.classList.add('disabled'));
+    clearInterval(S.timerInterval);
+    $('#phase-timer-label').textContent = 'Status';
+    $('#timer-bar').style.width = '100%';
+    $('#timer-bar').style.background = 'rgba(229,57,53,.45)';
+    $('#timer-num').textContent = '--';
+    $('#timer-num').classList.remove('urgent');
+    notify(
+      msg.futureGamesPenaltyApplied
+        ? 'You forfeited the match. Final standings will appear when the run ends.'
+        : 'You forfeited this AI-assisted match. Final standings will appear when the run ends.',
+      'warn',
+    );
+  } else if (msg.futureGamesPenaltyApplied) {
     notify(msg.displayName + ' forfeited', 'error');
   } else {
     notify(msg.displayName + ' forfeited. This off-the-record AI match applies no remaining-game penalty.', 'warn');
   }
   updatePlayerDots();
+  syncForfeitUi();
 }
 
 // ── Timer ────────────────────────────────────────────────────────
@@ -1643,6 +1793,7 @@ function onMatchOver(msg) {
 
   showView('summary');
   syncAiAssistedUi();
+  syncForfeitUi();
   renderSummary(msg.summary);
   syncAutoRequeueUI();
 }
