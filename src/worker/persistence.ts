@@ -67,7 +67,11 @@ interface SqlStorage {
     query: string,
     ...params: unknown[]
   ): { toArray(): unknown[] } & Iterable<Record<string, unknown>>;
-  transactionSync?<T>(fn: () => T): T;
+}
+
+interface CheckpointStorage {
+  sql: SqlStorage;
+  transactionSync<T>(fn: () => T): T;
 }
 
 type SqlRow = Record<string, unknown>;
@@ -483,17 +487,11 @@ export function initCheckpointTables(sql: SqlStorage): void {
 }
 
 export function checkpointMatch(
-  sql: SqlStorage,
+  storage: CheckpointStorage,
   match: CheckpointableMatch,
 ): void {
-  const transactionSync = sql.transactionSync;
-  if (!transactionSync) {
-    throw new Error(
-      'SqlStorage.transactionSync is required for checkpointMatch',
-    );
-  }
-
-  transactionSync(() => {
+  storage.transactionSync(() => {
+    const { sql } = storage;
     sql.exec(
       `DELETE FROM player_checkpoints WHERE match_id = ?`,
       match.matchId,

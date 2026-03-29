@@ -97,13 +97,15 @@ describe('restoreMatchesFromStorage', () => {
       };
     });
     const transactionSync = vi.fn((fn: () => unknown) => fn());
-    const sql = {
-      exec,
+    const storage = {
+      sql: {
+        exec,
+      },
       transactionSync,
     };
 
     expect(() =>
-      checkpointMatch(sql as never, createCheckpointMatch() as never),
+      checkpointMatch(storage as never, createCheckpointMatch() as never),
     ).toThrow('write failed');
     expect(transactionSync).toHaveBeenCalledTimes(1);
     expect(exec.mock.calls[0]?.[0]).toContain('DELETE FROM player_checkpoints');
