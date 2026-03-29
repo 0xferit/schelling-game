@@ -410,6 +410,9 @@ export class GameRoom {
     return botIds;
   }
 
+  // Must be called BEFORE _tryFormMatch at every call site. It reads
+  // both waitingQueue and formingMatch to count humans, so the caller
+  // must not move players between those structures between the two calls.
   _ensureAiBotBackfill(): void {
     const queuedBotIds = this._getQueuedAiBotIds();
 
@@ -1259,6 +1262,9 @@ export class GameRoom {
       }
     } catch {}
 
+    // Defense-in-depth: guided_json should guarantee structured output,
+    // but some models silently ignore the constraint. These branches
+    // catch plain-text responses like "Pizza" or "2".
     const exactOptionIndex = question.options.findIndex(
       (option) => option.toLowerCase() === response.toLowerCase(),
     );
@@ -1278,6 +1284,9 @@ export class GameRoom {
     return parsedIndex;
   }
 
+  // Heuristic fallback when Workers AI is unavailable or times out.
+  // Only matches numeric-style option labels; for text labels like
+  // "Heads"/"Tails" this falls through to the middle-index default.
   _pickAiBotFallbackOption(question: Question): number {
     const normalizedTargets = ['1', '0', '50%', '50', '0.5', '0.50'];
     for (const target of normalizedTargets) {

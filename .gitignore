@@ -6,4 +6,3 @@ nohup.out
 .wrangler/
 .playwright-mcp/
 .claude/settings.local.json
-bot/package-lock.json
