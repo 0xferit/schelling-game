@@ -942,10 +942,12 @@ $('#leave-queue-btn').addEventListener('click', () => {
   syncAutoRequeueUI();
 });
 
-$('#return-to-game-btn').addEventListener('click', () => {
+function returnToGame() {
   if (!hasActiveMatch()) return;
   showView('play');
-});
+}
+
+$('#return-to-game-btn').addEventListener('click', returnToGame);
 
 $('#auto-requeue-toggle').addEventListener('change', (e) => {
   S.autoRequeue = e.target.checked;
@@ -958,7 +960,6 @@ function syncAutoRequeueUI() {
 }
 
 function onQueueState(msg) {
-  S.matchId = null;
   S.inQueue = msg.status === 'queued';
   S.queuedPlayers = msg.queuedPlayers || [];
   S.formingMatch = msg.formingMatch || null;
@@ -1520,10 +1521,7 @@ $('#nav-leaderboard').addEventListener('click', () => {
   loadLeaderboard();
 });
 
-$('#nav-return-game').addEventListener('click', () => {
-  if (!hasActiveMatch()) return;
-  showView('play');
-});
+$('#nav-return-game').addEventListener('click', returnToGame);
 
 $('#lb-back-btn').addEventListener('click', () => {
   showView(S.previousView || 'queue');
