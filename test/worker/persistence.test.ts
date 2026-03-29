@@ -317,12 +317,12 @@ describe('restoreMatchesFromStorage', () => {
       STALE_THRESHOLD_MS,
     );
 
-    expect(restored.find((match) => match.matchId === 'match-settling')?.phase).toBe(
-      'settling',
-    );
-    expect(restored.find((match) => match.matchId === 'match-ending')?.phase).toBe(
-      'ending',
-    );
+    expect(
+      restored.find((match) => match.matchId === 'match-settling')?.phase,
+    ).toBe('settling');
+    expect(
+      restored.find((match) => match.matchId === 'match-ending')?.phase,
+    ).toBe('ending');
   });
 
   it('restores open-text answer fields from player checkpoints', () => {
