@@ -311,7 +311,6 @@ export async function handleHttpRequest(
       displayName: account.display_name || null,
       tokenBalance: account.token_balance ?? 0,
       leaderboardEligible: !!account.leaderboard_eligible,
-      autoRequeue: true,
       queueStatus,
     });
   }

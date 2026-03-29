@@ -422,6 +422,7 @@ describe('HTTP routes', () => {
     expect(data.accountId).toBe(accountId);
     expect(data.displayName).toBe('TestPlayer2');
     expect(data.tokenBalance).toBe(500);
+    expect(data).not.toHaveProperty('autoRequeue');
   });
 
   it('GET /api/me without session returns 401', async () => {
