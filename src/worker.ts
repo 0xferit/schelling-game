@@ -43,6 +43,7 @@ interface ConnectionState {
   ws: WebSocket;
   displayName: string;
   autoRequeue: boolean;
+  startNow: boolean;
   previousOpponents: Set<string>;
 }
 
@@ -242,6 +243,7 @@ export class GameRoom {
             ws,
             displayName,
             autoRequeue: false,
+            startNow: false,
             previousOpponents: new Set(),
           });
           if (playerState.graceTimer) {
@@ -294,6 +296,7 @@ export class GameRoom {
       ws,
       displayName,
       autoRequeue: false,
+      startNow: false,
       previousOpponents: existingConn
         ? existingConn.previousOpponents
         : new Set(),
@@ -348,6 +351,8 @@ export class GameRoom {
         return this._handleJoinQueue(accountId);
       case 'leave_queue':
         return this._handleLeaveQueue(accountId);
+      case 'set_start_now':
+        return this._handleSetStartNow(accountId, msg);
       case 'commit':
         return this._handleCommit(accountId, msg);
       case 'reveal':
@@ -437,6 +442,40 @@ export class GameRoom {
       }
     }
     return count;
+  }
+
+  _getFormingHumanIds(): string[] {
+    if (!this.formingMatch) return [];
+    return this.formingMatch.players.filter(
+      (accountId) => !this._isAiBot(accountId),
+    );
+  }
+
+  _clearStartNowFlags(accountIds: string[]): void {
+    for (const accountId of accountIds) {
+      if (this._isAiBot(accountId)) continue;
+      const conn = this.connections.get(accountId);
+      if (conn) conn.startNow = false;
+    }
+  }
+
+  _allFormingHumansWantStartNow(): boolean {
+    const humanIds = this._getFormingHumanIds();
+    if (humanIds.length === 0) return false;
+
+    return humanIds.every(
+      (accountId) => this.connections.get(accountId)?.startNow,
+    );
+  }
+
+  _tryStartReadyMatch(): boolean {
+    if (!this.formingMatch) return false;
+    if (this.formingMatch.players.length < MIN_MATCH_SIZE) return false;
+    if (this.formingMatch.players.length % 2 === 0) return false;
+    if (!this._allFormingHumansWantStartNow()) return false;
+
+    this._startFormingMatch();
+    return true;
   }
 
   _getQueuedAiBotIds(): string[] {
@@ -529,6 +568,7 @@ export class GameRoom {
     }
 
     conn.autoRequeue = true;
+    conn.startNow = false;
     this.waitingQueue.push(accountId);
     this._ensureAiBotBackfill();
     this._tryFormMatch();
@@ -540,9 +580,36 @@ export class GameRoom {
     if (!conn) return;
 
     conn.autoRequeue = false;
+    conn.startNow = false;
     this._removeFromQueue(accountId);
     this._ensureAiBotBackfill();
     this._tryFormMatch();
+    this._broadcastQueueState();
+  }
+
+  _handleSetStartNow(
+    accountId: string,
+    msg: { type: string; [key: string]: unknown },
+  ): void {
+    const conn = this.connections.get(accountId);
+    if (!conn) return;
+
+    if (typeof msg.value !== 'boolean') {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'start_now vote must be true or false',
+      });
+    }
+
+    if (!this.formingMatch?.players.includes(accountId)) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Start now is only available while your match is forming',
+      });
+    }
+
+    conn.startNow = msg.value;
+    if (this._tryStartReadyMatch()) return;
     this._broadcastQueueState();
   }
 
@@ -570,6 +637,7 @@ export class GameRoom {
 
     // Return remaining players to front of queue in their existing order
     const returning = this.formingMatch.players;
+    this._clearStartNowFlags(returning);
     this.waitingQueue.unshift(...returning);
     this.formingMatch = null;
   }
@@ -588,6 +656,8 @@ export class GameRoom {
       // If max reached, start immediately
       if (this.formingMatch.players.length >= MAX_MATCH_SIZE) {
         this._startFormingMatch();
+      } else {
+        this._tryStartReadyMatch();
       }
       return;
     }
@@ -610,10 +680,11 @@ export class GameRoom {
       return;
     }
 
-    // Start 20s fill timer
+    // Start 30s fill timer
     const fillDeadlineMs = Date.now() + FILL_TIMER_MS;
     const timer = setTimeout(() => this._onFillTimerExpired(), FILL_TIMER_MS);
     this.formingMatch = { players: reserved, timer, fillDeadlineMs };
+    this._tryStartReadyMatch();
   }
 
   _onFillTimerExpired(): void {
@@ -629,22 +700,29 @@ export class GameRoom {
     }
 
     const players = this.formingMatch.players;
+    let returnedToQueue: string[] = [];
 
     // Ensure odd count: take largest odd <= current size
     if (players.length % 2 === 0) {
       // Return the most recently reserved extra player(s) to front of queue
       const extras = players.splice(players.length - 1, 1);
+      returnedToQueue = extras;
+      this._clearStartNowFlags(extras);
       this.waitingQueue.unshift(...extras);
     }
 
     // Should still have at least 3
     if (players.length < MIN_MATCH_SIZE) {
+      this._clearStartNowFlags(players);
       this.waitingQueue.unshift(...players);
       this.formingMatch = null;
       this._tryFormMatch();
       this._broadcastQueueState();
       return;
     }
+
+    this._clearStartNowFlags(players);
+    this._clearStartNowFlags(returnedToQueue);
 
     const matchId = crypto.randomUUID();
     this.formingMatch = null;
@@ -1856,7 +1934,7 @@ export class GameRoom {
   }
 
   _buildQueueStateMsg(
-    _accountId: string,
+    accountId: string,
     isQueued: boolean,
     autoRequeue: boolean,
   ): Record<string, unknown> {
@@ -1869,22 +1947,32 @@ export class GameRoom {
 
     let formingMatch: {
       playerCount: number;
+      humanPlayerCount: number;
+      readyHumanCount: number;
       players: string[];
       allowedSizes: number[];
       fillDeadlineMs: number | null;
+      youCanVoteStartNow: boolean;
     } | null = null;
     const formingState = this.formingMatch;
     if (formingState) {
       const fmPlayers = formingState.players.map((id) =>
         this._getDisplayName(id),
       );
+      const humanIds = formingState.players.filter((id) => !this._isAiBot(id));
+      const readyHumanCount = humanIds.filter(
+        (id) => this.connections.get(id)?.startNow,
+      ).length;
       formingMatch = {
         playerCount: formingState.players.length,
+        humanPlayerCount: humanIds.length,
+        readyHumanCount,
         players: fmPlayers,
         allowedSizes: buildAllowedMatchSizes(
           formingState.players.length + this.waitingQueue.length,
         ),
         fillDeadlineMs: formingState.fillDeadlineMs,
+        youCanVoteStartNow: formingState.players.includes(accountId),
       };
     }
 
@@ -1892,6 +1980,7 @@ export class GameRoom {
       type: 'queue_state',
       status: isQueued ? 'queued' : 'idle',
       autoRequeue,
+      startNow: this.connections.get(accountId)?.startNow ?? false,
       queuedCount: allQueuedIds.length,
       queuedPlayers,
       formingMatch,
