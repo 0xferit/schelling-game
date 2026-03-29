@@ -1239,14 +1239,20 @@ export class GameRoom {
       currentBalance: player.currentBalance,
     });
 
-    // Persist the burned balance to D1 immediately. After detachment,
-    // _finalizeRound only writes D1 for attached players, so this is
-    // the last opportunity before _endMatch. Persisting now closes the
+    // During results phase the current round is already settled, and the
+    // player will be detached from all future rounds, so _finalizeRound
+    // will never write their balance again. Persist now to close the
     // window where a DO eviction could leave D1 stale.
-    this._waitUntil(
-      this._persistAccountBalance(accountId, player.currentBalance),
-      `persist forfeited balance for ${accountId}`,
-    );
+    //
+    // During commit/reveal the player is still attached for the current
+    // round. _finalizeRound will write the correct post-settlement
+    // balance to D1, so persisting here would race with that write.
+    if (match.phase === 'results') {
+      this._waitUntil(
+        this._persistAccountBalance(accountId, player.currentBalance),
+        `persist forfeited balance for ${accountId}`,
+      );
+    }
 
     this._broadcastToMatch(match, {
       type: 'player_forfeited',

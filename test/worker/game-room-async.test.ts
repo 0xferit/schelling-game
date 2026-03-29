@@ -202,6 +202,46 @@ describe('GameRoom async task tracking', () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
+  it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeRound)', () => {
+    const prepare = vi.fn();
+    const { room, waitUntil } = createRoom({
+      prepare,
+    } as unknown as D1Database);
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'commit';
+    match.currentRound = 3;
+    match.totalRounds = 10;
+
+    const player = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 1000,
+      currentBalance: 940,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtRound: null,
+      disconnectedAt: null,
+      graceTimer: null,
+    };
+    match.players.set(player.accountId, player);
+
+    room._forfeitPlayer(match, player.accountId);
+
+    expect(player.currentBalance).toBe(520);
+    expect(player.forfeited).toBe(true);
+    expect(player.forfeitedAtRound).toBe(3);
+    expect(waitUntil).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
   it('tracks match start from _startFormingMatch with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const startMatch = vi
