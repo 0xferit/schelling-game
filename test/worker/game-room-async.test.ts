@@ -75,6 +75,7 @@ function createMatch() {
     revealTimer: null,
     resultsTimer: null,
     lastGameResult: null,
+    aiAssisted: false,
   };
 }
 
@@ -655,6 +656,78 @@ describe('GameRoom async task tracking', () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     }
+  });
+
+  it('skips player_stats writes but keeps token_balance for AI-assisted matches', async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: (...args: unknown[]) => ({ sql, args }),
+    }));
+    const batch = vi.fn().mockResolvedValue(undefined);
+    const { room } = createRoom({
+      DB: { prepare, batch } as unknown as D1Database,
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'reveal';
+    match.currentGame = 1;
+    match.aiAssisted = true;
+
+    match.players.set('acct-1', {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: true,
+      revealed: true,
+      hash: createCommitHash(0, 'a'.repeat(64)),
+      optionIndex: 0,
+      salt: 'a'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('ai-bot:0:test', {
+      accountId: 'ai-bot:0:test',
+      displayName: 'nemotron',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: true,
+      revealed: true,
+      hash: createCommitHash(0, 'b'.repeat(64)),
+      optionIndex: 0,
+      salt: 'b'.repeat(64),
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+
+    await room._finalizeGame(match);
+
+    const statements = must(
+      batch.mock.calls[0],
+      'Expected D1 batch call',
+    )[0] as Array<{ sql: string; args: unknown[] }>;
+
+    const statsStatements = statements.filter((stmt) =>
+      stmt.sql.includes('player_stats'),
+    );
+    expect(statsStatements).toHaveLength(0);
+
+    const balanceStatements = statements.filter((stmt) =>
+      stmt.sql.includes('UPDATE accounts SET token_balance'),
+    );
+    expect(balanceStatements).toHaveLength(1);
+    expect(balanceStatements[0]?.args[1]).toBe('acct-1');
+
+    if (match.resultsTimer) clearTimeout(match.resultsTimer);
   });
 
   it('tracks match end after results with state.waitUntil', async () => {

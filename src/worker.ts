@@ -704,6 +704,7 @@ export class GameRoom {
       revealTimer: null,
       resultsTimer: null,
       lastGameResult: null,
+      aiAssisted: playerIds.some((id) => this._isAiBot(id)),
     };
     this.activeMatches.set(matchId, match);
 
@@ -711,13 +712,14 @@ export class GameRoom {
     try {
       const createStmts: D1PreparedStatement[] = [
         this.env.DB.prepare(
-          'INSERT INTO matches (match_id, started_at, game_count, player_count, status) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO matches (match_id, started_at, game_count, player_count, status, ai_assisted) VALUES (?, ?, ?, ?, ?, ?)',
         ).bind(
           matchId,
           new Date().toISOString(),
           TOTAL_GAMES,
           playersMap.size,
           'active',
+          match.aiAssisted ? 1 : 0,
         ),
       ];
       for (const [acctId, p] of playersMap) {
@@ -880,7 +882,7 @@ export class GameRoom {
             ).bind(playerState.currentBalance, pr.accountId),
           );
 
-          if (!result.voided) {
+          if (!result.voided && !match.aiAssisted) {
             stmts.push(
               this.env.DB.prepare(
                 'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
@@ -1065,11 +1067,13 @@ export class GameRoom {
           ),
         );
 
-        endStmts.push(
-          this.env.DB.prepare(
-            'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
-          ).bind(p.accountId),
-        );
+        if (!match.aiAssisted) {
+          endStmts.push(
+            this.env.DB.prepare(
+              'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
+            ).bind(p.accountId),
+          );
+        }
       }
 
       await this.env.DB.batch(endStmts);

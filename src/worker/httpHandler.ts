@@ -399,12 +399,12 @@ export async function handleHttpRequest(
           'SELECT COUNT(DISTINCT mp.account_id) AS players_last_24h ' +
             'FROM matches m ' +
             'JOIN match_players mp ON mp.match_id = m.match_id ' +
-            'WHERE m.started_at >= ?',
+            'WHERE m.started_at >= ? AND m.ai_assisted = 0',
         )
           .bind(startedAfter)
           .first<{ players_last_24h: number }>(),
         env.DB.prepare(
-          "SELECT COUNT(*) AS completed_matches FROM matches WHERE status = 'completed'",
+          "SELECT COUNT(*) AS completed_matches FROM matches WHERE status = 'completed' AND ai_assisted = 0",
         ).first<{ completed_matches: number }>(),
         env.DB.prepare(
           'SELECT COALESCE(MAX(longest_streak), 0) AS longest_streak FROM player_stats',
