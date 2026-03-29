@@ -1891,10 +1891,7 @@ export class GameRoom {
     } catch {}
   }
 
-  _broadcastToMatch(
-    match: WorkerMatchState,
-    msg: ServerMessage,
-  ): void {
+  _broadcastToMatch(match: WorkerMatchState, msg: ServerMessage): void {
     const data = JSON.stringify(msg);
     for (const p of match.players.values()) {
       if (!p.forfeited || msg.type === 'match_over') {
@@ -1926,7 +1923,10 @@ export class GameRoom {
     const conn = this.connections.get(accountId);
     if (!conn) return;
 
-    this._sendTo(accountId, this._buildQueueStateMsg(accountId, conn.autoRequeue));
+    this._sendTo(
+      accountId,
+      this._buildQueueStateMsg(accountId, conn.autoRequeue),
+    );
   }
 
   _broadcastQueueState(): void {
