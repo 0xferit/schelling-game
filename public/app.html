@@ -56,7 +56,11 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #auth-view{max-width:420px;margin:2rem auto;text-align:center}
 #auth-view h2{margin-bottom:1rem}
 #auth-view .card{display:flex;flex-direction:column;gap:.75rem;align-items:stretch}
-#auth-status{font-size:.9rem;color:var(--muted);min-height:1.5em}
+#auth-status{font-size:.9rem;color:var(--muted);min-height:1.5em;line-height:1.55;transition:color .2s ease}
+#auth-status[data-tone='pending']{color:var(--accent)}
+#auth-status[data-tone='success']{color:#8fcf92}
+#auth-status[data-tone='error']{color:#d79a97}
+#auth-status a{color:var(--accent);text-decoration:underline}
 #name-section{display:flex;flex-direction:column;gap:.5rem}
 #name-section .row{display:flex;gap:.5rem}
 #name-section input{flex:1}
@@ -93,6 +97,10 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 .queue-stat-block{display:flex;flex-direction:column;align-items:flex-end;gap:.3rem;min-width:10rem}
 .queue-stat-label{font-size:.78rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .queue-stat-value{font-family:var(--serif);font-size:clamp(2.4rem,5vw,3.4rem);font-weight:600;line-height:.88}
+.queue-inline-roster{display:none;flex-direction:column;gap:.85rem;padding:1rem 0 1.05rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.queue-inline-roster-head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.queue-inline-roster-title{font-size:.78rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+.queue-inline-roster-meta{font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .queue-flow{display:flex;flex-direction:column;gap:1rem;max-width:48rem}
 #active-match-banner{display:flex;flex-direction:column;gap:.35rem;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:var(--radius);padding:.85rem 1rem;font-size:.92rem;color:var(--text)}
 #active-match-banner strong{font-size:.72rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
@@ -128,10 +136,10 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 .queue-side-head{padding-bottom:.9rem;border-bottom:1px solid rgba(255,255,255,.06)}
 .queue-side-title{font-size:.78rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
 .queue-side-copy{font-size:.96rem;line-height:1.65;color:var(--muted);margin-top:.45rem}
-#queue-players{list-style:none;display:flex;flex-wrap:wrap;gap:.65rem;margin:0}
-#queue-players li{display:inline-flex;align-items:center;max-width:100%;padding:.48rem .82rem;background:transparent;border:1px solid var(--border);border-radius:999px;font-size:.9rem;letter-spacing:.03em;color:var(--text);line-height:1.25;overflow-wrap:anywhere;transition:border-color .2s,background .2s,color .2s}
-#queue-players li.is-self{border-color:rgba(201,168,76,.55);background:rgba(201,168,76,.08);color:var(--accent);font-weight:600}
-#queue-players:empty::after{content:'No visible players in queue yet.';display:block;width:100%;padding:1rem 0;color:var(--muted);font-size:.9rem;line-height:1.6}
+.queue-players-list{list-style:none;display:flex;flex-wrap:wrap;align-content:flex-start;gap:.65rem;margin:0;padding:0}
+.queue-players-list li{display:inline-flex;align-items:center;max-width:100%;padding:.48rem .82rem;background:transparent;border:1px solid var(--border);border-radius:999px;font-size:.9rem;letter-spacing:.03em;color:var(--text);line-height:1.25;overflow-wrap:anywhere;transition:border-color .2s,background .2s,color .2s}
+.queue-players-list li.is-self{border-color:rgba(201,168,76,.55);background:rgba(201,168,76,.08);color:var(--accent);font-weight:600}
+.queue-empty-state{display:block;width:100%;padding:.15rem 0;color:var(--muted);font-size:.92rem;letter-spacing:.01em;line-height:1.65}
 .queue-side-note{font-size:.88rem;color:var(--muted);line-height:1.65;padding-top:.2rem;border-top:1px solid rgba(255,255,255,.06)}
 /* Play */
 #play-view.active{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,360px);gap:clamp(1rem,2vw,1.75rem);align-items:start}
@@ -311,8 +319,8 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 }
 @media(max-width:960px){
   .queue-shell{grid-template-columns:1fr}
-  .queue-side{border-top:1px solid rgba(255,255,255,.06);padding-left:0;padding-top:1rem}
-  .queue-side::before{display:none}
+  .queue-inline-roster{display:flex}
+  .queue-side{display:none}
 }
 /* ── Narrow viewport (phones) ─────────────────────────────────── */
 @media(max-width:650px){
@@ -320,6 +328,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   #select-grid{grid-template-columns:1fr}
   .queue-main-top{align-items:flex-start}
   .queue-stat-block{align-items:flex-start}
+  .queue-inline-roster-head{align-items:flex-start;flex-direction:column;gap:.3rem}
   #forming-banner{grid-template-columns:1fr}
   .forming-side{align-items:flex-start}
   .forming-banner-foot{align-items:stretch}
@@ -425,6 +434,13 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
             <strong class="queue-stat-value" id="queue-count">0</strong>
           </div>
         </div>
+        <section class="queue-inline-roster" aria-labelledby="queue-inline-roster-title">
+          <div class="queue-inline-roster-head">
+            <div class="queue-inline-roster-title" id="queue-inline-roster-title">Live Queue Roster</div>
+            <div class="queue-inline-roster-meta" id="queue-inline-count">0 visible</div>
+          </div>
+          <ul class="queue-players-list" id="queue-players-inline"></ul>
+        </section>
         <div class="queue-flow">
           <div id="active-match-banner" class="hidden"></div>
           <div id="forming-banner" class="hidden">
@@ -463,7 +479,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
           <div class="queue-side-title" id="queue-roster-title">Queue Roster</div>
           <p class="queue-side-copy">Anyone visible in the public lobby appears here in real time.</p>
         </div>
-        <ul id="queue-players"></ul>
+        <ul class="queue-players-list" id="queue-players"></ul>
         <p class="queue-side-note">Updates live as players join or leave the public queue.</p>
       </aside>
     </div>
@@ -908,7 +924,7 @@ function showView(name) {
 // ── Name-claim UI (shared by authenticateWithWallet + checkSession) ──
 function showNameClaim(statusText) {
   updateHeaderProfile();
-  $('#auth-status').textContent = statusText;
+  setAuthStatus(statusText, 'success');
   $('#name-section').classList.remove('hidden');
   $('#connect-wallet-btn').classList.add('hidden');
   $('#browser-wallet-btn').classList.add('hidden');
@@ -932,24 +948,66 @@ async function api(method, path, body) {
   return res.json();
 }
 
+function setAuthStatus(message, tone = 'hint', { html = false } = {}) {
+  const status = $('#auth-status');
+  status.dataset.tone = tone;
+  if (html) {
+    status.innerHTML = message;
+    return;
+  }
+  status.textContent = message;
+}
+
+function describeAuthError(err, action) {
+  const raw = err instanceof Error ? err.message : String(err || 'Unexpected error');
+  const normalized = raw.toLowerCase();
+
+  if (
+    normalized.includes('user rejected') ||
+    normalized.includes('user denied') ||
+    normalized.includes('cancelled') ||
+    normalized.includes('canceled')
+  ) {
+    return 'Request canceled. Nothing changed.';
+  }
+
+  if (
+    normalized.includes('failed to fetch') ||
+    normalized.includes('networkerror') ||
+    normalized.includes('load failed')
+  ) {
+    return 'Could not reach the local game server. Refresh and try again.';
+  }
+
+  if (normalized.includes('display name already claimed')) {
+    return 'That display name is already taken. Try another one.';
+  }
+
+  if (normalized.includes('cannot change display name while queued')) {
+    return 'Leave the queue before changing your display name.';
+  }
+
+  return `Could not ${action}. Please try again.`;
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  AUTH VIEW
 // ═══════════════════════════════════════════════════════════════
 async function authenticateWithWallet(address, signFn, { signingMsg, successMsg, isBrowserWallet }) {
-  const status = $('#auth-status');
-
-  status.textContent = 'Requesting challenge...';
+  setAuthStatus('Requesting challenge...', 'pending');
   const challenge = await api('POST', '/api/auth/challenge', { walletAddress: address });
 
-  status.textContent = signingMsg;
+  setAuthStatus(signingMsg, 'pending');
   const signature = await signFn(challenge.message);
 
-  status.textContent = 'Verifying signature...';
+  setAuthStatus('Verifying signature...', 'pending');
   const result = await api('POST', '/api/auth/verify', {
     challengeId: challenge.challengeId,
     walletAddress: address,
     signature,
   });
+
+  setAuthStatus(successMsg, 'success');
 
   S.walletAddress = address;
   S.accountId = result.accountId;
@@ -961,13 +1019,16 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
 }
 
 $('#connect-wallet-btn').addEventListener('click', async () => {
-  const status = $('#auth-status');
   if (!window.ethereum) {
-    status.innerHTML = 'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">install a wallet</a>.';
+    setAuthStatus(
+      'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener">install a wallet</a>.',
+      'hint',
+      { html: true },
+    );
     return;
   }
   try {
-    status.textContent = 'Requesting wallet connection...';
+    setAuthStatus('Requesting wallet connection...', 'pending');
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const address = await signer.getAddress();
@@ -977,14 +1038,13 @@ $('#connect-wallet-btn').addEventListener('click', async () => {
       isBrowserWallet: false,
     });
   } catch (err) {
-    status.textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'connect your wallet'), 'error');
   }
 });
 
 $('#browser-wallet-btn').addEventListener('click', async () => {
-  const status = $('#auth-status');
   try {
-    status.textContent = 'Setting up your wallet...';
+    setAuthStatus('Setting up your wallet...', 'pending');
     const wallet = getOrCreateBrowserWallet();
     await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
       signingMsg: 'Signing in...',
@@ -992,23 +1052,23 @@ $('#browser-wallet-btn').addEventListener('click', async () => {
       isBrowserWallet: true,
     });
   } catch (err) {
-    status.textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'set up your browser wallet'), 'error');
   }
 });
 
 $('#claim-name-btn').addEventListener('click', async () => {
   const name = $('#name-input').value.trim();
   if (!/^[A-Za-z0-9_-]{1,20}$/.test(name)) {
-    $('#auth-status').textContent = 'Invalid name. Use 1-20 chars: A-Z, 0-9, _ or -';
+    setAuthStatus('Use 1-20 characters: A-Z, 0-9, _ or -.', 'error');
     return;
   }
   try {
-    $('#auth-status').textContent = 'Claiming name...';
+    setAuthStatus('Claiming your display name...', 'pending');
     await api('PATCH', '/api/me/profile', { displayName: name });
     S.displayName = name;
     onAuthComplete();
   } catch (err) {
-    $('#auth-status').textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'claim that display name'), 'error');
   }
 });
 
@@ -1021,11 +1081,10 @@ $('#show-import-btn').addEventListener('click', () => {
 });
 
 $('#import-btn').addEventListener('click', async () => {
-  const status = $('#auth-status');
   const input = $('#import-input').value;
-  if (!input.trim()) { status.textContent = 'Please enter a seed phrase or private key.'; return; }
+  if (!input.trim()) { setAuthStatus('Enter a seed phrase or private key to import a wallet.', 'error'); return; }
   try {
-    status.textContent = 'Importing wallet...';
+    setAuthStatus('Importing wallet...', 'pending');
     const { wallet, storageValue } = parseBrowserWallet(input);
     await authenticateWithWallet(wallet.address, (msg) => wallet.signMessage(msg), {
       signingMsg: 'Signing challenge...',
@@ -1043,7 +1102,7 @@ $('#import-btn').addEventListener('click', async () => {
     $('#import-section').classList.add('hidden');
     $('#show-import-btn').setAttribute('aria-expanded', 'false');
   } catch (err) {
-    status.textContent = 'Error: ' + err.message;
+    setAuthStatus(describeAuthError(err, 'import that wallet'), 'error');
   }
 });
 
@@ -1236,7 +1295,7 @@ $('#logout-btn').addEventListener('click', async () => {
   $('#import-input').value = '';
   $('#seed-overlay').classList.add('hidden');
   $('#seed-phrase-text').value = '';
-  $('#auth-status').textContent = 'Choose how to identify yourself.';
+  setAuthStatus('Choose how to identify yourself.');
   showView('auth');
 });
 
@@ -1267,7 +1326,11 @@ async function checkSession() {
   } catch (_) {
     // not logged in; check if wallet is available
     if (!window.ethereum) {
-      $('#auth-status').innerHTML = 'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">install a wallet</a>.';
+      setAuthStatus(
+        'No external wallet detected. Use Quick Start, or <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener">install a wallet</a>.',
+        'hint',
+        { html: true },
+      );
     }
   }
 }
@@ -1486,7 +1549,10 @@ function renderQueue() {
   const activeMatch = hasActiveMatch();
   const selfForfeited = hasSelfForfeited();
   const activeMatchBanner = $('#active-match-banner');
-  $('#queue-count').textContent = S.queuedPlayers.length;
+  const queueCount = S.queuedPlayers.length;
+  $('#queue-count').textContent = queueCount;
+  $('#queue-inline-count').textContent =
+    queueCount === 1 ? '1 visible' : queueCount + ' visible';
   activeMatchBanner.classList.toggle('hidden', !activeMatch);
   activeMatchBanner.classList.toggle('is-forfeited', activeMatch && selfForfeited);
   if (activeMatch) {
@@ -1498,14 +1564,8 @@ function renderQueue() {
   }
   syncReturnToMatchUi();
 
-  const list = $('#queue-players');
-  list.innerHTML = '';
-  S.queuedPlayers.forEach(name => {
-    const li = document.createElement('li');
-    li.textContent = name;
-    if (name === S.displayName) li.classList.add('is-self');
-    list.appendChild(li);
-  });
+  renderQueuePlayersList($('#queue-players-inline'));
+  renderQueuePlayersList($('#queue-players'));
 
   // forming match
   if (S.formingMatch) {
@@ -1550,6 +1610,24 @@ function renderQueue() {
         ? 'Leaving...'
         : 'Connecting...'
       : 'Leave Queue';
+}
+
+function renderQueuePlayersList(list) {
+  if (!list) return;
+  list.innerHTML = '';
+  if (S.queuedPlayers.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'queue-empty-state';
+    empty.textContent = 'No visible players in queue yet.';
+    list.appendChild(empty);
+    return;
+  }
+  S.queuedPlayers.forEach(name => {
+    const li = document.createElement('li');
+    li.textContent = name;
+    if (name === S.displayName) li.classList.add('is-self');
+    list.appendChild(li);
+  });
 }
 
 function updateFormingTimer() {
