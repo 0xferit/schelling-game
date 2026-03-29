@@ -10,4 +10,4 @@ export const LEADERBOARD_LIMIT = 100;
 /** Phase durations in seconds. Single source of truth for all consumers. */
 export const COMMIT_DURATION = 60;
 export const REVEAL_DURATION = 15;
-export const RESULTS_DURATION = 20;
+export const RESULTS_DURATION = 7;

@@ -19,6 +19,6 @@ export interface Env {
   AI?: AiBinding;
   ADMIN_KEY?: string;
   AI_BOT_ENABLED?: string;
-  AI_BOT_MODEL?: string;
+  AI_BOT_MODELS?: string;
   AI_BOT_TIMEOUT_MS?: string;
 }
