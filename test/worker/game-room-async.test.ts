@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
-import { RESULTS_DURATION } from '../../src/domain/constants';
+import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
 import type { Question } from '../../src/types/domain';
 import type { GameResultMessage } from '../../src/types/messages';
 import type { Env } from '../../src/types/worker-env';
@@ -177,17 +177,20 @@ describe('GameRoom async task tracking', () => {
     match.currentGame = 3;
     match.totalGames = 10;
     match.lastSettledGame = 3;
+    const currentBalance = GAME_ANTE * 10;
+    const expectedBalance =
+      currentBalance - (match.totalGames - match.currentGame) * GAME_ANTE;
     match.lastGameResult = {
       gameNum: 3,
-      players: [{ accountId: 'acct-1', newBalance: 940 }],
+      players: [{ accountId: 'acct-1', newBalance: currentBalance }],
     } as GameResultMessage['result'];
 
     const player = {
       accountId: 'acct-1',
       displayName: 'Alice',
       ws: null,
-      startingBalance: 1000,
-      currentBalance: 940,
+      startingBalance: currentBalance,
+      currentBalance,
       committed: false,
       revealed: false,
       hash: null,
@@ -202,14 +205,14 @@ describe('GameRoom async task tracking', () => {
 
     room._forfeitPlayer(match, player.accountId);
 
-    expect(player.currentBalance).toBe(520);
+    expect(player.currentBalance).toBe(expectedBalance);
     expect(checkpointPlayerAction).toHaveBeenCalledWith(
       match.matchId,
       'acct-1',
       {
         forfeited: true,
         forfeitedAtGame: 3,
-        currentBalance: 520,
+        currentBalance: expectedBalance,
       },
     );
     expect(waitUntil).toHaveBeenCalledTimes(1);
@@ -217,14 +220,14 @@ describe('GameRoom async task tracking', () => {
     expect(prepare).toHaveBeenCalledWith(
       'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
     );
-    expect(bind).toHaveBeenCalledWith(520, 'acct-1');
+    expect(bind).toHaveBeenCalledWith(expectedBalance, 'acct-1');
     expect(run).toHaveBeenCalledTimes(1);
 
     // Cached game result must reflect burned balance for reconnect replay
     const cached = match.lastGameResult?.players.find(
       (p) => p.accountId === 'acct-1',
     );
-    expect(cached?.newBalance).toBe(520);
+    expect(cached?.newBalance).toBe(expectedBalance);
 
     // Patched result must be checkpointed so it survives DO eviction
     expect(checkpointMatch).toHaveBeenCalledWith(match);
@@ -242,13 +245,16 @@ describe('GameRoom async task tracking', () => {
     match.phase = 'commit';
     match.currentGame = 3;
     match.totalGames = 10;
+    const currentBalance = GAME_ANTE * 10;
+    const expectedBalance =
+      currentBalance - (match.totalGames - match.currentGame) * GAME_ANTE;
 
     const player = {
       accountId: 'acct-1',
       displayName: 'Alice',
       ws: null,
-      startingBalance: 1000,
-      currentBalance: 940,
+      startingBalance: currentBalance,
+      currentBalance,
       committed: false,
       revealed: false,
       hash: null,
@@ -267,8 +273,8 @@ describe('GameRoom async task tracking', () => {
       accountId: 'acct-2',
       displayName: 'Bob',
       ws: null,
-      startingBalance: 1000,
-      currentBalance: 940,
+      startingBalance: currentBalance,
+      currentBalance,
       committed: false,
       revealed: false,
       hash: null,
@@ -282,7 +288,7 @@ describe('GameRoom async task tracking', () => {
 
     room._forfeitPlayer(match, player.accountId);
 
-    expect(player.currentBalance).toBe(520);
+    expect(player.currentBalance).toBe(expectedBalance);
     expect(player.forfeited).toBe(true);
     expect(player.forfeitedAtGame).toBe(3);
     expect(waitUntil).not.toHaveBeenCalled();
@@ -305,6 +311,9 @@ describe('GameRoom async task tracking', () => {
     match.currentGame = 3;
     match.totalGames = 10;
     match.lastSettledGame = 3;
+    const currentBalance = GAME_ANTE * 10;
+    const expectedBalance =
+      currentBalance - (match.totalGames - match.currentGame) * GAME_ANTE;
     match.lastGameResult = {
       gameNum: 2,
       players: [],
@@ -314,8 +323,8 @@ describe('GameRoom async task tracking', () => {
       accountId: 'acct-1',
       displayName: 'Alice',
       ws: null,
-      startingBalance: 1000,
-      currentBalance: 940,
+      startingBalance: currentBalance,
+      currentBalance,
       committed: false,
       revealed: false,
       hash: null,
@@ -330,7 +339,7 @@ describe('GameRoom async task tracking', () => {
 
     room._forfeitPlayer(match, player.accountId);
 
-    expect(player.currentBalance).toBe(520);
+    expect(player.currentBalance).toBe(expectedBalance);
     expect(player.forfeited).toBe(true);
     // Must not persist or patch: _finalizeGame will read the live
     // playerState.currentBalance when it builds the payload.

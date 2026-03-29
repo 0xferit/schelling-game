@@ -43,6 +43,7 @@ export interface GameResult {
   voidReason: string | null;
   playerCount: number;
   pot: number;
+  dustBurned: number;
   validRevealCount: number;
   topCount: number;
   winningOptionIndexes: number[];

@@ -25,9 +25,9 @@ Matchmaking rules:
 
 Settlement rules:
 
-- round ante remains `60`
+- round ante is raised to `2520`
 - payout per winner remains `floor(pot / winnerCount)`
-- if the pot does not divide evenly, the remainder is not distributed
+- if the pot does not divide evenly, the remainder is burned
 
 This ADR supersedes the public-match-size restriction in ADR `0001` and the divisibility rationale in ADR `0002`.
 
@@ -35,4 +35,5 @@ This ADR supersedes the public-match-size restriction in ADR `0001` and the divi
 
 - queue conversion should improve because any sufficiently large odd crowd can launch
 - landing-page copy can describe a wider viable public lobby
-- integer-only exact pot division is no longer guaranteed in every outcome, so canonical docs must describe floor payout explicitly
+- exact equal winner payouts are preserved through `11` players with the fixed ante
+- larger lobbies can still produce indivisible remainders, so canonical docs must describe dust burning explicitly

@@ -15,6 +15,9 @@ export default defineConfig(async () => {
   return {
     plugins: [
       cloudflareTest({
+        // Keep worker tests hermetic and CI-friendly. Staging validation runs
+        // in a separate workflow job against a deployed Worker.
+        remoteBindings: false,
         wrangler: { configPath: './wrangler.toml' },
         miniflare: {
           bindings: { TEST_MIGRATIONS: migrations },

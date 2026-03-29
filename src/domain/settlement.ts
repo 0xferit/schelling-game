@@ -53,6 +53,7 @@ export function settleGame(
   }
   const winnerCount = winnerSet.size;
   const payoutPerWinner = Math.floor(pot / winnerCount);
+  const dustBurned = pot % winnerCount;
 
   // Build player results
   const playerResults: PlayerResult[] = attached.map((p) => {
@@ -83,6 +84,7 @@ export function settleGame(
     voidReason: null,
     playerCount: gamePlayerCount,
     pot,
+    dustBurned,
     validRevealCount,
     topCount,
     winningOptionIndexes,
@@ -116,6 +118,7 @@ function buildVoidResult(
     voidReason: reason,
     playerCount: gamePlayerCount,
     pot: 0,
+    dustBurned: 0,
     validRevealCount: 0,
     topCount: 0,
     winningOptionIndexes: [],

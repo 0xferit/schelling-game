@@ -3,7 +3,7 @@
 Status: Accepted
 Date: 2026-03-23
 
-Supersession note: ADR [0006](0006-generalize-public-match-sizes.md) supersedes this ADR's `3/5/7` divisibility rationale. The rest of this ADR remains canonical.
+Supersession note: ADR [0006](0006-generalize-public-match-sizes.md) supersedes this ADR's original `3/5/7` divisibility rationale and `60`-token ante. The rest of this ADR remains canonical.
 
 ## Context
 
@@ -27,10 +27,10 @@ The canonical public economy uses:
 
 Per round:
 
-- every player still attached to the match antes `60`
-- coherent players split the full round pot equally
+- every player still attached to the match antes `2520`
+- coherent players split the round pot equally, with any indivisible dust burned
 
-The public match size is restricted to 3, 5, or 7 so that a `60`-token ante yields integer-valued payouts across all allowed plurality outcomes.
+For odd public match sizes up to `21`, any indivisible remainder after equal winner payouts is burned.
 
 ## Consequences
 
