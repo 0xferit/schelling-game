@@ -612,12 +612,8 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
   S.tokenBalance = result.tokenBalance;
   S.isBrowserWallet = isBrowserWallet;
 
-  if (result.requiresDisplayName) {
-    showNameClaim(successMsg + ' Please claim a display name.');
-  } else {
-    S.displayName = result.displayName;
-    onAuthComplete();
-  }
+  S.displayName = result.displayName || (result.accountId.slice(0, 6) + '..' + result.accountId.slice(-4));
+  onAuthComplete();
 }
 
 $('#connect-wallet-btn').addEventListener('click', async () => {
@@ -845,11 +841,10 @@ async function checkSession() {
     } catch (_) {
       try { localStorage.removeItem(BROWSER_KEY); } catch (_e) {}
     }
-    if (S.displayName) {
-      onAuthComplete();
-    } else {
-      showNameClaim('Welcome back! Please claim a display name.');
+    if (!S.displayName) {
+      S.displayName = S.accountId.slice(0, 6) + '..' + S.accountId.slice(-4);
     }
+    onAuthComplete();
   } catch (_) {
     // not logged in; check if wallet is available
     if (!window.ethereum) {
