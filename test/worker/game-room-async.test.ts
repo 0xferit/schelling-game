@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
 import { RESULTS_DURATION } from '../../src/domain/constants';
 import type { Question } from '../../src/types/domain';
-import type { RoundResultMessage } from '../../src/types/messages';
+import type { GameResultMessage } from '../../src/types/messages';
 import type { Env } from '../../src/types/worker-env';
 import { GameRoom } from '../../src/worker';
 import { must } from './helpers';
@@ -66,15 +66,15 @@ function createMatch() {
     matchId: 'match-1',
     players: new Map(),
     questions: [question],
-    currentRound: 1,
-    totalRounds: 1,
+    currentGame: 1,
+    totalGames: 1,
     phase: 'reveal',
     phaseEnteredAt: Date.now(),
-    lastSettledRound: 0,
+    lastSettledGame: 0,
     commitTimer: null,
     revealTimer: null,
     resultsTimer: null,
-    lastRoundResult: null,
+    lastGameResult: null,
   };
 }
 
@@ -113,10 +113,10 @@ describe('GameRoom async task tracking', () => {
     });
   });
 
-  it('tracks reveal-triggered round finalization with state.waitUntil', async () => {
+  it('tracks reveal-triggered game finalization with state.waitUntil', async () => {
     const { room, waitUntil } = createRoom();
     const finalizeRound = vi
-      .spyOn(room, '_finalizeRound')
+      .spyOn(room, '_finalizeGame')
       .mockResolvedValue(undefined);
     vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
     vi.spyOn(room, '_broadcastRevealStatus').mockImplementation(() => {});
@@ -174,13 +174,13 @@ describe('GameRoom async task tracking', () => {
 
     const match = createMatch();
     match.phase = 'results';
-    match.currentRound = 3;
-    match.totalRounds = 10;
-    match.lastSettledRound = 3;
-    match.lastRoundResult = {
-      roundNum: 3,
+    match.currentGame = 3;
+    match.totalGames = 10;
+    match.lastSettledGame = 3;
+    match.lastGameResult = {
+      gameNum: 3,
       players: [{ accountId: 'acct-1', newBalance: 940 }],
-    } as RoundResultMessage['result'];
+    } as GameResultMessage['result'];
 
     const player = {
       accountId: 'acct-1',
@@ -194,7 +194,7 @@ describe('GameRoom async task tracking', () => {
       optionIndex: null,
       salt: null,
       forfeited: false,
-      forfeitedAtRound: null,
+      forfeitedAtGame: null,
       disconnectedAt: null,
       graceTimer: null,
     };
@@ -208,7 +208,7 @@ describe('GameRoom async task tracking', () => {
       'acct-1',
       {
         forfeited: true,
-        forfeitedAtRound: 3,
+        forfeitedAtGame: 3,
         currentBalance: 520,
       },
     );
@@ -220,8 +220,8 @@ describe('GameRoom async task tracking', () => {
     expect(bind).toHaveBeenCalledWith(520, 'acct-1');
     expect(run).toHaveBeenCalledTimes(1);
 
-    // Cached round result must reflect burned balance for reconnect replay
-    const cached = match.lastRoundResult?.players.find(
+    // Cached game result must reflect burned balance for reconnect replay
+    const cached = match.lastGameResult?.players.find(
       (p) => p.accountId === 'acct-1',
     );
     expect(cached?.newBalance).toBe(520);
@@ -230,7 +230,7 @@ describe('GameRoom async task tracking', () => {
     expect(checkpointMatch).toHaveBeenCalledWith(match);
   });
 
-  it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeRound)', () => {
+  it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeGame)', () => {
     const prepare = vi.fn();
     const { room, waitUntil } = createRoom({
       DB: { prepare } as unknown as D1Database,
@@ -240,8 +240,8 @@ describe('GameRoom async task tracking', () => {
 
     const match = createMatch();
     match.phase = 'commit';
-    match.currentRound = 3;
-    match.totalRounds = 10;
+    match.currentGame = 3;
+    match.totalGames = 10;
 
     const player = {
       accountId: 'acct-1',
@@ -255,7 +255,7 @@ describe('GameRoom async task tracking', () => {
       optionIndex: null,
       salt: null,
       forfeited: false,
-      forfeitedAtRound: null,
+      forfeitedAtGame: null,
       disconnectedAt: null,
       graceTimer: null,
     };
@@ -275,7 +275,7 @@ describe('GameRoom async task tracking', () => {
       optionIndex: null,
       salt: null,
       forfeited: false,
-      forfeitedAtRound: null,
+      forfeitedAtGame: null,
       disconnectedAt: null,
       graceTimer: null,
     });
@@ -284,7 +284,7 @@ describe('GameRoom async task tracking', () => {
 
     expect(player.currentBalance).toBe(520);
     expect(player.forfeited).toBe(true);
-    expect(player.forfeitedAtRound).toBe(3);
+    expect(player.forfeitedAtGame).toBe(3);
     expect(waitUntil).not.toHaveBeenCalled();
     expect(prepare).not.toHaveBeenCalled();
   });
@@ -298,17 +298,17 @@ describe('GameRoom async task tracking', () => {
     vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
 
     const match = createMatch();
-    // phase is 'results' but lastRoundResult still has the previous
-    // round's value: simulates a grace-timer forfeit firing during
-    // _finalizeRound's D1 batch await.
+    // phase is 'results' but lastGameResult still has the previous
+    // game's value: simulates a grace-timer forfeit firing during
+    // _finalizeGame's D1 batch await.
     match.phase = 'results';
-    match.currentRound = 3;
-    match.totalRounds = 10;
-    match.lastSettledRound = 3;
-    match.lastRoundResult = {
-      roundNum: 2,
+    match.currentGame = 3;
+    match.totalGames = 10;
+    match.lastSettledGame = 3;
+    match.lastGameResult = {
+      gameNum: 2,
       players: [],
-    } as unknown as RoundResultMessage['result'];
+    } as unknown as GameResultMessage['result'];
 
     const player = {
       accountId: 'acct-1',
@@ -322,7 +322,7 @@ describe('GameRoom async task tracking', () => {
       optionIndex: null,
       salt: null,
       forfeited: false,
-      forfeitedAtRound: null,
+      forfeitedAtGame: null,
       disconnectedAt: null,
       graceTimer: null,
     };
@@ -332,7 +332,7 @@ describe('GameRoom async task tracking', () => {
 
     expect(player.currentBalance).toBe(520);
     expect(player.forfeited).toBe(true);
-    // Must not persist or patch: _finalizeRound will read the live
+    // Must not persist or patch: _finalizeGame will read the live
     // playerState.currentBalance when it builds the payload.
     expect(waitUntil).not.toHaveBeenCalled();
     expect(prepare).not.toHaveBeenCalled();
@@ -498,7 +498,7 @@ describe('GameRoom async task tracking', () => {
     vi.spyOn(room, '_broadcastRevealStatus').mockImplementation(() => {});
 
     const match = createMatch();
-    match.currentRound = 0;
+    match.currentGame = 0;
     match.phase = 'starting';
 
     const human = {
@@ -575,8 +575,8 @@ describe('GameRoom async task tracking', () => {
       const endMatch = vi.spyOn(room, '_endMatch').mockResolvedValue(undefined);
 
       const match = createMatch();
-      match.totalRounds = 3;
-      match.currentRound = 1;
+      match.totalGames = 3;
+      match.currentGame = 1;
       match.phase = 'reveal';
 
       const human = {
@@ -591,7 +591,7 @@ describe('GameRoom async task tracking', () => {
         optionIndex: null,
         salt: null,
         forfeited: true,
-        forfeitedAtRound: null,
+        forfeitedAtGame: null,
         disconnectedAt: null,
         graceTimer: null,
         pendingAiCommit: false,
@@ -609,7 +609,7 @@ describe('GameRoom async task tracking', () => {
         optionIndex: 1,
         salt: botSalt,
         forfeited: false,
-        forfeitedAtRound: null,
+        forfeitedAtGame: null,
         disconnectedAt: null,
         graceTimer: null,
         pendingAiCommit: false,
@@ -617,7 +617,7 @@ describe('GameRoom async task tracking', () => {
       match.players.set(human.accountId, human);
       match.players.set(bot.accountId, bot);
 
-      await room._finalizeRound(match);
+      await room._finalizeGame(match);
 
       expect(endMatch).not.toHaveBeenCalled();
       expect(startCommitPhase).not.toHaveBeenCalled();

@@ -7,19 +7,19 @@ import {
 } from './domain/commitReveal';
 import {
   COMMIT_DURATION,
+  GAME_ANTE,
   RESULTS_DURATION,
   REVEAL_DURATION,
-  ROUND_ANTE,
 } from './domain/constants';
 import { selectQuestionsForMatch } from './domain/questions';
-import { settleRound } from './domain/settlement';
+import { settleGame } from './domain/settlement';
 import type {
+  GameResult,
   PlayerResultWithBalance,
   PlayerSettlementInput,
   Question,
-  RoundResult,
 } from './types/domain';
-import type { RoundResultMessage } from './types/messages';
+import type { GameResultMessage } from './types/messages';
 import type { Env } from './types/worker-env';
 import { handleHttpRequest } from './worker/httpHandler';
 import type {
@@ -68,7 +68,7 @@ interface FormingMatchState {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const TOTAL_ROUNDS = 10;
+const TOTAL_GAMES = 10;
 const FILL_TIMER_MS = 30_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
@@ -604,7 +604,7 @@ export class GameRoom {
   // -------------------------------------------------------------------------
 
   async _startMatch(playerIds: string[], matchId: string): Promise<void> {
-    const questions = selectQuestionsForMatch(TOTAL_ROUNDS);
+    const questions = selectQuestionsForMatch(TOTAL_GAMES);
 
     const playersMap = new Map<string, WorkerPlayerState>();
     for (const accountId of playerIds) {
@@ -643,7 +643,7 @@ export class GameRoom {
         optionIndex: null,
         salt: null,
         forfeited: false,
-        forfeitedAtRound: null,
+        forfeitedAtGame: null,
         disconnectedAt: null,
         graceTimer: null,
         pendingAiCommit: false,
@@ -656,15 +656,15 @@ export class GameRoom {
       matchId,
       players: playersMap,
       questions,
-      currentRound: 0,
-      totalRounds: TOTAL_ROUNDS,
+      currentGame: 0,
+      totalGames: TOTAL_GAMES,
       phase: 'starting',
       phaseEnteredAt: Date.now(),
-      lastSettledRound: 0,
+      lastSettledGame: 0,
       commitTimer: null,
       revealTimer: null,
       resultsTimer: null,
-      lastRoundResult: null,
+      lastGameResult: null,
     };
     this.activeMatches.set(matchId, match);
 
@@ -676,7 +676,7 @@ export class GameRoom {
         ).bind(
           matchId,
           new Date().toISOString(),
-          TOTAL_ROUNDS,
+          TOTAL_GAMES,
           playersMap.size,
           'active',
         ),
@@ -694,33 +694,33 @@ export class GameRoom {
       console.error('D1: insert match/match_players for', matchId, e);
     }
 
-    // Broadcast game_started
+    // Broadcast match_started
     const playersInfo = [...playersMap.values()].map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
     }));
 
     this._broadcastToMatch(match, {
-      type: 'game_started',
+      type: 'match_started',
       matchId,
-      roundCount: TOTAL_ROUNDS,
+      gameCount: TOTAL_GAMES,
       players: playersInfo,
     });
 
-    // Start round 1
+    // Start game 1
     this._startCommitPhase(match);
   }
 
   _startCommitPhase(match: WorkerMatchState): void {
-    const nextRound = match.currentRound + 1;
-    const question = this._getQuestionForRound(match, nextRound);
+    const nextGame = match.currentGame + 1;
+    const question = this._getQuestionForGame(match, nextGame);
 
     match.phase = 'commit';
-    match.currentRound = nextRound;
+    match.currentGame = nextGame;
     match.phaseEnteredAt = Date.now();
-    match.lastRoundResult = null;
+    match.lastGameResult = null;
 
-    // Reset per-round player state
+    // Reset per-game player state
     for (const p of match.players.values()) {
       p.committed = false;
       p.revealed = false;
@@ -733,8 +733,8 @@ export class GameRoom {
     this._checkpointMatch(match);
 
     this._broadcastToMatch(match, {
-      type: 'round_start',
-      round: match.currentRound,
+      type: 'game_started',
+      game: match.currentGame,
       question: {
         id: question.id,
         text: question.text,
@@ -742,7 +742,7 @@ export class GameRoom {
         options: question.options,
       },
       commitDuration: COMMIT_DURATION,
-      roundAnte: ROUND_ANTE,
+      gameAnte: GAME_ANTE,
       phase: 'commit',
     });
 
@@ -773,24 +773,24 @@ export class GameRoom {
     match.revealTimer = setTimeout(() => {
       match.revealTimer = null;
       this._waitUntil(
-        this._finalizeRound(match),
-        `finalize round ${match.currentRound} for ${match.matchId}`,
+        this._finalizeGame(match),
+        `finalize game ${match.currentGame} for ${match.matchId}`,
       );
     }, REVEAL_DURATION * 1000);
 
     this._autoRevealAiBots(match);
   }
 
-  async _finalizeRound(match: WorkerMatchState): Promise<void> {
+  async _finalizeGame(match: WorkerMatchState): Promise<void> {
     if (match.revealTimer) {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
-    const question = this._getQuestionForRound(match, match.currentRound);
+    const question = this._getQuestionForGame(match, match.currentGame);
 
     match.phase = 'results';
     match.phaseEnteredAt = Date.now();
-    const alreadySettled = match.currentRound <= match.lastSettledRound;
+    const alreadySettled = match.currentGame <= match.lastSettledGame;
 
     // Build player array for settlement
     const settlementPlayers: PlayerSettlementInput[] = [
@@ -801,10 +801,10 @@ export class GameRoom {
       optionIndex: p.revealed ? p.optionIndex : null,
       validReveal: p.committed && p.revealed && !p.forfeited,
       forfeited: p.forfeited,
-      attached: !p.forfeited || p.forfeitedAtRound === match.currentRound,
+      attached: !p.forfeited || p.forfeitedAtGame === match.currentGame,
     }));
 
-    const result: RoundResult = settleRound(settlementPlayers, question);
+    const result: GameResult = settleGame(settlementPlayers, question);
 
     // Apply balance changes to in-memory state (always needed for correct broadcast)
     for (const pr of result.players) {
@@ -820,10 +820,10 @@ export class GameRoom {
           : null;
     }
 
-    // Write to D1 only if this round hasn't been settled before (prevents duplicates after restore)
+    // Write to D1 only if this game hasn't been settled before (prevents duplicates after restore)
     if (!alreadySettled) {
-      match.lastSettledRound = match.currentRound;
-      // Checkpoint before D1 batch so lastSettledRound survives eviction between
+      match.lastSettledGame = match.currentGame;
+      // Checkpoint before D1 batch so lastSettledGame survives eviction between
       // the D1 writes and the post-settlement checkpoint below
       this._checkpointMatch(match);
 
@@ -875,16 +875,16 @@ export class GameRoom {
               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           ).bind(
             match.matchId,
-            match.currentRound,
+            match.currentGame,
             question.id,
             pr.accountId,
             pr.displayName,
             pr.revealedOptionIndex,
             pr.revealedOptionLabel,
-            pr.wonRound ? 1 : 0,
+            pr.wonGame ? 1 : 0,
             pr.earnsCoordinationCredit ? 1 : 0,
             pr.antePaid,
-            pr.roundPayout,
+            pr.gamePayout,
             pr.netDelta,
             result.playerCount,
             result.validRevealCount,
@@ -902,18 +902,18 @@ export class GameRoom {
         try {
           await this.env.DB.batch(stmts);
         } catch (e) {
-          console.error('D1: batch finalizeRound for', match.matchId, e);
+          console.error('D1: batch finalizeGame for', match.matchId, e);
         }
       }
     }
 
-    // Build round result payload for broadcast and reconnect replay.
+    // Build game result payload for broadcast and reconnect replay.
     // Read newBalance from live player state rather than the snapshot
     // captured before the D1 await: a grace-timer forfeit could have
-    // burned future-round antes during the batch, making the snapshot
+    // burned future-game antes during the batch, making the snapshot
     // stale.
-    const roundResultPayload: RoundResultMessage['result'] = {
-      roundNum: match.currentRound,
+    const gameResultPayload: GameResultMessage['result'] = {
+      gameNum: match.currentGame,
       voided: result.voided,
       voidReason: result.voidReason,
       playerCount: result.playerCount,
@@ -928,26 +928,26 @@ export class GameRoom {
         displayName: pr.displayName,
         revealedOptionIndex: pr.revealedOptionIndex,
         revealedOptionLabel: pr.revealedOptionLabel,
-        wonRound: pr.wonRound,
+        wonGame: pr.wonGame,
         earnsCoordinationCredit: pr.earnsCoordinationCredit,
         antePaid: pr.antePaid,
-        roundPayout: pr.roundPayout,
+        gamePayout: pr.gamePayout,
         netDelta: pr.netDelta,
         newBalance:
           match.players.get(pr.accountId)?.currentBalance ??
           (pr as PlayerResultWithBalance).newBalance,
       })),
     };
-    match.lastRoundResult = roundResultPayload;
+    match.lastGameResult = gameResultPayload;
 
-    // Checkpoint after setting lastRoundResult so it survives DO eviction
+    // Checkpoint after setting lastGameResult so it survives DO eviction
     this._checkpointMatch(match);
 
-    // Broadcast round_result
+    // Broadcast game_result
     this._broadcastToMatch(match, {
-      type: 'round_result',
+      type: 'game_result',
       resultsDuration: RESULTS_DURATION,
-      result: roundResultPayload,
+      result: gameResultPayload,
     });
 
     // Check early termination: no non-forfeited players remain
@@ -967,7 +967,7 @@ export class GameRoom {
   }
 
   async _endMatch(match: WorkerMatchState): Promise<void> {
-    match.lastRoundResult = null;
+    match.lastGameResult = null;
     if (match.resultsTimer) {
       clearTimeout(match.resultsTimer);
       match.resultsTimer = null;
@@ -994,7 +994,7 @@ export class GameRoom {
       })),
     };
 
-    this._broadcastToMatch(match, { type: 'game_over', summary });
+    this._broadcastToMatch(match, { type: 'match_over', summary });
 
     // Batch all endMatch D1 writes
     try {
@@ -1121,15 +1121,15 @@ export class GameRoom {
       return;
     }
 
-    const question = this._getQuestionForRound(match, match.currentRound);
-    const roundAtDispatch = match.currentRound;
+    const question = this._getQuestionForGame(match, match.currentGame);
+    const gameAtDispatch = match.currentGame;
 
     player.pendingAiCommit = true;
     try {
       const optionIndex = await this._selectAiBotOption(match, question);
       if (
         match.phase !== 'commit' ||
-        match.currentRound !== roundAtDispatch ||
+        match.currentGame !== gameAtDispatch ||
         player.forfeited ||
         player.committed
       ) {
@@ -1163,7 +1163,7 @@ export class GameRoom {
       }
     } finally {
       if (
-        match.currentRound === roundAtDispatch &&
+        match.currentGame === gameAtDispatch &&
         match.players.get(accountId) === player
       ) {
         player.pendingAiCommit = false;
@@ -1350,8 +1350,8 @@ export class GameRoom {
 
     if (this._allCommittedNonForfeitedRevealed(match)) {
       this._waitUntil(
-        this._finalizeRound(match),
-        `finalize round ${match.currentRound} for ${match.matchId}`,
+        this._finalizeGame(match),
+        `finalize game ${match.currentGame} for ${match.matchId}`,
       );
       return true;
     }
@@ -1453,7 +1453,7 @@ export class GameRoom {
     if (!player.committed) {
       return this._sendTo(accountId, {
         type: 'error',
-        message: 'Did not commit this round',
+        message: 'Did not commit this game',
       });
     }
     if (player.revealed) {
@@ -1468,7 +1468,7 @@ export class GameRoom {
       salt: unknown;
       type: string;
     };
-    const question = this._getQuestionForRound(match, match.currentRound);
+    const question = this._getQuestionForGame(match, match.currentGame);
 
     if (!validateOptionIndex(optionIndex, question.options.length)) {
       return this._sendTo(accountId, {
@@ -1513,8 +1513,8 @@ export class GameRoom {
     // Auto-advance if all committed non-forfeited players revealed
     if (this._allCommittedNonForfeitedRevealed(match)) {
       this._waitUntil(
-        this._finalizeRound(match),
-        `finalize round ${match.currentRound} for ${match.matchId}`,
+        this._finalizeGame(match),
+        `finalize game ${match.currentGame} for ${match.matchId}`,
       );
     }
   }
@@ -1537,7 +1537,7 @@ export class GameRoom {
           ? 'dislike'
           : null;
     if (!rating) return;
-    const questionId = match.questions[match.currentRound - 1]?.id;
+    const questionId = match.questions[match.currentGame - 1]?.id;
     if (!questionId) return;
 
     try {
@@ -1546,7 +1546,7 @@ export class GameRoom {
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(question_id, account_id, match_id) DO UPDATE SET rating = excluded.rating
       `)
-        .bind(questionId, accountId, matchId, match.currentRound, rating)
+        .bind(questionId, accountId, matchId, match.currentGame, rating)
         .run();
     } catch {
       return;
@@ -1629,45 +1629,45 @@ export class GameRoom {
     if (!player || player.forfeited) return;
 
     player.forfeited = true;
-    player.forfeitedAtRound = match.currentRound;
+    player.forfeitedAtGame = match.currentGame;
     player.graceTimer = null;
 
-    // Burn future-round antes immediately. The player is detached from all
+    // Burn future-game antes immediately. The player is detached from all
     // subsequent rounds, so this is the only place the penalty is applied.
-    // Applying here instead of in _finalizeRound avoids a timing exploit
+    // Applying here instead of in _finalizeGame avoids a timing exploit
     // where a disconnect during the results phase would skip the penalty.
-    const futureRounds = match.totalRounds - match.currentRound;
-    player.currentBalance -= futureRounds * ROUND_ANTE;
+    const futureGames = match.totalGames - match.currentGame;
+    player.currentBalance -= futureGames * GAME_ANTE;
 
     this._checkpointPlayerAction(match.matchId, accountId, {
       forfeited: true,
-      forfeitedAtRound: match.currentRound,
+      forfeitedAtGame: match.currentGame,
       currentBalance: player.currentBalance,
     });
 
-    // Only take the results-phase path when the current round is fully
-    // settled (lastRoundResult built and cached). _finalizeRound sets
+    // Only take the results-phase path when the current game is fully
+    // settled (lastGameResult built and cached). _finalizeGame sets
     // phase='results' before the D1 batch await, so checking phase alone
     // would race: the forfeit burn would fire while the batch is in
-    // flight, and _finalizeRound would later build the payload from a
-    // stale snapshot. Checking roundNum guards against both the mid-await
-    // window and a stale lastRoundResult from a prior round.
+    // flight, and _finalizeGame would later build the payload from a
+    // stale snapshot. Checking gameNum guards against both the mid-await
+    // window and a stale lastGameResult from a prior game.
     //
     // During commit/reveal the player is still attached for the current
-    // round. _finalizeRound will write the correct post-settlement
+    // game. _finalizeGame will write the correct post-settlement
     // balance to D1, so persisting here would race with that write.
     const roundFullySettled =
-      match.lastRoundResult?.roundNum === match.currentRound;
+      match.lastGameResult?.gameNum === match.currentGame;
     if (roundFullySettled) {
       this._waitUntil(
         this._persistAccountBalance(accountId, player.currentBalance),
         `persist forfeited balance for ${accountId}`,
       );
 
-      // Patch the cached round result so reconnect replay reflects the
+      // Patch the cached game result so reconnect replay reflects the
       // burned balance instead of the stale pre-forfeit value.
-      if (match.lastRoundResult) {
-        const cached = match.lastRoundResult.players.find(
+      if (match.lastGameResult) {
+        const cached = match.lastGameResult.players.find(
           (p) => p.accountId === accountId,
         );
         if (cached) {
@@ -1680,11 +1680,11 @@ export class GameRoom {
     this._broadcastToMatch(match, {
       type: 'player_forfeited',
       displayName: player.displayName,
-      futureRoundsPenaltyApplied: true,
+      futureGamesPenaltyApplied: true,
     });
 
     // If all players are now forfeited, check for early termination
-    // This is handled naturally in _finalizeRound via the non-forfeited check.
+    // This is handled naturally in _finalizeGame via the non-forfeited check.
     // But we also need to check if this forfeit triggers auto-advance:
 
     // During commit phase: if all non-forfeited have committed, advance
@@ -1697,8 +1697,8 @@ export class GameRoom {
       this._allCommittedNonForfeitedRevealed(match)
     ) {
       this._waitUntil(
-        this._finalizeRound(match),
-        `finalize round ${match.currentRound} for ${match.matchId}`,
+        this._finalizeGame(match),
+        `finalize game ${match.currentGame} for ${match.matchId}`,
       );
     }
   }
@@ -1721,7 +1721,7 @@ export class GameRoom {
   ): void {
     const data = JSON.stringify(msg);
     for (const p of match.players.values()) {
-      if (!p.forfeited || msg.type === 'game_over') {
+      if (!p.forfeited || msg.type === 'match_over') {
         if (p.ws)
           try {
             p.ws.send(data);
@@ -1919,7 +1919,7 @@ export class GameRoom {
         commitTimer: null,
         revealTimer: null,
         resultsTimer: null,
-        lastRoundResult: rm.lastRoundResult,
+        lastGameResult: rm.lastGameResult,
       });
     }
   }
@@ -1953,15 +1953,15 @@ export class GameRoom {
           return;
         }
         this._waitUntil(
-          this._finalizeRound(match),
-          `finalize round ${match.currentRound} for ${match.matchId}`,
+          this._finalizeGame(match),
+          `finalize game ${match.currentGame} for ${match.matchId}`,
         );
       } else {
         match.revealTimer = setTimeout(() => {
           match.revealTimer = null;
           this._waitUntil(
-            this._finalizeRound(match),
-            `finalize round ${match.currentRound} for ${match.matchId}`,
+            this._finalizeGame(match),
+            `finalize game ${match.currentGame} for ${match.matchId}`,
           );
         }, remaining);
         this._autoRevealAiBots(match);
@@ -1997,7 +1997,7 @@ export class GameRoom {
 
   _advanceAfterResults(match: WorkerMatchState): void {
     if (
-      match.currentRound >= match.totalRounds ||
+      match.currentGame >= match.totalGames ||
       !this._hasNonForfeitedPlayers(match)
     ) {
       this._waitUntil(this._endMatch(match), `end match ${match.matchId}`);
@@ -2013,11 +2013,11 @@ export class GameRoom {
     return false;
   }
 
-  _getQuestionForRound(match: WorkerMatchState, round: number): Question {
-    const question = match.questions[round - 1];
+  _getQuestionForGame(match: WorkerMatchState, game: number): Question {
+    const question = match.questions[game - 1];
     if (!question) {
       throw new Error(
-        `Missing question for match ${match.matchId} round ${round}`,
+        `Missing question for match ${match.matchId} game ${game}`,
       );
     }
     return question;
@@ -2027,16 +2027,16 @@ export class GameRoom {
     const player = match.players.get(accountId);
     if (!player) return;
 
-    // Send game_started so the client knows the match context
+    // Send match_started so the client knows the match context
     const playersInfo = [...match.players.values()].map((p) => ({
       displayName: p.displayName,
       startingBalance: p.startingBalance,
       currentBalance: p.currentBalance,
     }));
     this._sendTo(accountId, {
-      type: 'game_started',
+      type: 'match_started',
       matchId: match.matchId,
-      roundCount: match.totalRounds,
+      gameCount: match.totalGames,
       players: playersInfo,
     });
 
@@ -2047,7 +2047,7 @@ export class GameRoom {
         this._sendTo(accountId, {
           type: 'player_forfeited',
           displayName: peer.displayName,
-          futureRoundsPenaltyApplied: true,
+          futureGamesPenaltyApplied: true,
         });
       } else if (peer.disconnectedAt !== null) {
         const elapsedMs = Date.now() - peer.disconnectedAt;
@@ -2063,13 +2063,13 @@ export class GameRoom {
       }
     }
 
-    // Send current round info with remaining time (not full duration)
+    // Send current game info with remaining time (not full duration)
     if (
       match.phase === 'commit' ||
       match.phase === 'reveal' ||
       match.phase === 'results'
     ) {
-      const question = this._getQuestionForRound(match, match.currentRound);
+      const question = this._getQuestionForGame(match, match.currentGame);
       const elapsed = Date.now() - match.phaseEnteredAt;
       const commitRemaining = Math.max(
         0,
@@ -2085,8 +2085,8 @@ export class GameRoom {
       );
 
       this._sendTo(accountId, {
-        type: 'round_start',
-        round: match.currentRound,
+        type: 'game_started',
+        game: match.currentGame,
         question: {
           id: question.id,
           text: question.text,
@@ -2095,7 +2095,7 @@ export class GameRoom {
         },
         commitDuration:
           match.phase === 'commit' ? commitRemaining : COMMIT_DURATION,
-        roundAnte: ROUND_ANTE,
+        gameAnte: GAME_ANTE,
         phase: match.phase,
         yourCommitted: player.committed,
         yourRevealed: player.revealed,
@@ -2129,22 +2129,22 @@ export class GameRoom {
         });
       }
 
-      // Replay cached round result so the reconnecting client renders the results screen
-      if (match.phase === 'results' && match.lastRoundResult) {
+      // Replay cached game result so the reconnecting client renders the results screen
+      if (match.phase === 'results' && match.lastGameResult) {
         this._sendTo(accountId, {
-          type: 'round_result',
+          type: 'game_result',
           resultsDuration: resultsRemaining,
-          result: match.lastRoundResult,
+          result: match.lastGameResult,
         });
 
         // Replay question rating tally and the player's own rating (async D1 query)
-        const questionId = match.questions[match.currentRound - 1]?.id;
+        const questionId = match.questions[match.currentGame - 1]?.id;
         if (questionId) {
           this._waitUntil(
             this._replayRatingTally(
               match.matchId,
               questionId,
-              match.currentRound,
+              match.currentGame,
               accountId,
             ),
             'replay rating tally on reconnect',
@@ -2157,7 +2157,7 @@ export class GameRoom {
   async _replayRatingTally(
     matchId: string,
     questionId: number,
-    roundAtDispatch: number,
+    gameAtDispatch: number,
     accountId: string,
   ): Promise<void> {
     try {
@@ -2177,12 +2177,12 @@ export class GameRoom {
           .first<{ rating: string }>(),
       ]);
 
-      // Guard: if the match advanced past the round we queried for, discard
+      // Guard: if the match advanced past the game we queried for, discard
       const match = this.activeMatches.get(matchId);
       if (
         !match ||
         match.phase !== 'results' ||
-        match.currentRound !== roundAtDispatch
+        match.currentGame !== gameAtDispatch
       ) {
         return;
       }

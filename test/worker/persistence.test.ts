@@ -193,7 +193,7 @@ describe('restoreMatchesFromStorage', () => {
     expect(p1.disconnectedAt).toBe(p2.disconnectedAt);
   });
 
-  it('legacy checkpoint: forfeited player is detached (forfeitedAtRound < currentRound)', () => {
+  it('legacy checkpoint: forfeited player is detached (forfeitedAtGame < currentGame)', () => {
     const matchRows = [
       {
         match_id: 'match-1',
@@ -256,14 +256,14 @@ describe('restoreMatchesFromStorage', () => {
       'Expected quitter state',
     );
     expect(quitter.forfeited).toBe(true);
-    // Must be less than currentRound so settlement treats them as detached
-    expect(quitter.forfeitedAtRound).toBe(4);
-    expect(quitter.forfeitedAtRound).toBeLessThan(match.currentRound);
+    // Must be less than currentGame so settlement treats them as detached
+    expect(quitter.forfeitedAtGame).toBe(4);
+    expect(quitter.forfeitedAtGame).toBeLessThan(match.currentGame);
 
     const active = must(
       match.players.get('0xactive'),
       'Expected active player state',
     );
-    expect(active.forfeitedAtRound).toBeNull();
+    expect(active.forfeitedAtGame).toBeNull();
   });
 });

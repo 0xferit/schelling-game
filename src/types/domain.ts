@@ -31,14 +31,14 @@ export interface PlayerResult {
   displayName: string;
   revealedOptionIndex: number | null;
   revealedOptionLabel: string | null;
-  wonRound: boolean;
+  wonGame: boolean;
   earnsCoordinationCredit: boolean;
   antePaid: number;
-  roundPayout: number;
+  gamePayout: number;
   netDelta: number;
 }
 
-export interface RoundResult {
+export interface GameResult {
   voided: boolean;
   voidReason: string | null;
   playerCount: number;
@@ -51,15 +51,15 @@ export interface RoundResult {
   players: PlayerResult[];
 }
 
-export interface RoundResultWithNum extends RoundResult {
-  roundNum: number;
+export interface GameResultWithNum extends GameResult {
+  gameNum: number;
 }
 
 export interface PlayerResultWithBalance extends PlayerResult {
   newBalance: number;
 }
 
-export interface RoundResultWithBalances
-  extends Omit<RoundResultWithNum, 'players'> {
+export interface GameResultWithBalances
+  extends Omit<GameResultWithNum, 'players'> {
   players: PlayerResultWithBalance[];
 }

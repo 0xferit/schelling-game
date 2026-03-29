@@ -97,7 +97,7 @@ async function reconnectPlayer(
   return connectWs(walletIndex);
 }
 
-/** Connect N players, join queue, and await game_started for all. */
+/** Connect N players, join queue, and await match_started for all. */
 async function formMatch(
   wallets: [index: number, name: string][],
 ): Promise<
@@ -109,7 +109,7 @@ async function formMatch(
   }
 
   const startedPromises = players.map((p) =>
-    waitForMessage(p.ws, 'game_started', 25_000),
+    waitForMessage(p.ws, 'match_started', 25_000),
   );
 
   for (const p of players) {
@@ -121,7 +121,7 @@ async function formMatch(
     ...p,
     gameStarted: must(
       started[i],
-      `Expected game_started for player index ${i}`,
+      `Expected match_started for player index ${i}`,
     ),
   }));
 }
@@ -197,11 +197,11 @@ describe('GameRoom Durable Object', () => {
       [2, 'Player3'],
     ]);
 
-    // Verify game_started has expected structure
+    // Verify match_started has expected structure
     const gs1 = must(players[0], 'Expected first player').gameStarted;
     expect(gs1.matchId).toBeTruthy();
     expect(gs1.players).toBeDefined();
-    expect(gs1.roundCount).toBe(10);
+    expect(gs1.gameCount).toBe(10);
 
     // All three should share the same matchId
     expect(gs1.matchId).toBe(
@@ -216,7 +216,7 @@ describe('GameRoom Durable Object', () => {
     }
   });
 
-  it('reconnect after commit replays round_start with yourCommitted flag', {
+  it('reconnect after commit replays game_started with yourCommitted flag', {
     timeout: 35_000,
   }, async () => {
     // Form a match with 3 players (wallet indices 3/4/8 to avoid collisions)
@@ -224,23 +224,23 @@ describe('GameRoom Durable Object', () => {
     const p2 = await connectPlayer(4, 'Bystander1');
     const p3 = await connectPlayer(8, 'Bystander2');
 
-    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
     p3.ws.send(JSON.stringify({ type: 'join_queue' }));
 
-    // Listen for round_start before awaiting game_started to avoid missing
+    // Listen for game_started before awaiting match_started to avoid missing
     // back-to-back messages from the server.
-    const p1RoundStart = waitForMessage(p1.ws, 'round_start', 28_000);
+    const p1GameStart = waitForMessage(p1.ws, 'game_started', 28_000);
 
     const [gs1] = await Promise.all([p1Started, p2Started, p3Started]);
     const originalMatchId = gs1.matchId;
     expect(originalMatchId).toBeTruthy();
 
-    const roundStart = await p1RoundStart;
+    const roundStart = await p1GameStart;
     expect(roundStart.phase).toBe('commit');
 
     // Player 1 commits a hash.
@@ -258,13 +258,13 @@ describe('GameRoom Durable Object', () => {
     // Register both listeners immediately after reconnectPlayer returns
     // (before any await) so queued replay messages can't dispatch first.
     const p1r = await reconnectPlayer(3);
-    const reconnectGameStartedP = waitForMessage(p1r.ws, 'game_started', 3000);
-    const reconnectRoundStartP = waitForMessage(p1r.ws, 'round_start', 3000);
+    const reconnectGameStartedP = waitForMessage(p1r.ws, 'match_started', 3000);
+    const reconnectGameStartP = waitForMessage(p1r.ws, 'game_started', 3000);
 
     const reconnectGameStarted = await reconnectGameStartedP;
     expect(reconnectGameStarted.matchId).toBe(originalMatchId);
 
-    const reconnectRoundStart = await reconnectRoundStartP;
+    const reconnectRoundStart = await reconnectGameStartP;
     expect(reconnectRoundStart.yourCommitted).toBe(true);
     expect(reconnectRoundStart.yourRevealed).toBe(false);
 
@@ -281,12 +281,12 @@ describe('GameRoom Durable Object', () => {
     const p2 = await connectPlayer(20, 'ReconP2');
     const p3 = await connectPlayer(21, 'ReconP3');
 
-    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
 
-    // Listen for round_start before joining to avoid missing it
-    const p1Round = waitForMessage(p1.ws, 'round_start', 28_000);
+    // Listen for game_started before joining to avoid missing it
+    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -306,7 +306,7 @@ describe('GameRoom Durable Object', () => {
     p1.ws.close();
 
     const p1r = await connectPlayer(19, 'ReconP1');
-    const reconnectGameStarted = waitForMessage(p1r.ws, 'game_started', 3000);
+    const reconnectGameStarted = waitForMessage(p1r.ws, 'match_started', 3000);
     const reconnectDisconnected = waitForMessage(
       p1r.ws,
       'player_disconnected',
@@ -325,7 +325,7 @@ describe('GameRoom Durable Object', () => {
     p3.ws.close();
   });
 
-  it('reconnect during results phase replays round_result', {
+  it('reconnect during results phase replays game_result', {
     timeout: 35_000,
   }, async () => {
     // Use wallet indices 10/11/12 to avoid collisions with other tests.
@@ -334,15 +334,15 @@ describe('GameRoom Durable Object', () => {
     const p2 = await connectPlayer(11, 'ResultP2', 1000);
     const p3 = await connectPlayer(12, 'ResultP3', 1000);
 
-    // Listen for game_started before joining queue
-    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+    // Listen for match_started before joining queue
+    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
 
-    // Listen for round_start on all players before joining
-    const p1Round = waitForMessage(p1.ws, 'round_start', 28_000);
-    const p2Round = waitForMessage(p2.ws, 'round_start', 28_000);
-    const p3Round = waitForMessage(p3.ws, 'round_start', 28_000);
+    // Listen for game_started on all players before joining
+    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
+    const p2Round = waitForMessage(p2.ws, 'game_started', 28_000);
+    const p3Round = waitForMessage(p3.ws, 'game_started', 28_000);
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -372,29 +372,29 @@ describe('GameRoom Durable Object', () => {
     expect(phaseChange.phase).toBe('reveal');
 
     // All players reveal. When all committed players reveal, auto-advance
-    // triggers _finalizeRound which enters results phase.
-    const p1Result = waitForMessage(p1.ws, 'round_result', 5000);
+    // triggers _finalizeGame which enters results phase.
+    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
 
     p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
     p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
     p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt3 }));
 
-    // Wait for round_result to confirm we are in results phase
+    // Wait for game_result to confirm we are in results phase
     const originalResult = await p1Result;
-    expect(originalResult.type).toBe('round_result');
+    expect(originalResult.type).toBe('game_result');
 
     // Disconnect player 1 and reconnect during results phase
     p1.ws.close();
 
     const p1r = await reconnectPlayer(10);
-    const reconnectResult = waitForMessage(p1r.ws, 'round_result', 5000);
+    const reconnectResult = waitForMessage(p1r.ws, 'game_result', 5000);
 
     const replayedResult = await reconnectResult;
-    expect(replayedResult.type).toBe('round_result');
+    expect(replayedResult.type).toBe('game_result');
     expect(replayedResult.result).toBeDefined();
 
     const result = replayedResult.result as Record<string, unknown>;
-    expect(result.roundNum).toBe(1);
+    expect(result.gameNum).toBe(1);
     expect(result.players).toBeDefined();
 
     p1r.ws.close();
@@ -411,13 +411,13 @@ describe('GameRoom Durable Object', () => {
     const p2 = await connectPlayer(14, 'RemP2', 1000);
     const p3 = await connectPlayer(15, 'RemP3', 1000);
 
-    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
 
-    const p1Round = waitForMessage(p1.ws, 'round_start', 28_000);
-    const p2Round = waitForMessage(p2.ws, 'round_start', 28_000);
-    const p3Round = waitForMessage(p3.ws, 'round_start', 28_000);
+    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
+    const p2Round = waitForMessage(p2.ws, 'game_started', 28_000);
+    const p3Round = waitForMessage(p3.ws, 'game_started', 28_000);
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -444,7 +444,7 @@ describe('GameRoom Durable Object', () => {
     await p1PhaseChange;
 
     // All players reveal to enter results phase
-    const p1Result = waitForMessage(p1.ws, 'round_result', 5000);
+    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
 
     p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
     p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
@@ -458,7 +458,7 @@ describe('GameRoom Durable Object', () => {
     // Disconnect and reconnect player 1
     p1.ws.close();
     const p1r = await connectPlayer(13, 'RemP1', 1000);
-    const reconnectResult = await waitForMessage(p1r.ws, 'round_result', 5000);
+    const reconnectResult = await waitForMessage(p1r.ws, 'game_result', 5000);
 
     // The replayed resultsDuration must reflect remaining time, not the full constant
     const replayedDuration = reconnectResult.resultsDuration as number;
@@ -477,14 +477,14 @@ describe('GameRoom Durable Object', () => {
     const p2 = await connectPlayer(17, 'RatingP2', 1000);
     const p3 = await connectPlayer(18, 'RatingP3', 1000);
 
-    // Listen for game_started and round_start before joining queue
-    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+    // Listen for match_started and game_started before joining queue
+    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
 
-    const p1Round = waitForMessage(p1.ws, 'round_start', 28_000);
-    const p2Round = waitForMessage(p2.ws, 'round_start', 28_000);
-    const p3Round = waitForMessage(p3.ws, 'round_start', 28_000);
+    const p1Round = waitForMessage(p1.ws, 'game_started', 28_000);
+    const p2Round = waitForMessage(p2.ws, 'game_started', 28_000);
+    const p3Round = waitForMessage(p3.ws, 'game_started', 28_000);
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
@@ -511,7 +511,7 @@ describe('GameRoom Durable Object', () => {
     await p1PhaseChange;
 
     // All players reveal to reach results phase
-    const p1Result = waitForMessage(p1.ws, 'round_result', 5000);
+    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
 
     p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
     p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
@@ -530,8 +530,8 @@ describe('GameRoom Durable Object', () => {
     p1.ws.close();
 
     const p1r = await connectPlayer(16, 'RatingP1', 1000);
-    // Listen for both round_result and question_rating_tally on reconnect
-    const reconnectResult = waitForMessage(p1r.ws, 'round_result', 5000);
+    // Listen for both game_result and question_rating_tally on reconnect
+    const reconnectResult = waitForMessage(p1r.ws, 'game_result', 5000);
     const reconnectTally = waitForMessage(
       p1r.ws,
       'question_rating_tally',
@@ -539,7 +539,7 @@ describe('GameRoom Durable Object', () => {
     );
 
     const replayedResult = await reconnectResult;
-    expect(replayedResult.type).toBe('round_result');
+    expect(replayedResult.type).toBe('game_result');
 
     const replayedTally = await reconnectTally;
     expect(replayedTally.likes).toBe(1);
@@ -551,7 +551,7 @@ describe('GameRoom Durable Object', () => {
     p3.ws.close();
   });
 
-  it('reconnect after settled round replays game_started with currentBalance', {
+  it('reconnect after a settled game replays match_started with currentBalance', {
     timeout: 60_000,
   }, async () => {
     // Use wallet indices 22/23/24 to avoid collisions with other tests.
@@ -561,23 +561,23 @@ describe('GameRoom Durable Object', () => {
     const p2 = await connectPlayer(23, 'BalP2', STARTING_BALANCE);
     const p3 = await connectPlayer(24, 'BalP3', STARTING_BALANCE);
 
-    // Listen for game_started and round_start before joining queue
-    const p1Started = waitForMessage(p1.ws, 'game_started', 25_000);
-    const p2Started = waitForMessage(p2.ws, 'game_started', 25_000);
-    const p3Started = waitForMessage(p3.ws, 'game_started', 25_000);
+    // Listen for match_started and game_started before joining queue
+    const p1Started = waitForMessage(p1.ws, 'match_started', 25_000);
+    const p2Started = waitForMessage(p2.ws, 'match_started', 25_000);
+    const p3Started = waitForMessage(p3.ws, 'match_started', 25_000);
 
-    const p1Round1 = waitForMessage(p1.ws, 'round_start', 28_000);
-    const p2Round1 = waitForMessage(p2.ws, 'round_start', 28_000);
-    const p3Round1 = waitForMessage(p3.ws, 'round_start', 28_000);
+    const p1Game1 = waitForMessage(p1.ws, 'game_started', 28_000);
+    const p2Game1 = waitForMessage(p2.ws, 'game_started', 28_000);
+    const p3Game1 = waitForMessage(p3.ws, 'game_started', 28_000);
 
     p1.ws.send(JSON.stringify({ type: 'join_queue' }));
     p2.ws.send(JSON.stringify({ type: 'join_queue' }));
     p3.ws.send(JSON.stringify({ type: 'join_queue' }));
 
     await Promise.all([p1Started, p2Started, p3Started]);
-    await Promise.all([p1Round1, p2Round1, p3Round1]);
+    await Promise.all([p1Game1, p2Game1, p3Game1]);
 
-    // Round 1: p1 and p2 pick option 0, p3 picks option 1.
+    // Game 1: p1 and p2 pick option 0, p3 picks option 1.
     // This creates winners (p1, p2) and a loser (p3) so balances change.
     const salt1 = 'a'.repeat(64);
     const salt2 = 'b'.repeat(64);
@@ -595,30 +595,30 @@ describe('GameRoom Durable Object', () => {
     await p1PhaseChange;
 
     // All reveal
-    const p1Result = waitForMessage(p1.ws, 'round_result', 5000);
+    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
 
     p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt1 }));
     p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt2 }));
     p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 1, salt: salt3 }));
 
     const roundResult = await p1Result;
-    expect(roundResult.type).toBe('round_result');
+    expect(roundResult.type).toBe('game_result');
 
-    // Wait for round 2 to start (auto-advances after RESULTS_DURATION)
-    const p1Round2 = waitForMessage(p1.ws, 'round_start', 25_000);
-    await p1Round2;
+    // Wait for game 2 to start (auto-advances after RESULTS_DURATION)
+    const p1Game2 = waitForMessage(p1.ws, 'game_started', 25_000);
+    await p1Game2;
 
-    // Disconnect player 1 and reconnect during round 2 commit phase
+    // Disconnect player 1 and reconnect during game 2 commit phase
     p1.ws.close();
 
     const p1r = await reconnectPlayer(22);
-    const reconnectGameStarted = waitForMessage(p1r.ws, 'game_started', 5000);
+    const reconnectGameStarted = waitForMessage(p1r.ws, 'match_started', 5000);
 
     const gsMsg = await reconnectGameStarted;
-    expect(gsMsg.type).toBe('game_started');
+    expect(gsMsg.type).toBe('match_started');
 
     // Verify that currentBalance is present and differs from startingBalance
-    // for at least one player (settlement changed balances in round 1).
+    // for at least one player (settlement changed balances in game 1).
     const players = gsMsg.players as Array<{
       displayName: string;
       startingBalance: number;

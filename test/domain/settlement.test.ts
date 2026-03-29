@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  MIN_ESTABLISHED_MATCHES,
-  ROUND_ANTE,
-} from '../../src/domain/constants';
-import { settleRound } from '../../src/domain/settlement';
+import { GAME_ANTE, MIN_ESTABLISHED_MATCHES } from '../../src/domain/constants';
+import { settleGame } from '../../src/domain/settlement';
 import type { PlayerSettlementInput, Question } from '../../src/types/domain';
 
 function must<T>(value: T | null | undefined, message: string): T {
@@ -46,7 +43,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 0),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.voided).toBe(false);
     expect(result.pot).toBe(180);
@@ -62,7 +59,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 1),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.voided).toBe(false);
     expect(result.topCount).toBe(2);
@@ -71,9 +68,9 @@ describe('plurality settlement: basic cases', () => {
 
     const carol = must(
       result.players.find((p) => p.accountId === 'a3'),
-      'Expected Carol in round result',
+      'Expected Carol in game result',
     );
-    expect(carol.wonRound).toBe(false);
+    expect(carol.wonGame).toBe(false);
     expect(carol.netDelta).toBe(-60);
     expect(carol.earnsCoordinationCredit).toBe(false);
   });
@@ -86,14 +83,14 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a4', 'Dave', 1),
       makePlayer('a5', 'Eve', 2),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.topCount).toBe(3);
     expect(result.winnerCount).toBe(3);
     expect(result.pot).toBe(300);
     expect(result.payoutPerWinner).toBe(100);
 
-    const losers = result.players.filter((p) => !p.wonRound);
+    const losers = result.players.filter((p) => !p.wonGame);
     expect(losers).toHaveLength(2);
     expect(losers.every((p) => p.netDelta === -60)).toBe(true);
   });
@@ -108,7 +105,7 @@ describe('plurality settlement: basic cases', () => {
       makePlayer('a6', 'Frank', 1),
       makePlayer('a7', 'Grace', 2),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.topCount).toBe(4);
     expect(result.winnerCount).toBe(4);
@@ -124,7 +121,7 @@ describe('single valid revealer', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.voided).toBe(false);
     expect(result.validRevealCount).toBe(1);
@@ -134,7 +131,7 @@ describe('single valid revealer', () => {
 
     const alice = must(
       result.players.find((p) => p.accountId === 'a1'),
-      'Expected Alice in round result',
+      'Expected Alice in game result',
     );
     expect(alice.netDelta).toBe(120);
     expect(alice.earnsCoordinationCredit).toBe(false);
@@ -142,13 +139,13 @@ describe('single valid revealer', () => {
 });
 
 describe('zero valid reveals = void', () => {
-  it('voids the round with zero reveals', () => {
+  it('voids the game with zero reveals', () => {
     const players = [
       makePlayer('a1', 'Alice', null, false),
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.voided).toBe(true);
     expect(result.voidReason).toBe('zero_valid_reveals');
@@ -167,7 +164,7 @@ describe('tied pluralities', () => {
       makePlayer('a4', 'Dave', 1),
       makePlayer('a5', 'Eve', 2),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.topCount).toBe(2);
     expect(result.winningOptionIndexes).toHaveLength(2);
@@ -175,15 +172,15 @@ describe('tied pluralities', () => {
     expect(result.pot).toBe(300);
     expect(result.payoutPerWinner).toBe(75);
 
-    const winners = result.players.filter((p) => p.wonRound);
+    const winners = result.players.filter((p) => p.wonGame);
     expect(winners).toHaveLength(4);
     expect(winners.every((p) => p.earnsCoordinationCredit)).toBe(true);
 
     const eve = must(
       result.players.find((p) => p.accountId === 'a5'),
-      'Expected Eve in round result',
+      'Expected Eve in game result',
     );
-    expect(eve.wonRound).toBe(false);
+    expect(eve.wonGame).toBe(false);
     expect(eve.earnsCoordinationCredit).toBe(false);
   });
 });
@@ -195,12 +192,12 @@ describe('all distinct (topCount=1)', () => {
       makePlayer('a2', 'Bob', 1),
       makePlayer('a3', 'Carol', 2),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.topCount).toBe(1);
     expect(result.winnerCount).toBe(3);
     expect(result.winningOptionIndexes).toHaveLength(3);
-    expect(result.players.every((p) => p.wonRound)).toBe(true);
+    expect(result.players.every((p) => p.wonGame)).toBe(true);
     expect(result.players.every((p) => !p.earnsCoordinationCredit)).toBe(true);
   });
 });
@@ -217,9 +214,9 @@ describe('pot math', () => {
     const players = Array.from({ length: playerCount }, (_, i) =>
       makePlayer(`a${i + 1}`, String.fromCharCode(65 + i), 0),
     );
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
-    expect(result.pot).toBe(playerCount * ROUND_ANTE);
+    expect(result.pot).toBe(playerCount * GAME_ANTE);
     expect(result.pot).toBe(expectedPot);
   });
 
@@ -233,7 +230,7 @@ describe('pot math', () => {
       makePlayer('a6', 'F', 2),
       makePlayer('a7', 'G', 3),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
     expect(result.payoutPerWinner).toBe(Math.floor(420 / 3));
   });
 
@@ -251,8 +248,8 @@ describe('pot math', () => {
       makePlayer('a10', 'J', 2),
       makePlayer('a11', 'K', 3),
     ];
-    const result = settleRound(players, question);
-    const winners = result.players.filter((p) => p.wonRound);
+    const result = settleGame(players, question);
+    const winners = result.players.filter((p) => p.wonGame);
 
     expect(result.pot).toBe(660);
     expect(result.winnerCount).toBe(7);
@@ -275,7 +272,7 @@ describe('forfeited player handling', () => {
         attached: true,
       },
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.voided).toBe(false);
     expect(result.pot).toBe(180);
@@ -283,19 +280,19 @@ describe('forfeited player handling', () => {
 
     const carol = must(
       result.players.find((p) => p.accountId === 'a3'),
-      'Expected Carol in round result',
+      'Expected Carol in game result',
     );
-    expect(carol.wonRound).toBe(false);
+    expect(carol.wonGame).toBe(false);
     expect(carol.netDelta).toBe(-60);
   });
 
-  it('detached (prior-round forfeit) player is excluded from pot', () => {
+  it('detached (prior-game forfeit) player is excluded from pot', () => {
     const players: PlayerSettlementInput[] = [
       makePlayer('a1', 'Alice', 0),
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', null, false, true, false),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.playerCount).toBe(2);
     expect(result.pot).toBe(120);
@@ -312,9 +309,9 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', 0),
       makePlayer('a3', 'Carol', 1),
     ];
-    const result = settleRound(players, question);
-    const winners = result.players.filter((p) => p.wonRound);
-    const losers = result.players.filter((p) => !p.wonRound);
+    const result = settleGame(players, question);
+    const winners = result.players.filter((p) => p.wonGame);
+    const losers = result.players.filter((p) => !p.wonGame);
 
     expect(result.topCount).toBeGreaterThanOrEqual(2);
     expect(winners.every((p) => p.earnsCoordinationCredit)).toBe(true);
@@ -327,12 +324,12 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', null, false),
       makePlayer('a3', 'Carol', null, false),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.topCount).toBe(1);
     const alice = must(
       result.players.find((p) => p.accountId === 'a1'),
-      'Expected Alice in round result',
+      'Expected Alice in game result',
     );
     expect(alice.earnsCoordinationCredit).toBe(false);
   });
@@ -343,18 +340,18 @@ describe('coordination credit rules', () => {
       makePlayer('a2', 'Bob', 1),
       makePlayer('a3', 'Carol', 2),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.topCount).toBe(1);
     expect(result.players.every((p) => !p.earnsCoordinationCredit)).toBe(true);
   });
 
-  it('voided round: no coordination credit', () => {
+  it('voided game: no coordination credit', () => {
     const players = [
       makePlayer('a1', 'Alice', null, false),
       makePlayer('a2', 'Bob', null, false),
     ];
-    const result = settleRound(players, question);
+    const result = settleGame(players, question);
 
     expect(result.voided).toBe(true);
     expect(result.players.every((p) => !p.earnsCoordinationCredit)).toBe(true);

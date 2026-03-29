@@ -104,9 +104,9 @@ nav{display:flex;gap:.5rem}
 #reveal-area{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
 #reveal-btn{flex:1;min-width:140px}
 #reveal-status{font-size:.85rem;color:var(--muted)}
-/* Round result overlay */
-#round-result-banner{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-top:.75rem}
-#round-result-banner h3{font-size:.7rem;font-weight:600;margin-bottom:.6rem;color:var(--accent);text-transform:uppercase;letter-spacing:.25em}
+/* Game result overlay */
+#game-result-banner{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-top:.75rem}
+#game-result-banner h3{font-size:.7rem;font-weight:600;margin-bottom:.6rem;color:var(--accent);text-transform:uppercase;letter-spacing:.25em}
 #result-table{width:100%;border-collapse:collapse;font-size:.85rem}
 #result-table th,#result-table td{padding:.35rem .5rem;text-align:left;border-bottom:1px solid var(--border)}
 #result-table th{color:var(--muted);font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}
@@ -258,7 +258,7 @@ nav{display:flex;gap:.5rem}
 
       <!-- Question -->
       <div id="question-card">
-        <div id="phase-label">Game <span id="round-num">1</span> / 10</div>
+        <div id="phase-label">Game <span id="game-num">1</span> / 10</div>
         <div id="question-text">Waiting for game...</div>
         <div id="select-grid"></div>
         <div id="commit-area" class="hidden">
@@ -272,8 +272,8 @@ nav{display:flex;gap:.5rem}
       </div>
 
       <!-- Game result -->
-      <div id="round-result-banner" class="hidden">
-        <h3>Game <span id="result-round-num">?</span> Result</h3>
+      <div id="game-result-banner" class="hidden">
+        <h3>Game <span id="result-game-num">?</span> Result</h3>
         <div id="void-banner" class="hidden" style="color:var(--orange);margin-bottom:.5rem;font-weight:600">Game voided: all antes refunded</div>
         <table id="result-table">
           <thead><tr>
@@ -439,7 +439,7 @@ const S = {
   // play
   matchId: null,
   players: [],
-  round: 0,
+  game: 0,
   phase: null,       // 'commit' | 'reveal' | 'results' | null
   question: null,
   selectedOption: null,
@@ -449,7 +449,7 @@ const S = {
   revealed: false,
   commitStatuses: [],
   revealStatuses: [],
-  roundResult: null,
+  gameResult: null,
   myRating: null,
   playerStatuses: {},   // displayName -> 'connected'|'disconnected'|'forfeited'
   // timers
@@ -895,13 +895,13 @@ function wsSend(obj) {
 function handleMessage(msg) {
   switch (msg.type) {
     case 'queue_state': onQueueState(msg); break;
+    case 'match_started': onMatchStarted(msg); break;
     case 'game_started': onGameStarted(msg); break;
-    case 'round_start': onRoundStart(msg); break;
     case 'commit_status': onCommitStatus(msg); break;
     case 'phase_change': onPhaseChange(msg); break;
     case 'reveal_status': onRevealStatus(msg); break;
-    case 'round_result': onRoundResult(msg); break;
-    case 'game_over': onGameOver(msg); break;
+    case 'game_result': onGameResult(msg); break;
+    case 'match_over': onMatchOver(msg); break;
     case 'player_disconnected': onPlayerDisconnected(msg); break;
     case 'player_reconnected': onPlayerReconnected(msg); break;
     case 'player_forfeited': onPlayerForfeited(msg); break;
@@ -994,17 +994,17 @@ setInterval(updateFormingTimer, 1000);
 // ═══════════════════════════════════════════════════════════════
 //  PLAY VIEW
 // ═══════════════════════════════════════════════════════════════
-function onGameStarted(msg) {
+function onMatchStarted(msg) {
   S.matchId = msg.matchId;
   S.players = msg.players;
-  S.round = 0;
+  S.game = 0;
   S.phase = null;
   S.playerStatuses = {};
   S.players.forEach(p => { S.playerStatuses[p.displayName] = 'connected'; });
 
   showView('play');
   renderPlayers();
-  $('#round-result-banner').classList.add('hidden');
+  $('#game-result-banner').classList.add('hidden');
   $('#question-text').textContent = 'Match started. Waiting for first game...';
   $('#select-grid').innerHTML = '';
   $('#commit-area').classList.add('hidden');
@@ -1012,16 +1012,16 @@ function onGameStarted(msg) {
   notify('Match started with ' + S.players.length + ' players', 'success');
 }
 
-function onRoundStart(msg) {
+function onGameStarted(msg) {
   // Detect reconnect replay with recoverable preimage.
-  // Cannot rely on S.round here: onGameStarted() resets it to 0 before
+  // Cannot rely on S.game here: onMatchStarted() resets it to 0 before
   // this handler runs during reconnect replay. Use question.id as a
-  // stable round identifier and verify we still hold the preimage.
+  // stable game identifier and verify we still hold the preimage.
   const hasLocalPreimage = S.selectedOption !== null && !!S.salt;
-  const isSameRound = S.question && S.question.id === msg.question.id;
-  const hasPreimage = !!msg.yourCommitted && isSameRound && hasLocalPreimage;
+  const isSameGame = S.question && S.question.id === msg.question.id;
+  const hasPreimage = !!msg.yourCommitted && isSameGame && hasLocalPreimage;
 
-  S.round = msg.round;
+  S.game = msg.game;
   S.phase = msg.phase;
   S.question = msg.question;
 
@@ -1038,7 +1038,7 @@ function onRoundStart(msg) {
     S.committed = true;
     S.revealed = !!msg.yourRevealed;
   } else {
-    // Fresh round start (not a reconnect)
+    // Fresh game start (not a reconnect)
     S.selectedOption = null;
     S.salt = null;
     S.commitHash = null;
@@ -1048,19 +1048,19 @@ function onRoundStart(msg) {
 
   S.commitStatuses = [];
   S.revealStatuses = [];
-  S.roundResult = null;
+  S.gameResult = null;
 
   if (S.view !== 'play') showView('play');
 
   // UI: use server-provided phase for labels
   const phaseLabel = msg.phase === 'reveal' ? 'Reveal Phase'
     : msg.phase === 'results' ? 'Results Phase' : 'Commit Phase';
-  $('#phase-label').textContent = `Game ${msg.round} / 10 : ${phaseLabel}`;
+  $('#phase-label').textContent = `Game ${msg.game} / 10 : ${phaseLabel}`;
   const phaseTimerLabel = msg.phase === 'reveal' ? 'Reveal'
     : msg.phase === 'commit' ? 'Commit' : '';
   $('#phase-timer-label').textContent = phaseTimerLabel;
   $('#question-text').textContent = msg.question.text;
-  $('#round-result-banner').classList.add('hidden');
+  $('#game-result-banner').classList.add('hidden');
 
   // Disable options if already committed or no longer in commit phase
   const alreadyCommitted = !!msg.yourCommitted;
@@ -1103,7 +1103,7 @@ function onRoundStart(msg) {
   }
 
   // Timer: only start during commit phase; reveal timer is driven by
-  // phase_change. Results phase timer is started by onRoundResult (which
+  // phase_change. Results phase timer is started by onGameResult (which
   // is not replayed on reconnect), so clear stale timer state here.
   if (msg.phase === 'commit') {
     startTimer(msg.commitDuration);
@@ -1172,7 +1172,7 @@ function onCommitStatus(msg) {
 function onPhaseChange(msg) {
   if (msg.phase === 'reveal') {
     S.phase = 'reveal';
-    $('#phase-label').textContent = `Game ${S.round} / 10 : Reveal Phase`;
+    $('#phase-label').textContent = `Game ${S.game} / 10 : Reveal Phase`;
     $('#phase-timer-label').textContent = 'Reveal';
     $('#commit-area').classList.add('hidden');
 
@@ -1214,13 +1214,13 @@ function onRevealStatus(msg) {
   updatePlayerDots();
 }
 
-// ── Round result ─────────────────────────────────────────────────
-function onRoundResult(msg) {
+// ── Game result ──────────────────────────────────────────────────
+function onGameResult(msg) {
   const r = msg.result;
-  S.roundResult = r;
+  S.gameResult = r;
   S.phase = 'results';
 
-  $('#phase-label').textContent = `Game ${S.round} / 10 : Results`;
+  $('#phase-label').textContent = `Game ${S.game} / 10 : Results`;
   $('#phase-timer-label').textContent = 'Results';
   $('#commit-area').classList.add('hidden');
   $('#reveal-area').classList.add('hidden');
@@ -1240,14 +1240,14 @@ function onRoundResult(msg) {
     if (sp) sp.currentBalance = rp.newBalance;
   });
 
-  renderRoundResult(r);
+  renderGameResult(r);
   renderPlayers();
 }
 
-function renderRoundResult(r) {
-  const banner = $('#round-result-banner');
+function renderGameResult(r) {
+  const banner = $('#game-result-banner');
   banner.classList.remove('hidden');
-  $('#result-round-num').textContent = r.roundNum;
+  $('#result-game-num').textContent = r.gameNum;
 
   // Reset rating row
   S.myRating = null;
@@ -1285,7 +1285,7 @@ function renderRoundResult(r) {
     tr.innerHTML = `
       <td>${esc(p.displayName)}</td>
       <td>${esc(optLabel)}</td>
-      <td class="${p.wonRound ? 'won-yes' : 'won-no'}">${p.wonRound ? 'Yes' : 'No'}</td>
+      <td class="${p.wonGame ? 'won-yes' : 'won-no'}">${p.wonGame ? 'Yes' : 'No'}</td>
       <td class="${p.earnsCoordinationCredit ? 'credit-yes' : ''}">${p.earnsCoordinationCredit ? 'Yes' : 'No'}</td>
       <td class="${deltaClass}">${deltaStr}</td>
       <td>${p.newBalance}</td>
@@ -1296,7 +1296,7 @@ function renderRoundResult(r) {
   // Note about solo wins
   const note = $('#result-note');
   if (!r.voided) {
-    const hasWinnerNoCredit = r.players.some(p => p.wonRound && !p.earnsCoordinationCredit);
+    const hasWinnerNoCredit = r.players.some(p => p.wonGame && !p.earnsCoordinationCredit);
     if (hasWinnerNoCredit) {
       note.textContent = 'Solo win: won the pot but no coordination credit earned (topCount=1). Does not extend streak.';
     } else {
@@ -1428,7 +1428,7 @@ $('#rating-dislike').addEventListener('click', () => sendRating('dislike'));
 // ═══════════════════════════════════════════════════════════════
 //  GAME OVER / SUMMARY
 // ═══════════════════════════════════════════════════════════════
-function onGameOver(msg) {
+function onMatchOver(msg) {
   S.summary = msg.summary;
   S.matchId = null;
   S.phase = null;

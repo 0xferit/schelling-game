@@ -1,4 +1,4 @@
-import type { Question, RoundResultWithBalances } from './domain';
+import type { GameResultWithBalances, Question } from './domain';
 
 // ── Client → Server ──────────────────────────────────────────────
 
@@ -25,10 +25,10 @@ export interface QueueStateMessage {
   } | null;
 }
 
-export interface GameStartedMessage {
-  type: 'game_started';
+export interface MatchStartedMessage {
+  type: 'match_started';
   matchId: string;
-  roundCount: number;
+  gameCount: number;
   players: {
     displayName: string;
     startingBalance: number;
@@ -36,16 +36,16 @@ export interface GameStartedMessage {
   }[];
 }
 
-export interface RoundStartMessage {
-  type: 'round_start';
-  round: number;
+export interface GameStartedMessage {
+  type: 'game_started';
+  game: number;
   question: Question;
   commitDuration: number;
-  roundAnte: number;
+  gameAnte: number;
   phase: 'commit' | 'reveal' | 'results';
-  /** Sent on reconnect: whether this player already committed this round */
+  /** Sent on reconnect: whether this player already committed this game */
   yourCommitted?: boolean;
-  /** Sent on reconnect: whether this player already revealed this round */
+  /** Sent on reconnect: whether this player already revealed this game */
   yourRevealed?: boolean;
 }
 
@@ -65,14 +65,14 @@ export interface RevealStatusMessage {
   revealed: { displayName: string; hasRevealed: boolean }[];
 }
 
-export interface RoundResultMessage {
-  type: 'round_result';
+export interface GameResultMessage {
+  type: 'game_result';
   resultsDuration: number;
-  result: RoundResultWithBalances;
+  result: GameResultWithBalances;
 }
 
-export interface GameOverMessage {
-  type: 'game_over';
+export interface MatchOverMessage {
+  type: 'match_over';
   summary: {
     players: {
       displayName: string;
@@ -93,7 +93,7 @@ export interface PlayerDisconnectedMessage {
 export interface PlayerForfeitedMessage {
   type: 'player_forfeited';
   displayName: string;
-  futureRoundsPenaltyApplied: boolean;
+  futureGamesPenaltyApplied: boolean;
 }
 
 export interface PlayerReconnectedMessage {
@@ -117,13 +117,13 @@ export interface ErrorMessage {
 
 export type ServerMessage =
   | QueueStateMessage
+  | MatchStartedMessage
   | GameStartedMessage
-  | RoundStartMessage
   | PhaseChangeMessage
   | CommitStatusMessage
   | RevealStatusMessage
-  | RoundResultMessage
-  | GameOverMessage
+  | GameResultMessage
+  | MatchOverMessage
   | PlayerDisconnectedMessage
   | PlayerForfeitedMessage
   | PlayerReconnectedMessage

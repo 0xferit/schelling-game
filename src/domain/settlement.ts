@@ -1,23 +1,23 @@
 import type {
+  GameResult,
   PlayerResult,
   PlayerSettlementInput,
   Question,
-  RoundResult,
 } from '../types/domain';
-import { ROUND_ANTE } from './constants';
+import { GAME_ANTE } from './constants';
 
 type ValidRevealInput = PlayerSettlementInput & {
   optionIndex: number;
   validReveal: true;
 };
 
-export function settleRound(
+export function settleGame(
   players: PlayerSettlementInput[],
   question: Question,
-): RoundResult {
+): GameResult {
   const attached = players.filter((p) => p.attached);
-  const roundPlayerCount = attached.length;
-  const pot = roundPlayerCount * ROUND_ANTE;
+  const gamePlayerCount = attached.length;
+  const pot = gamePlayerCount * GAME_ANTE;
 
   // Collect valid reveals
   const validReveals = players.filter(
@@ -27,7 +27,7 @@ export function settleRound(
 
   // Zero valid reveals: void
   if (validRevealCount === 0) {
-    return buildVoidResult(players, roundPlayerCount, 'zero_valid_reveals');
+    return buildVoidResult(players, gamePlayerCount, 'zero_valid_reveals');
   }
 
   // Count votes per option
@@ -56,11 +56,11 @@ export function settleRound(
 
   // Build player results
   const playerResults: PlayerResult[] = attached.map((p) => {
-    const wonRound = winnerSet.has(p.accountId);
-    const earnsCoordinationCredit = wonRound && topCount >= 2;
-    const antePaid = ROUND_ANTE;
-    const roundPayout = wonRound ? payoutPerWinner : 0;
-    const netDelta = roundPayout - antePaid;
+    const wonGame = winnerSet.has(p.accountId);
+    const earnsCoordinationCredit = wonGame && topCount >= 2;
+    const antePaid = GAME_ANTE;
+    const gamePayout = wonGame ? payoutPerWinner : 0;
+    const netDelta = gamePayout - antePaid;
 
     return {
       accountId: p.accountId,
@@ -70,10 +70,10 @@ export function settleRound(
         p.validReveal && p.optionIndex != null
           ? question.options[p.optionIndex] || null
           : null,
-      wonRound,
+      wonGame,
       earnsCoordinationCredit,
       antePaid,
-      roundPayout,
+      gamePayout,
       netDelta,
     };
   });
@@ -81,7 +81,7 @@ export function settleRound(
   return {
     voided: false,
     voidReason: null,
-    playerCount: roundPlayerCount,
+    playerCount: gamePlayerCount,
     pot,
     validRevealCount,
     topCount,
@@ -94,9 +94,9 @@ export function settleRound(
 
 function buildVoidResult(
   players: PlayerSettlementInput[],
-  roundPlayerCount: number,
+  gamePlayerCount: number,
   reason: string,
-): RoundResult {
+): GameResult {
   const playerResults: PlayerResult[] = players
     .filter((p) => p.attached)
     .map((p) => ({
@@ -104,17 +104,17 @@ function buildVoidResult(
       displayName: p.displayName,
       revealedOptionIndex: null,
       revealedOptionLabel: null,
-      wonRound: false,
+      wonGame: false,
       earnsCoordinationCredit: false,
       antePaid: 0,
-      roundPayout: 0,
+      gamePayout: 0,
       netDelta: 0,
     }));
 
   return {
     voided: true,
     voidReason: reason,
-    playerCount: roundPlayerCount,
+    playerCount: gamePlayerCount,
     pot: 0,
     validRevealCount: 0,
     topCount: 0,

@@ -3,7 +3,7 @@
 // so they can be called from the GameRoom class without coupling.
 
 import type { Question } from '../types/domain';
-import type { RoundResultMessage } from '../types/messages';
+import type { GameResultMessage } from '../types/messages';
 
 // ---------------------------------------------------------------------------
 // Persisted state: single source of truth for checkpointable fields.
@@ -21,19 +21,19 @@ export interface PersistedPlayerState {
   optionIndex: number | null;
   salt: string | null;
   forfeited: boolean;
-  forfeitedAtRound: number | null;
+  forfeitedAtGame: number | null;
   disconnectedAt: number | null;
 }
 
 export interface PersistedMatchFields {
   matchId: string;
   phase: string;
-  currentRound: number;
-  totalRounds: number;
+  currentGame: number;
+  totalGames: number;
   questions: Question[];
   phaseEnteredAt: number;
-  lastSettledRound: number;
-  lastRoundResult: RoundResultMessage['result'] | null;
+  lastSettledGame: number;
+  lastGameResult: GameResultMessage['result'] | null;
 }
 
 export interface CheckpointableMatch extends PersistedMatchFields {
@@ -51,7 +51,7 @@ export type PlayerActionFields = Partial<
     | 'optionIndex'
     | 'salt'
     | 'forfeited'
-    | 'forfeitedAtRound'
+    | 'forfeitedAtGame'
     | 'currentBalance'
     | 'disconnectedAt'
   >
@@ -80,10 +80,10 @@ export function initCheckpointTables(sql: SqlStorage): void {
   `);
   // Migrate existing tables that lack the last_round_result_json column.
   const columns = [...sql.exec('PRAGMA table_info(match_checkpoints)')];
-  const hasLastRoundResult = columns.some(
+  const hasLastGameResult = columns.some(
     (c) => (c as Record<string, unknown>).name === 'last_round_result_json',
   );
-  if (!hasLastRoundResult) {
+  if (!hasLastGameResult) {
     sql.exec(
       'ALTER TABLE match_checkpoints ADD COLUMN last_round_result_json TEXT',
     );
@@ -109,10 +109,10 @@ export function initCheckpointTables(sql: SqlStorage): void {
   `);
   // Migrate existing player_checkpoints tables that lack forfeited_at_round.
   const playerColumns = [...sql.exec('PRAGMA table_info(player_checkpoints)')];
-  const hasForfeitedAtRound = playerColumns.some(
+  const hasForfeitedAtGame = playerColumns.some(
     (c) => (c as Record<string, unknown>).name === 'forfeited_at_round',
   );
-  if (!hasForfeitedAtRound) {
+  if (!hasForfeitedAtGame) {
     sql.exec(
       'ALTER TABLE player_checkpoints ADD COLUMN forfeited_at_round INTEGER',
     );
@@ -137,12 +137,12 @@ export function checkpointMatch(
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       match.matchId,
       match.phase,
-      match.currentRound,
-      match.totalRounds,
+      match.currentGame,
+      match.totalGames,
       JSON.stringify(match.questions),
       match.phaseEnteredAt,
-      match.lastSettledRound,
-      match.lastRoundResult ? JSON.stringify(match.lastRoundResult) : null,
+      match.lastSettledGame,
+      match.lastGameResult ? JSON.stringify(match.lastGameResult) : null,
       Date.now(),
     );
     for (const p of match.players.values()) {
@@ -162,7 +162,7 @@ export function checkpointMatch(
         p.optionIndex,
         p.salt,
         p.forfeited ? 1 : 0,
-        p.forfeitedAtRound,
+        p.forfeitedAtGame,
         p.disconnectedAt,
       );
     }
@@ -203,9 +203,9 @@ export function checkpointPlayerAction(
     sets.push('forfeited = ?');
     vals.push(fields.forfeited ? 1 : 0);
   }
-  if (fields.forfeitedAtRound !== undefined) {
+  if (fields.forfeitedAtGame !== undefined) {
     sets.push('forfeited_at_round = ?');
-    vals.push(fields.forfeitedAtRound);
+    vals.push(fields.forfeitedAtGame);
   }
   if (fields.currentBalance !== undefined) {
     sets.push('current_balance = ?');
@@ -270,7 +270,7 @@ export function restoreMatchesFromStorage(
           optionIndex: pr.option_index as number | null,
           salt: pr.salt as string | null,
           forfeited: !!(pr.forfeited as number),
-          forfeitedAtRound:
+          forfeitedAtGame:
             (pr.forfeited_at_round as number | null) ??
             ((pr.forfeited as number)
               ? (row.current_round as number) - 1
@@ -279,19 +279,19 @@ export function restoreMatchesFromStorage(
         });
       }
 
-      const lastRoundResultRaw = row.last_round_result_json as string | null;
+      const lastGameResultRaw = row.last_round_result_json as string | null;
 
       restored.push({
         matchId: row.match_id as string,
         players,
         questions: JSON.parse(row.questions_json as string),
-        currentRound: row.current_round as number,
-        totalRounds: row.total_rounds as number,
+        currentGame: row.current_round as number,
+        totalGames: row.total_rounds as number,
         phase: row.phase as string,
         phaseEnteredAt,
-        lastSettledRound: row.last_settled_round as number,
-        lastRoundResult: lastRoundResultRaw
-          ? JSON.parse(lastRoundResultRaw)
+        lastSettledGame: row.last_settled_round as number,
+        lastGameResult: lastGameResultRaw
+          ? JSON.parse(lastGameResultRaw)
           : null,
       });
     } catch (err) {
