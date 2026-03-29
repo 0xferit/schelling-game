@@ -348,6 +348,8 @@ export class GameRoom {
         return this._handleJoinQueue(accountId);
       case 'leave_queue':
         return this._handleLeaveQueue(accountId);
+      case 'forfeit_match':
+        return this._handleForfeitMatch(accountId);
       case 'commit':
         return this._handleCommit(accountId, msg);
       case 'reveal':
@@ -1591,6 +1593,35 @@ export class GameRoom {
     }
   }
 
+  _handleForfeitMatch(accountId: string): void {
+    const matchId = this.playerMatchIndex.get(accountId);
+    if (!matchId) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Not in a match',
+      });
+    }
+
+    const match = this.activeMatches.get(matchId);
+    if (!match) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Match not found',
+      });
+    }
+
+    const player = match.players.get(accountId);
+    if (!player) return;
+    if (player.forfeited) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message: 'Already forfeited',
+      });
+    }
+
+    this._forfeitPlayer(match, accountId);
+  }
+
   async _handleQuestionRating(
     accountId: string,
     msg: { type: string; [key: string]: unknown },
@@ -1753,6 +1784,11 @@ export class GameRoom {
     }
 
     this._broadcastToMatch(match, {
+      type: 'player_forfeited',
+      displayName: player.displayName,
+      futureGamesPenaltyApplied,
+    });
+    this._sendTo(accountId, {
       type: 'player_forfeited',
       displayName: player.displayName,
       futureGamesPenaltyApplied,

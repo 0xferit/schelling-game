@@ -5,6 +5,7 @@ import type { GameResultWithBalances, Question } from './domain';
 export type ClientMessage =
   | { type: 'join_queue' }
   | { type: 'leave_queue' }
+  | { type: 'forfeit_match' }
   | { type: 'commit'; hash: string }
   | { type: 'reveal'; optionIndex: number; salt: string }
   | { type: 'question_rating'; rating: 'like' | 'dislike' };

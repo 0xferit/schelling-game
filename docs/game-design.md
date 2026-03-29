@@ -75,6 +75,8 @@ If the player does not reconnect within `15` seconds, they forfeit:
 - all future-game antes are charged as a one-time penalty when the forfeit game settles (burned: not redistributed to other players)
 - from the next game onward the player is detached: pot and results are calculated as if the match shrunk
 
+A player may also choose to forfeit manually from the client during an active match. A manual forfeit is treated exactly like a grace-window expiry at the moment it is triggered.
+
 ## 6. Questions and Commit-Reveal
 
 The game uses `select` questions only.
