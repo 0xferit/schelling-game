@@ -27,6 +27,7 @@ function makePlayer(
   optionIndex: number | null,
   validReveal = true,
   forfeited = false,
+  attached = true,
 ): PlayerSettlementInput {
   return {
     accountId: id,
@@ -34,7 +35,7 @@ function makePlayer(
     optionIndex,
     validReveal,
     forfeited,
-    attached: true,
+    attached,
   };
 }
 
@@ -286,6 +287,21 @@ describe('forfeited player handling', () => {
     );
     expect(carol.wonRound).toBe(false);
     expect(carol.netDelta).toBe(-60);
+  });
+
+  it('detached (prior-round forfeit) player is excluded from pot', () => {
+    const players: PlayerSettlementInput[] = [
+      makePlayer('a1', 'Alice', 0),
+      makePlayer('a2', 'Bob', 0),
+      makePlayer('a3', 'Carol', null, false, true, false),
+    ];
+    const result = settleRound(players, question);
+
+    expect(result.playerCount).toBe(2);
+    expect(result.pot).toBe(120);
+    expect(result.players.find((p) => p.accountId === 'a3')).toBeUndefined();
+    expect(result.winnerCount).toBe(2);
+    expect(result.payoutPerWinner).toBe(60);
   });
 });
 

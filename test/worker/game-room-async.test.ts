@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCommitHash } from '../../src/domain/commitReveal';
 import type { Question } from '../../src/types/domain';
+import type { RoundResultMessage } from '../../src/types/messages';
 import type { Env } from '../../src/types/worker-env';
 import { GameRoom } from '../../src/worker';
 import { must } from './helpers';
@@ -14,7 +15,7 @@ function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
   };
 }
 
-function createRoom() {
+function createRoom(db: D1Database = {} as D1Database) {
   const waitUntil = vi.fn((_task: Promise<unknown>) => undefined);
   const state = {
     waitUntil,
@@ -24,13 +25,16 @@ function createRoom() {
           if (query.includes('PRAGMA table_info(match_checkpoints)')) {
             return makeSqlResult([{ name: 'last_round_result_json' }]);
           }
+          if (query.includes('PRAGMA table_info(player_checkpoints)')) {
+            return makeSqlResult([{ name: 'forfeited_at_round' }]);
+          }
           return makeSqlResult();
         }),
       },
     },
   } as unknown as DurableObjectState;
 
-  const room = new GameRoom(state, { DB: {} as D1Database } as Env);
+  const room = new GameRoom(state, { DB: db } as Env);
   return { room, waitUntil };
 }
 
@@ -136,6 +140,187 @@ describe('GameRoom async task tracking', () => {
     expect(player.revealed).toBe(true);
     expect(player.optionIndex).toBe(0);
     expect(player.salt).toBe(salt);
+  });
+
+  it('tracks settled results-phase forfeit balance persistence with state.waitUntil', async () => {
+    const run = vi.fn().mockResolvedValue(undefined);
+    const bind = vi.fn(() => ({ run }));
+    const prepare = vi.fn(() => ({ bind }));
+    const { room, waitUntil } = createRoom({
+      prepare,
+    } as unknown as D1Database);
+    const checkpointPlayerAction = vi
+      .spyOn(room, '_checkpointPlayerAction')
+      .mockImplementation(() => {});
+    const checkpointMatch = vi
+      .spyOn(room, '_checkpointMatch')
+      .mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'results';
+    match.currentRound = 3;
+    match.totalRounds = 10;
+    match.lastSettledRound = 3;
+    match.lastRoundResult = {
+      roundNum: 3,
+      players: [{ accountId: 'acct-1', newBalance: 940 }],
+    } as RoundResultMessage['result'];
+
+    const player = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 1000,
+      currentBalance: 940,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtRound: null,
+      disconnectedAt: null,
+      graceTimer: null,
+    };
+    match.players.set(player.accountId, player);
+
+    room._forfeitPlayer(match, player.accountId);
+
+    expect(player.currentBalance).toBe(520);
+    expect(checkpointPlayerAction).toHaveBeenCalledWith(
+      match.matchId,
+      'acct-1',
+      {
+        forfeited: true,
+        forfeitedAtRound: 3,
+        currentBalance: 520,
+      },
+    );
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
+    expect(prepare).toHaveBeenCalledWith(
+      'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+    );
+    expect(bind).toHaveBeenCalledWith(520, 'acct-1');
+    expect(run).toHaveBeenCalledTimes(1);
+
+    // Cached round result must reflect burned balance for reconnect replay
+    const cached = match.lastRoundResult?.players.find(
+      (p) => p.accountId === 'acct-1',
+    );
+    expect(cached?.newBalance).toBe(520);
+
+    // Patched result must be checkpointed so it survives DO eviction
+    expect(checkpointMatch).toHaveBeenCalledWith(match);
+  });
+
+  it('does not persist balance to D1 for commit-phase forfeit (avoids race with _finalizeRound)', () => {
+    const prepare = vi.fn();
+    const { room, waitUntil } = createRoom({
+      prepare,
+    } as unknown as D1Database);
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.phase = 'commit';
+    match.currentRound = 3;
+    match.totalRounds = 10;
+
+    const player = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 1000,
+      currentBalance: 940,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtRound: null,
+      disconnectedAt: null,
+      graceTimer: null,
+    };
+    match.players.set(player.accountId, player);
+
+    // A second non-forfeited player who hasn't committed prevents
+    // auto-advance from firing inside _forfeitPlayer.
+    match.players.set('acct-2', {
+      accountId: 'acct-2',
+      displayName: 'Bob',
+      ws: null,
+      startingBalance: 1000,
+      currentBalance: 940,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtRound: null,
+      disconnectedAt: null,
+      graceTimer: null,
+    });
+
+    room._forfeitPlayer(match, player.accountId);
+
+    expect(player.currentBalance).toBe(520);
+    expect(player.forfeited).toBe(true);
+    expect(player.forfeitedAtRound).toBe(3);
+    expect(waitUntil).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('does not persist to D1 during mid-settlement results phase (avoids race with in-flight D1 batch)', () => {
+    const prepare = vi.fn();
+    const { room, waitUntil } = createRoom({
+      prepare,
+    } as unknown as D1Database);
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    // phase is 'results' but lastRoundResult still has the previous
+    // round's value: simulates a grace-timer forfeit firing during
+    // _finalizeRound's D1 batch await.
+    match.phase = 'results';
+    match.currentRound = 3;
+    match.totalRounds = 10;
+    match.lastSettledRound = 3;
+    match.lastRoundResult = {
+      roundNum: 2,
+      players: [],
+    } as unknown as RoundResultMessage['result'];
+
+    const player = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 1000,
+      currentBalance: 940,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtRound: null,
+      disconnectedAt: null,
+      graceTimer: null,
+    };
+    match.players.set(player.accountId, player);
+
+    room._forfeitPlayer(match, player.accountId);
+
+    expect(player.currentBalance).toBe(520);
+    expect(player.forfeited).toBe(true);
+    // Must not persist or patch: _finalizeRound will read the live
+    // playerState.currentBalance when it builds the payload.
+    expect(waitUntil).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
   });
 
   it('tracks match start from _startFormingMatch with state.waitUntil', async () => {

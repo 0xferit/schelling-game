@@ -21,6 +21,7 @@ export interface PersistedPlayerState {
   optionIndex: number | null;
   salt: string | null;
   forfeited: boolean;
+  forfeitedAtRound: number | null;
   disconnectedAt: number | null;
 }
 
@@ -50,6 +51,7 @@ export type PlayerActionFields = Partial<
     | 'optionIndex'
     | 'salt'
     | 'forfeited'
+    | 'forfeitedAtRound'
     | 'currentBalance'
     | 'disconnectedAt'
   >
@@ -100,10 +102,21 @@ export function initCheckpointTables(sql: SqlStorage): void {
       option_index     INTEGER,
       salt             TEXT,
       forfeited        INTEGER NOT NULL DEFAULT 0,
+      forfeited_at_round INTEGER,
       disconnected_at  INTEGER,
       PRIMARY KEY (match_id, account_id)
     )
   `);
+  // Migrate existing player_checkpoints tables that lack forfeited_at_round.
+  const playerColumns = [...sql.exec('PRAGMA table_info(player_checkpoints)')];
+  const hasForfeitedAtRound = playerColumns.some(
+    (c) => (c as Record<string, unknown>).name === 'forfeited_at_round',
+  );
+  if (!hasForfeitedAtRound) {
+    sql.exec(
+      'ALTER TABLE player_checkpoints ADD COLUMN forfeited_at_round INTEGER',
+    );
+  }
 }
 
 export function checkpointMatch(
@@ -136,8 +149,8 @@ export function checkpointMatch(
       sql.exec(
         `INSERT INTO player_checkpoints
           (match_id, account_id, display_name, starting_balance, current_balance,
-           committed, revealed, hash, option_index, salt, forfeited, disconnected_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           committed, revealed, hash, option_index, salt, forfeited, forfeited_at_round, disconnected_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         match.matchId,
         p.accountId,
         p.displayName,
@@ -149,6 +162,7 @@ export function checkpointMatch(
         p.optionIndex,
         p.salt,
         p.forfeited ? 1 : 0,
+        p.forfeitedAtRound,
         p.disconnectedAt,
       );
     }
@@ -188,6 +202,10 @@ export function checkpointPlayerAction(
   if (fields.forfeited !== undefined) {
     sets.push('forfeited = ?');
     vals.push(fields.forfeited ? 1 : 0);
+  }
+  if (fields.forfeitedAtRound !== undefined) {
+    sets.push('forfeited_at_round = ?');
+    vals.push(fields.forfeitedAtRound);
   }
   if (fields.currentBalance !== undefined) {
     sets.push('current_balance = ?');
@@ -252,6 +270,11 @@ export function restoreMatchesFromStorage(
           optionIndex: pr.option_index as number | null,
           salt: pr.salt as string | null,
           forfeited: !!(pr.forfeited as number),
+          forfeitedAtRound:
+            (pr.forfeited_at_round as number | null) ??
+            ((pr.forfeited as number)
+              ? (row.current_round as number) - 1
+              : null),
           disconnectedAt: (pr.disconnected_at as number | null) ?? now,
         });
       }

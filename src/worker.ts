@@ -529,6 +529,7 @@ export class GameRoom {
         optionIndex: null,
         salt: null,
         forfeited: false,
+        forfeitedAtRound: null,
         disconnectedAt: null,
         graceTimer: null,
       });
@@ -679,7 +680,7 @@ export class GameRoom {
       optionIndex: p.revealed ? p.optionIndex : null,
       validReveal: p.committed && p.revealed && !p.forfeited,
       forfeited: p.forfeited,
-      attached: true,
+      attached: !p.forfeited || p.forfeitedAtRound === match.currentRound,
     }));
 
     const result: RoundResult = settleRound(settlementPlayers, question);
@@ -783,7 +784,11 @@ export class GameRoom {
       }
     }
 
-    // Build round result payload for broadcast and reconnect replay
+    // Build round result payload for broadcast and reconnect replay.
+    // Read newBalance from live player state rather than the snapshot
+    // captured before the D1 await: a grace-timer forfeit could have
+    // burned future-round antes during the batch, making the snapshot
+    // stale.
     const roundResultPayload: RoundResultMessage['result'] = {
       roundNum: match.currentRound,
       voided: result.voided,
@@ -805,7 +810,9 @@ export class GameRoom {
         antePaid: pr.antePaid,
         roundPayout: pr.roundPayout,
         netDelta: pr.netDelta,
-        newBalance: (pr as PlayerResultWithBalance).newBalance,
+        newBalance:
+          match.players.get(pr.accountId)?.currentBalance ??
+          (pr as PlayerResultWithBalance).newBalance,
       })),
     };
     match.lastRoundResult = roundResultPayload;
@@ -875,6 +882,12 @@ export class GameRoom {
       ];
 
       for (const p of match.players.values()) {
+        endStmts.push(
+          this.env.DB.prepare(
+            'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+          ).bind(p.currentBalance, p.accountId),
+        );
+
         endStmts.push(
           this.env.DB.prepare(
             'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?',
@@ -1216,13 +1229,58 @@ export class GameRoom {
     if (!player || player.forfeited) return;
 
     player.forfeited = true;
+    player.forfeitedAtRound = match.currentRound;
     player.graceTimer = null;
-    this._checkpointPlayerAction(match.matchId, accountId, { forfeited: true });
+
+    // Burn future-round antes immediately. The player is detached from all
+    // subsequent rounds, so this is the only place the penalty is applied.
+    // Applying here instead of in _finalizeRound avoids a timing exploit
+    // where a disconnect during the results phase would skip the penalty.
+    const futureRounds = match.totalRounds - match.currentRound;
+    player.currentBalance -= futureRounds * ROUND_ANTE;
+
+    this._checkpointPlayerAction(match.matchId, accountId, {
+      forfeited: true,
+      forfeitedAtRound: match.currentRound,
+      currentBalance: player.currentBalance,
+    });
+
+    // Only take the results-phase path when the current round is fully
+    // settled (lastRoundResult built and cached). _finalizeRound sets
+    // phase='results' before the D1 batch await, so checking phase alone
+    // would race: the forfeit burn would fire while the batch is in
+    // flight, and _finalizeRound would later build the payload from a
+    // stale snapshot. Checking roundNum guards against both the mid-await
+    // window and a stale lastRoundResult from a prior round.
+    //
+    // During commit/reveal the player is still attached for the current
+    // round. _finalizeRound will write the correct post-settlement
+    // balance to D1, so persisting here would race with that write.
+    const roundFullySettled =
+      match.lastRoundResult?.roundNum === match.currentRound;
+    if (roundFullySettled) {
+      this._waitUntil(
+        this._persistAccountBalance(accountId, player.currentBalance),
+        `persist forfeited balance for ${accountId}`,
+      );
+
+      // Patch the cached round result so reconnect replay reflects the
+      // burned balance instead of the stale pre-forfeit value.
+      if (match.lastRoundResult) {
+        const cached = match.lastRoundResult.players.find(
+          (p) => p.accountId === accountId,
+        );
+        if (cached) {
+          cached.newBalance = player.currentBalance;
+        }
+        this._checkpointMatch(match);
+      }
+    }
 
     this._broadcastToMatch(match, {
       type: 'player_forfeited',
       displayName: player.displayName,
-      autoLosesRemainingRounds: true,
+      futureRoundsPenaltyApplied: true,
     });
 
     // If all players are now forfeited, check for early termination
@@ -1424,6 +1482,21 @@ export class GameRoom {
     checkpointPlayerAction(this.state.storage.sql, matchId, accountId, fields);
   }
 
+  async _persistAccountBalance(
+    accountId: string,
+    currentBalance: number,
+  ): Promise<void> {
+    try {
+      await this.env.DB.prepare(
+        'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+      )
+        .bind(currentBalance, accountId)
+        .run();
+    } catch (error) {
+      console.error('D1: persist account balance for', accountId, error);
+    }
+  }
+
   _deleteMatchCheckpoint(matchId: string): void {
     deleteMatchCheckpoint(this.state.storage.sql, matchId);
   }
@@ -1568,7 +1641,7 @@ export class GameRoom {
         this._sendTo(accountId, {
           type: 'player_forfeited',
           displayName: peer.displayName,
-          autoLosesRemainingRounds: true,
+          futureRoundsPenaltyApplied: true,
         });
       } else if (peer.disconnectedAt !== null) {
         const elapsedMs = Date.now() - peer.disconnectedAt;
