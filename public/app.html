@@ -1596,6 +1596,7 @@ function onAuthComplete() {
 $('#logout-btn').addEventListener('click', async () => {
   intentionalClose = true;
   wsRetryCount = 0;
+  wsQueueRecoveryPending = false;
   stopWebSocketHeartbeat();
   if (wsRetryTimer !== null) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
   if (S.ws) { S.ws.close(); S.ws = null; }
@@ -1684,6 +1685,68 @@ let wsHeartbeatTimer = null;
 let wsPongTimeoutTimer = null;
 let wsHeartbeatSocket = null;
 let wsAwaitingPong = false;
+let wsReconnectPaused = false;
+let wsQueueRecoveryPending = false;
+
+function clearWebSocketRetryTimer() {
+  if (wsRetryTimer !== null) {
+    clearTimeout(wsRetryTimer);
+    wsRetryTimer = null;
+  }
+}
+
+function isPageVisible() {
+  return document.visibilityState !== 'hidden';
+}
+
+function isNetworkOnline() {
+  return navigator.onLine !== false;
+}
+
+function pauseWebSocketReconnect() {
+  wsReconnectPaused = true;
+  clearWebSocketRetryTimer();
+}
+
+function resumeWebSocketReconnect() {
+  if (!S.accountId || !isPageVisible() || !isNetworkOnline()) return;
+  const wasPaused = wsReconnectPaused;
+  wsReconnectPaused = false;
+  clearWebSocketRetryTimer();
+  intentionalClose = false;
+  if (isWebSocketOpen()) {
+    startWebSocketHeartbeat(S.ws);
+    return;
+  }
+  if (S.ws && S.ws.readyState === WebSocket.CONNECTING) return;
+  if (wasPaused) {
+    wsRetryCount = 0;
+  }
+  connectWebSocket();
+}
+
+function scheduleWebSocketReconnect() {
+  if (!isPageVisible() || !isNetworkOnline()) {
+    pauseWebSocketReconnect();
+    return;
+  }
+  if (wsRetryCount >= WS_MAX_RETRIES) {
+    notify('Connection lost. Please refresh the page.', 'error');
+    return;
+  }
+  const delay = Math.min(WS_BASE_DELAY * Math.pow(2, wsRetryCount), WS_MAX_DELAY);
+  wsRetryCount++;
+  notify('Connection lost. Reconnecting (' + wsRetryCount + '/' + WS_MAX_RETRIES + ')...', 'warn');
+  clearWebSocketRetryTimer();
+  wsRetryTimer = setTimeout(() => {
+    wsRetryTimer = null;
+    if (!isPageVisible() || !isNetworkOnline()) {
+      pauseWebSocketReconnect();
+      return;
+    }
+    connectWebSocket();
+  }, delay);
+}
 
 function stopWebSocketHeartbeat(targetSocket = null) {
   if (targetSocket && wsHeartbeatSocket !== targetSocket) return;
@@ -1740,11 +1803,9 @@ function ensureWebSocketConnection() {
   ) {
     return true;
   }
+  wsReconnectPaused = false;
   intentionalClose = false;
-  if (wsRetryTimer !== null) {
-    clearTimeout(wsRetryTimer);
-    wsRetryTimer = null;
-  }
+  clearWebSocketRetryTimer();
   connectWebSocket();
   return true;
 }
@@ -1779,6 +1840,7 @@ function flushPendingQueueAction() {
 
 function connectWebSocket() {
   if (!S.accountId) return;
+  wsReconnectPaused = false;
   wsRetryTimer = null;
   S.wsConnected = false;
   stopWebSocketHeartbeat();
@@ -1790,7 +1852,11 @@ function connectWebSocket() {
     wsRetryCount = 0;
     wsRetryTimer = null;
     S.wsConnected = true;
-    startWebSocketHeartbeat(thisWs);
+    if (isPageVisible()) {
+      startWebSocketHeartbeat(thisWs);
+    } else {
+      stopWebSocketHeartbeat(thisWs);
+    }
     flushPendingQueueAction();
     renderQueue();
   };
@@ -1807,14 +1873,9 @@ function connectWebSocket() {
       renderQueue();
     }
     if (intentionalClose || thisWs !== S.ws) return;
-    if (wsRetryCount >= WS_MAX_RETRIES) {
-      notify('Connection lost. Please refresh the page.', 'error');
-      return;
-    }
-    const delay = Math.min(WS_BASE_DELAY * Math.pow(2, wsRetryCount), WS_MAX_DELAY);
-    wsRetryCount++;
-    notify('Connection lost. Reconnecting (' + wsRetryCount + '/' + WS_MAX_RETRIES + ')...', 'warn');
-    wsRetryTimer = setTimeout(connectWebSocket, delay);
+    wsQueueRecoveryPending =
+      S.inQueue && !hasActiveMatch() && S.pendingQueueAction !== 'leave';
+    scheduleWebSocketReconnect();
   };
   S.ws.onmessage = (evt) => {
     let msg;
@@ -1840,6 +1901,30 @@ function wsSend(obj) {
   }
   return false;
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (isPageVisible()) {
+    resumeWebSocketReconnect();
+    return;
+  }
+  stopWebSocketHeartbeat(S.ws);
+  pauseWebSocketReconnect();
+});
+
+window.addEventListener('online', () => {
+  resumeWebSocketReconnect();
+});
+
+window.addEventListener('offline', () => {
+  stopWebSocketHeartbeat(S.ws);
+  pauseWebSocketReconnect();
+});
+
+window.addEventListener('beforeunload', () => {
+  intentionalClose = true;
+  stopWebSocketHeartbeat(S.ws);
+  clearWebSocketRetryTimer();
+});
 
 function handleMessage(msg) {
   switch (msg.type) {
@@ -1870,6 +1955,7 @@ function syncAiAssistedUi() {
 //  QUEUE VIEW
 // ═══════════════════════════════════════════════════════════════
 $('#join-queue-btn').addEventListener('click', () => {
+  wsQueueRecoveryPending = false;
   S.startNow = false;
   syncStartNowUI();
   if (!wsSend({ type: 'join_queue' })) {
@@ -1878,6 +1964,7 @@ $('#join-queue-btn').addEventListener('click', () => {
 });
 
 $('#leave-queue-btn').addEventListener('click', () => {
+  wsQueueRecoveryPending = false;
   S.startNow = false;
   syncStartNowUI();
   if (!wsSend({ type: 'leave_queue' })) {
@@ -1906,6 +1993,20 @@ function syncStartNowUI() {
 }
 
 function onQueueState(msg) {
+  if (
+    wsQueueRecoveryPending &&
+    msg.status === 'idle' &&
+    !hasActiveMatch() &&
+    S.pendingQueueAction !== 'leave' &&
+    isWebSocketOpen()
+  ) {
+    wsQueueRecoveryPending = false;
+    wsSend({ type: 'join_queue' });
+    return;
+  }
+  if (msg.status !== 'idle') {
+    wsQueueRecoveryPending = false;
+  }
   S.pendingQueueAction = null;
   S.inQueue = msg.status === 'queued' || msg.status === 'forming';
   S.queuedPlayers = msg.queuedPlayers || [];
@@ -2026,6 +2127,7 @@ setInterval(updateFormingTimer, 1000);
 //  PLAY VIEW
 // ═══════════════════════════════════════════════════════════════
 function onMatchStarted(msg) {
+  wsQueueRecoveryPending = false;
   if (S.matchId && S.matchId !== msg.matchId) {
     clearPersistedGameHistory(S.matchId);
   }
