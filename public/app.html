@@ -1794,6 +1794,10 @@ function scheduleWebSocketReconnect() {
   }, delay);
 }
 
+function isSocketReplacementClose(evt) {
+  return evt && evt.code === 1000 && evt.reason === 'Replaced by new connection';
+}
+
 function stopWebSocketHeartbeat(targetSocket = null) {
   if (targetSocket && wsHeartbeatSocket !== targetSocket) return;
   if (wsHeartbeatTimer !== null) {
@@ -1912,13 +1916,18 @@ function connectWebSocket() {
     S.wsConnected = false;
     renderQueue();
   };
-  S.ws.onclose = () => {
+  S.ws.onclose = (evt) => {
     stopWebSocketHeartbeat(thisWs);
     if (thisWs === S.ws) {
       S.wsConnected = false;
       renderQueue();
     }
     if (intentionalClose || thisWs !== S.ws) return;
+    if (isSocketReplacementClose(evt)) {
+      wsQueueRecoveryPending = false;
+      notify('This session became active in another tab or window.', 'warn');
+      return;
+    }
     wsQueueRecoveryPending =
       S.inQueue && !hasActiveMatch() && S.pendingQueueAction !== 'leave';
     scheduleWebSocketReconnect();
