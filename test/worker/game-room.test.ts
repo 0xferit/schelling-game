@@ -13,10 +13,14 @@ import {
   seedAccount,
 } from './helpers';
 
+declare const __RUN_EXTENDED_WORKER_TESTS__: boolean;
+
 const BASE = 'https://test.local';
 const MATCH_START_TIMEOUT_MS = 40_000;
 const GAME_START_TIMEOUT_MS = 45_000;
 const MATCH_OVER_TIMEOUT_MS = 20_000;
+const extendedWorkerTestsEnabled = __RUN_EXTENDED_WORKER_TESTS__;
+const extendedIt = extendedWorkerTestsEnabled ? it : it.skip;
 
 function makeSalt(gameNum: number, playerIdx: number): string {
   const nibbleA = (gameNum % 16).toString(16);
@@ -1093,84 +1097,90 @@ describe('GameRoom Durable Object', () => {
     p3.ws.close();
   });
 
-  it('runs a full 10-game lifecycle and emits match_over', {
-    timeout: 180_000,
-  }, async () => {
-    const p1 = await connectPlayer(25, 'FullP1', 100_000);
-    const p2 = await connectPlayer(26, 'FullP2', 100_000);
-    const p3 = await connectPlayer(27, 'FullP3', 100_000);
-    const players = [p1, p2, p3];
+  extendedIt(
+    'runs a full 10-game lifecycle and emits match_over',
+    {
+      timeout: 180_000,
+    },
+    async () => {
+      const p1 = await connectPlayer(25, 'FullP1', 100_000);
+      const p2 = await connectPlayer(26, 'FullP2', 100_000);
+      const p3 = await connectPlayer(27, 'FullP3', 100_000);
+      const players = [p1, p2, p3];
 
-    const matchStartedPromises = players.map((p) =>
-      waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
-    );
-    let gameStartedPromises = players.map((p) =>
-      waitForMessage(p.ws, 'game_started', GAME_START_TIMEOUT_MS),
-    );
-
-    for (const player of players) {
-      player.ws.send(JSON.stringify({ type: 'join_queue' }));
-    }
-
-    const started = await Promise.all(matchStartedPromises);
-    for (const message of started) {
-      expect(message.gameCount).toBe(10);
-      expect(message.matchId).toBe(started[0].matchId);
-    }
-
-    for (let gameNum = 1; gameNum <= 10; gameNum++) {
-      const gameStarted = await Promise.all(gameStartedPromises);
-      const prompt = gameStarted[0]?.prompt as SchellingPrompt;
-      for (const message of gameStarted) {
-        expect(message.game).toBe(gameNum);
-        expect(message.phase).toBe('commit');
-        expect(message.prompt).toEqual(prompt);
-      }
-
-      const phaseChange = waitForMessage(players[0].ws, 'phase_change', 5_000);
-      for (let i = 0; i < players.length; i++) {
-        const salt = makeSalt(gameNum, i + 1);
-        const action = buildPromptAction(prompt, salt, 0);
-        players[i].ws.send(
-          JSON.stringify({ type: 'commit', hash: action.hash }),
-        );
-      }
-      const phase = await phaseChange;
-      expect(phase.phase).toBe('reveal');
-
-      const gameResult = waitForMessage(
-        players[0].ws,
-        'game_result',
-        getGameResultTimeoutMs(prompt),
+      const matchStartedPromises = players.map((p) =>
+        waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
       );
-      for (let i = 0; i < players.length; i++) {
-        const salt = makeSalt(gameNum, i + 1);
-        const action = buildPromptAction(prompt, salt, 0);
-        players[i].ws.send(JSON.stringify(action.reveal));
+      let gameStartedPromises = players.map((p) =>
+        waitForMessage(p.ws, 'game_started', GAME_START_TIMEOUT_MS),
+      );
+
+      await joinPlayersAndStartNow(players);
+
+      const started = await Promise.all(matchStartedPromises);
+      for (const message of started) {
+        expect(message.gameCount).toBe(10);
+        expect(message.matchId).toBe(started[0].matchId);
       }
 
-      const result = await gameResult;
-      expect(result.type).toBe('game_result');
-      expect(result.result.gameNum).toBe(gameNum);
+      for (let gameNum = 1; gameNum <= 10; gameNum++) {
+        const gameStarted = await Promise.all(gameStartedPromises);
+        const prompt = gameStarted[0]?.prompt as SchellingPrompt;
+        for (const message of gameStarted) {
+          expect(message.game).toBe(gameNum);
+          expect(message.phase).toBe('commit');
+          expect(message.prompt).toEqual(prompt);
+        }
 
-      if (gameNum < 10) {
-        gameStartedPromises = players.map((p) =>
-          waitForMessage(p.ws, 'game_started', 15_000),
+        const phaseChange = waitForMessage(
+          players[0].ws,
+          'phase_change',
+          5_000,
         );
+        for (let i = 0; i < players.length; i++) {
+          const salt = makeSalt(gameNum, i + 1);
+          const action = buildPromptAction(prompt, salt, 0);
+          players[i].ws.send(
+            JSON.stringify({ type: 'commit', hash: action.hash }),
+          );
+        }
+        const phase = await phaseChange;
+        expect(phase.phase).toBe('reveal');
+
+        const gameResult = waitForMessage(
+          players[0].ws,
+          'game_result',
+          getGameResultTimeoutMs(prompt),
+        );
+        for (let i = 0; i < players.length; i++) {
+          const salt = makeSalt(gameNum, i + 1);
+          const action = buildPromptAction(prompt, salt, 0);
+          players[i].ws.send(JSON.stringify(action.reveal));
+        }
+
+        const result = await gameResult;
+        expect(result.type).toBe('game_result');
+        expect(result.result.gameNum).toBe(gameNum);
+
+        if (gameNum < 10) {
+          gameStartedPromises = players.map((p) =>
+            waitForMessage(p.ws, 'game_started', 15_000),
+          );
+        }
       }
-    }
 
-    const matchOver = await waitForMessage(
-      players[0].ws,
-      'match_over',
-      MATCH_OVER_TIMEOUT_MS,
-    );
-    expect(matchOver.type).toBe('match_over');
-    expect(Array.isArray(matchOver.summary.players)).toBe(true);
-    expect(matchOver.summary.players).toHaveLength(3);
+      const matchOver = await waitForMessage(
+        players[0].ws,
+        'match_over',
+        MATCH_OVER_TIMEOUT_MS,
+      );
+      expect(matchOver.type).toBe('match_over');
+      expect(Array.isArray(matchOver.summary.players)).toBe(true);
+      expect(matchOver.summary.players).toHaveLength(3);
 
-    for (const player of players) {
-      player.ws.close();
-    }
-  });
+      for (const player of players) {
+        player.ws.close();
+      }
+    },
+  );
 });
