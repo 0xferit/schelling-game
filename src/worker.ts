@@ -21,7 +21,7 @@ import {
   canonicalizeOpenTextAnswer,
   normalizeRevealText,
 } from './domain/openText';
-import { selectPromptsForMatch } from './domain/prompts';
+import { getPromptRecordById, selectPromptsForMatch } from './domain/prompts';
 import { settleGame, voidGame } from './domain/settlement';
 import type {
   GameResult,
@@ -752,6 +752,9 @@ export class GameRoom {
     }
 
     if (!this._aiBotEnabled() || !this._openTextPromptsEnabled()) {
+      return;
+    }
+    if (!this._getAiBinding()) {
       return;
     }
 
@@ -1806,6 +1809,9 @@ export class GameRoom {
           prompt,
           accountId,
         );
+        if (optionIndex === null) {
+          return;
+        }
         if (
           match.phase !== 'commit' ||
           match.currentGame !== gameAtDispatch ||
@@ -1815,25 +1821,22 @@ export class GameRoom {
           return;
         }
 
-        const safeOptionIndex = validateOptionIndex(
-          optionIndex,
-          prompt.options.length,
-        )
-          ? optionIndex
-          : this._pickAiBotFallbackOption(prompt);
+        if (!validateOptionIndex(optionIndex, prompt.options.length)) {
+          return;
+        }
         const salt = this._createAiBotSalt();
-        const hash = createCommitHash(safeOptionIndex, salt);
+        const hash = createCommitHash(optionIndex, salt);
 
         player.committed = true;
         player.hash = hash;
-        player.optionIndex = safeOptionIndex;
+        player.optionIndex = optionIndex;
         player.answerText = null;
         player.normalizedRevealText = null;
         player.salt = salt;
         this._checkpointPlayerAction(match.matchId, accountId, {
           committed: true,
           hash,
-          optionIndex: safeOptionIndex,
+          optionIndex,
           answerText: null,
           normalizedRevealText: null,
           salt,
@@ -1844,6 +1847,9 @@ export class GameRoom {
           prompt,
           accountId,
         );
+        if (answerText === null) {
+          return;
+        }
         if (
           match.phase !== 'commit' ||
           match.currentGame !== gameAtDispatch ||
@@ -1902,14 +1908,14 @@ export class GameRoom {
     match: WorkerMatchState,
     prompt: SchellingPrompt,
     accountId: string,
-  ): Promise<number> {
+  ): Promise<number | null> {
     if (prompt.type !== 'select') {
       throw new Error('AI bot selection requires a select prompt');
     }
 
     const ai = this._getAiBinding();
     if (!ai) {
-      return this._pickAiBotFallbackOption(prompt);
+      return null;
     }
 
     const elapsedMs = Date.now() - match.phaseEnteredAt;
@@ -1918,7 +1924,7 @@ export class GameRoom {
     const timeoutMs = Math.min(this._getAiBotTimeoutMs(), remainingCommitMs);
 
     if (timeoutMs <= 0) {
-      return this._pickAiBotFallbackOption(prompt);
+      return null;
     }
 
     try {
@@ -1956,17 +1962,17 @@ export class GameRoom {
       console.error('Workers AI bot inference failed', error);
     }
 
-    return this._pickAiBotFallbackOption(prompt);
+    return null;
   }
 
   async _selectAiBotOpenTextAnswer(
     match: WorkerMatchState,
     prompt: OpenTextPrompt,
     accountId: string,
-  ): Promise<string> {
+  ): Promise<string | null> {
     const ai = this._getAiBinding();
     if (!ai) {
-      return this._pickAiBotFallbackAnswer(prompt);
+      return null;
     }
 
     const elapsedMs = Date.now() - match.phaseEnteredAt;
@@ -1975,7 +1981,7 @@ export class GameRoom {
     const timeoutMs = Math.min(this._getAiBotTimeoutMs(), remainingCommitMs);
 
     if (timeoutMs <= 0) {
-      return this._pickAiBotFallbackAnswer(prompt);
+      return null;
     }
 
     try {
@@ -2013,10 +2019,19 @@ export class GameRoom {
       console.error('Workers AI bot inference failed', error);
     }
 
-    return this._pickAiBotFallbackAnswer(prompt);
+    return null;
   }
 
   _buildAiBotPrompt(prompt: SchellingPrompt): string {
+    const backfillProfile = this._getAiBackfillProfile(prompt);
+    const hintLines = backfillProfile
+      ? [
+          '',
+          'Focality hints:',
+          ...backfillProfile.promptHints.map((hint) => `- ${hint}`),
+        ]
+      : [];
+
     if (prompt.type !== 'select') {
       const answerSpecLine = (() => {
         switch (prompt.answerSpec.kind) {
@@ -2049,6 +2064,7 @@ export class GameRoom {
         `Game prompt: ${prompt.text}`,
         answerSpecLine,
         `Keep the answer within ${prompt.maxLength} characters.`,
+        ...hintLines,
         ...exampleLines,
         '',
         'Respond with JSON: {"answerText": "<answer>"}',
@@ -2069,9 +2085,14 @@ export class GameRoom {
       `Game prompt: ${prompt.text}`,
       'Options:',
       options,
+      ...hintLines,
       '',
       'Respond with JSON: {"optionIndex": <zero-based index>}',
     ].join('\n');
+  }
+
+  _getAiBackfillProfile(prompt: SchellingPrompt) {
+    return getPromptRecordById(prompt.id)?.aiBackfill ?? null;
   }
 
   _parseAiBotOptionIndex(
@@ -2148,51 +2169,6 @@ export class GameRoom {
     }
 
     return null;
-  }
-
-  // Heuristic fallback when Workers AI is unavailable or times out.
-  // Only matches numeric-style option labels; for text labels like
-  // "Heads"/"Tails" this falls through to the middle-index default.
-  _pickAiBotFallbackOption(prompt: SchellingPrompt): number {
-    if (prompt.type !== 'select') {
-      return 0;
-    }
-    const normalizedTargets = ['1', '0', '50%', '50', '0.5', '0.50'];
-    for (const target of normalizedTargets) {
-      const index = prompt.options.findIndex(
-        (option) => option.trim().toLowerCase() === target,
-      );
-      if (index !== -1) {
-        return index;
-      }
-    }
-    return Math.floor(prompt.options.length / 2);
-  }
-
-  _pickAiBotFallbackAnswer(prompt: OpenTextPrompt): string {
-    for (const example of prompt.canonicalExamples || []) {
-      if (
-        validateAnswerText(example, prompt) &&
-        canonicalizeOpenTextAnswer(example, prompt)
-      ) {
-        return example;
-      }
-    }
-
-    switch (prompt.answerSpec.kind) {
-      case 'integer_range': {
-        const midpoint = Math.floor(
-          (prompt.answerSpec.min + prompt.answerSpec.max) / 2,
-        );
-        return String(midpoint);
-      }
-      case 'playing_card':
-        return 'Ace of Spades';
-      case 'single_word':
-        return 'love';
-      default:
-        return 'New York';
-    }
   }
 
   _createAiBotSalt(): string {

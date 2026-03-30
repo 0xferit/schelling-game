@@ -81,6 +81,12 @@ describe('prompt pool', () => {
     }
   });
 
+  it('assigns AI backfill prompt hints to every canonical prompt', () => {
+    for (const record of records) {
+      expect(record.aiBackfill.promptHints.length).toBeGreaterThan(0);
+    }
+  });
+
   it('passes prompt-pool quality validation', () => {
     expect(validatePromptPool()).toBe(true);
     expect(getPromptPoolQualityIssues()).toEqual([]);
@@ -130,6 +136,22 @@ describe('prompt pool', () => {
       expect(
         getPromptPoolQualityIssues().some((issue) =>
           issue.includes('exactly one prompt per root'),
+        ),
+      ).toBe(true);
+    } finally {
+      restoreRecord(record, snapshot);
+    }
+  });
+
+  it('flags empty AI backfill prompt hints', () => {
+    const record = getMutableRecord(1003);
+    const snapshot = cloneJson(record);
+
+    try {
+      record.aiBackfill.promptHints = [''];
+      expect(
+        getPromptPoolQualityIssues().some((issue) =>
+          issue.includes('contains an empty AI backfill prompt hint'),
         ),
       ).toBe(true);
     } finally {
