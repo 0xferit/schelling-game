@@ -2381,7 +2381,7 @@ function renderPromptInput(prompt, disabled) {
   }
 
   if (prompt.answerSpec.kind === 'playing_card') {
-    renderPlayingCardInput(disabled, grid);
+    renderPlayingCardInput(prompt, disabled, grid);
     return;
   }
 
@@ -2426,7 +2426,7 @@ function renderPromptInput(prompt, disabled) {
   grid.appendChild(wrap);
 }
 
-function renderPlayingCardInput(disabled, grid) {
+function renderPlayingCardInput(prompt, disabled, grid) {
   const wrap = document.createElement('div');
   wrap.className = 'text-answer-wrap';
   wrap.style.gridColumn = '1 / -1';
@@ -2488,9 +2488,21 @@ function renderPlayingCardInput(disabled, grid) {
     if (S.committed || S.phase !== 'commit') return;
     syncPlayingCardSelection();
   });
+  rankSelect.addEventListener('keydown', (event) => {
+    if (!shouldHandleCommitShortcut(event)) return;
+    if (!validateOpenTextAnswer(S.selectedAnswerText, prompt)) return;
+    event.preventDefault();
+    void submitCommit();
+  });
   suitSelect.addEventListener('change', () => {
     if (S.committed || S.phase !== 'commit') return;
     syncPlayingCardSelection();
+  });
+  suitSelect.addEventListener('keydown', (event) => {
+    if (!shouldHandleCommitShortcut(event)) return;
+    if (!validateOpenTextAnswer(S.selectedAnswerText, prompt)) return;
+    event.preventDefault();
+    void submitCommit();
   });
 
   const rankField = document.createElement('label');
