@@ -24,3 +24,4 @@ Format:
 | [0010](./0010-ten-seed-ai-normalized-public-mode.md) | Ten-seed AI-normalized public mode | Superseded | 2026-03-30 |
 | [0011](./0011-restore-limited-ai-backfill.md) | Restore limited AI backfill for ten-seed public mode | Accepted | 2026-03-30 |
 | [0012](./0012-decouple-catalog-from-match-length.md) | Decouple prompt catalog size from match length | Accepted | 2026-03-30 |
+| [0013](./0013-raise-ai-backfill-target-to-five-players.md) | Raise AI backfill target to five players | Accepted | 2026-03-30 |

@@ -110,9 +110,11 @@ const envWithAi = env as unknown as {
   AI?: {
     run: (model: string, inputs: Record<string, unknown>) => Promise<unknown>;
   };
+  AI_BOT_ENABLED?: string;
 };
 
 let originalAiBinding: typeof envWithAi.AI;
+let originalAiBotEnabled: typeof envWithAi.AI_BOT_ENABLED;
 
 /** Helper: collect WebSocket messages into an array for a short window. */
 function collectMessages(
@@ -278,11 +280,14 @@ async function formMatch(
 describe('GameRoom Durable Object', () => {
   beforeEach(() => {
     originalAiBinding = envWithAi.AI;
+    originalAiBotEnabled = envWithAi.AI_BOT_ENABLED;
     envWithAi.AI = createDeterministicAiBinding();
+    envWithAi.AI_BOT_ENABLED = 'false';
   });
 
   afterEach(() => {
     envWithAi.AI = originalAiBinding;
+    envWithAi.AI_BOT_ENABLED = originalAiBotEnabled;
   });
 
   it('rejects WebSocket without session cookie (401)', async () => {

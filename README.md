@@ -103,7 +103,7 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `GAME_ROOM` | Yes | `wrangler.toml` | Durable Object namespace for the singleton `GameRoom` lobby/match coordinator. |
 | `AI` | Optional | `wrangler.toml` | Workers AI binding used for open-text answer normalization. |
 | `ADMIN_KEY` | Optional | Worker secret/var | Protects admin-only HTTP routes such as leaderboard eligibility and CSV export. |
-| `AI_BOT_ENABLED` | Optional | `wrangler.toml` var | Enables limited AI queue backfill for `1`- or `2`-human public queues. Bot-assisted matches stay off the record. |
+| `AI_BOT_ENABLED` | Optional | `wrangler.toml` var | Enables limited AI queue backfill for undersized public queues. Bot-assisted matches stay off the record. |
 | `AI_BOT_MODELS` | Optional | `wrangler.toml` var | Comma-separated Workers AI model list for backfill bot selection. |
 | `AI_BOT_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for Workers AI bot decisions. |
 | `OPEN_TEXT_PROMPTS_ENABLED` | Required for public play | `wrangler.toml` var | Enables the canonical mixed prompt catalog. If disabled, public matches will not start. |

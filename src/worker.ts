@@ -155,6 +155,7 @@ const FILL_TIMER_MS = 30_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
+const AI_BOT_TARGET_MATCH_SIZE = 5;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
@@ -720,11 +721,11 @@ export class GameRoom {
     }
 
     const queuedHumans = this._countQueuedHumans();
-    if (queuedHumans === 0 || queuedHumans >= MIN_MATCH_SIZE) {
+    if (queuedHumans === 0 || queuedHumans >= AI_BOT_TARGET_MATCH_SIZE) {
       return;
     }
 
-    const neededBots = MIN_MATCH_SIZE - queuedHumans;
+    const neededBots = AI_BOT_TARGET_MATCH_SIZE - queuedHumans;
     for (let i = 0; i < neededBots; i += 1) {
       this.waitingQueue.push(this._createAiBotId(i));
     }
