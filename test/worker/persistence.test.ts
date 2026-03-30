@@ -440,12 +440,7 @@ describe('restoreMatchesFromStorage', () => {
     expect(player.normalizedRevealText).toBe('new york');
   });
 
-  it('sets disconnectedAt to restore time (not phaseEnteredAt) when disconnected_at is NULL', () => {
-    // Simulate a match that started 20 seconds ago: long enough that
-    // a player whose disconnectedAt was set to phaseEnteredAt would
-    // have exceeded the 15 s grace period and be forfeited immediately.
-    const phaseEnteredAt = Date.now() - 20_000;
-
+  it('keeps disconnectedAt null when disconnected_at is NULL', () => {
     const matchRows = [
       {
         match_id: 'match-1',
@@ -461,7 +456,7 @@ describe('restoreMatchesFromStorage', () => {
             options: ['A', 'B'],
           },
         ]),
-        phase_entered_at: phaseEnteredAt,
+        phase_entered_at: Date.now() - 20_000,
         last_settled_game: 0,
       },
     ];
@@ -499,25 +494,20 @@ describe('restoreMatchesFromStorage', () => {
       },
     ];
 
-    const sql = createMockSql(matchRows, playerRows);
-    const before = Date.now();
-    const restored = restoreMatchesFromStorage(sql, STALE_THRESHOLD_MS);
-    const after = Date.now();
+    const restored = restoreMatchesFromStorage(
+      createMockSql(matchRows, playerRows),
+      STALE_THRESHOLD_MS,
+    );
 
     expect(restored).toHaveLength(1);
     const match = must(restored[0], 'Expected restored match');
     expect(match.players.size).toBe(2);
 
-    // The previously-connected player (disconnected_at = NULL) should
-    // have disconnectedAt set to approximately "now" (the restore time),
-    // NOT to phaseEnteredAt (which was 20 s ago). This ensures the
-    // grace timer gives them the full 15 s window after restore.
     const connected = must(
       match.players.get('0xconnected'),
       'Expected connected player state',
     );
-    expect(connected.disconnectedAt).toBeGreaterThanOrEqual(before);
-    expect(connected.disconnectedAt).toBeLessThanOrEqual(after);
+    expect(connected.disconnectedAt).toBeNull();
 
     // The explicitly-disconnected player keeps their original timestamp.
     const disconnected = must(
@@ -531,9 +521,7 @@ describe('restoreMatchesFromStorage', () => {
     expect(disconnected.disconnectedAt).toBe(secondPlayerRow.disconnected_at);
   });
 
-  it('uses a consistent timestamp for all NULL disconnected_at players in the same restore call', () => {
-    const phaseEnteredAt = Date.now() - 20_000;
-
+  it('keeps all NULL disconnected_at players connected in the same restore call', () => {
     const matchRows = [
       {
         match_id: 'match-1',
@@ -549,7 +537,7 @@ describe('restoreMatchesFromStorage', () => {
             options: ['A', 'B'],
           },
         ]),
-        phase_entered_at: phaseEnteredAt,
+        phase_entered_at: Date.now() - 20_000,
         last_settled_game: 0,
       },
     ];
@@ -592,10 +580,8 @@ describe('restoreMatchesFromStorage', () => {
     const p1 = must(match.players.get('0xplayer1'), 'Expected player 1 state');
     const p2 = must(match.players.get('0xplayer2'), 'Expected player 2 state');
 
-    // Both players should share the exact same disconnectedAt timestamp
-    // because the function captures `now` once at the top rather than
-    // calling Date.now() per player.
-    expect(p1.disconnectedAt).toBe(p2.disconnectedAt);
+    expect(p1.disconnectedAt).toBeNull();
+    expect(p2.disconnectedAt).toBeNull();
   });
 
   it('legacy checkpoint: forfeited player is detached (forfeitedAtGame < currentGame)', () => {

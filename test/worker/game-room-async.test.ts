@@ -1864,6 +1864,109 @@ describe('GameRoom async task tracking', () => {
     });
   });
 
+  it('refresh-style reconnect does not mark AI backfill players disconnected or forfeited', () => {
+    const { room } = createRoom();
+
+    const { ws: oldWs, listeners: oldListeners } = createSocketWithListeners();
+    const { ws: newWs } = createSocketWithListeners();
+    room.connections.set('acct-1', {
+      ...createConnectionState('Alice', oldWs),
+      previousOpponents: new Set<string>(),
+    });
+
+    const match = createMatch();
+    match.phase = 'commit';
+    match.currentGame = 1;
+    match.players.set('acct-1', {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: oldWs,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('ai-bot:0:test-a', {
+      accountId: 'ai-bot:0:test-a',
+      displayName: 'nemotron',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    match.players.set('ai-bot:1:test-b', {
+      accountId: 'ai-bot:1:test-b',
+      displayName: 'llama',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    room.activeMatches.set(match.matchId, match);
+    room.playerMatchIndex.set('acct-1', match.matchId);
+    room.playerMatchIndex.set('ai-bot:0:test-a', match.matchId);
+    room.playerMatchIndex.set('ai-bot:1:test-b', match.matchId);
+
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_sendMatchStateToPlayer').mockImplementation(() => {});
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+
+    room.fetch(
+      new Request('https://test.local/ws?accountId=acct-1&displayName=Alice'),
+      {} as RequestInitCfProperties,
+      'acct-1',
+      'Alice',
+      newWs,
+    );
+
+    oldListeners.get('close')?.();
+
+    const botA = must(
+      match.players.get('ai-bot:0:test-a'),
+      'Expected first AI bot player',
+    );
+    const botB = must(
+      match.players.get('ai-bot:1:test-b'),
+      'Expected second AI bot player',
+    );
+    expect(botA.disconnectedAt).toBeNull();
+    expect(botB.disconnectedAt).toBeNull();
+    expect(botA.forfeited).toBe(false);
+    expect(botB.forfeited).toBe(false);
+  });
+
   it('keeps a match in settling phase and retries finalize when D1 batch fails', async () => {
     vi.useFakeTimers();
 

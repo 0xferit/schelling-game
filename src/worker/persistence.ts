@@ -352,7 +352,7 @@ function readMatchRow(row: SqlRow): {
 function readPlayerRow(
   row: SqlRow,
   currentGame: number,
-  now: number,
+  _now: number,
 ): PersistedPlayerState {
   return {
     accountId: readString(row, 'account_id'),
@@ -374,7 +374,7 @@ function readPlayerRow(
       readNullableNumber(row, 'forfeited_at_game') ??
       readNullableNumber(row, 'forfeited_at_round') ??
       (readBooleanLike(row, 'forfeited') ? currentGame - 1 : null),
-    disconnectedAt: readNullableNumber(row, 'disconnected_at') ?? now,
+    disconnectedAt: readNullableNumber(row, 'disconnected_at'),
   };
 }
 
