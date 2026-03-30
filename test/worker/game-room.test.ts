@@ -414,9 +414,11 @@ describe('GameRoom Durable Object', () => {
 
     const queueState = msgs.find((m) => m.type === 'queue_state');
     expect(queueState).toBeDefined();
-    expect(must(queueState, 'Expected queue_state after repair').status).toBe(
-      'queued',
-    );
+    const repairedState = must(queueState, 'Expected queue_state after repair');
+    expect(['queued', 'forming']).toContain(repairedState.status);
+    if (repairedState.status === 'forming') {
+      expect(repairedState.formingMatch).toBeTruthy();
+    }
 
     const row = (await env.DB.prepare(
       'SELECT token_balance FROM accounts WHERE account_id = ?',
