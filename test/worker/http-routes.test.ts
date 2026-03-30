@@ -1,5 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LEADERBOARD_LIMIT } from '../../src/domain/constants';
 import type { Env } from '../../src/types/worker-env';
 import { handleHttpRequest } from '../../src/worker/httpHandler';
@@ -13,6 +13,15 @@ import {
 
 const HTTPS_BASE = 'https://test.local';
 const HTTP_BASE = 'http://test.local';
+const TURNSTILE_SITE_KEY = '1x00000000000000000000AA';
+const TURNSTILE_SECRET_KEY = '1x0000000000000000000000000000000AA';
+const TURNSTILE_ACTION = 'landing_example_vote';
+const TURNSTILE_HOSTNAME = 'test.local';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 interface SeedLeaderboardAccountInput {
   accountId: string;
@@ -101,6 +110,54 @@ function postWithBase(
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
     }),
+  );
+}
+
+const exampleVoteEnv = {
+  DB: env.DB,
+  GAME_ROOM: {} as DurableObjectNamespace,
+  TURNSTILE_SECRET_KEY,
+  TURNSTILE_SITE_KEY,
+} satisfies Env;
+
+function getWithEnv(
+  targetEnv: Env,
+  path: string,
+  headers: Record<string, string> = {},
+) {
+  return handleHttpRequest(
+    new Request(`${HTTPS_BASE}${path}`, { headers }),
+    targetEnv,
+  );
+}
+
+function postWithEnv(
+  targetEnv: Env,
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  return handleHttpRequest(
+    new Request(`${HTTPS_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    }),
+    targetEnv,
+  );
+}
+
+function mockTurnstileValidation(
+  result: Record<string, unknown>,
+  status = 200,
+) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+    Promise.resolve(
+      new Response(JSON.stringify(result), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
   );
 }
 
@@ -667,8 +724,30 @@ describe('HTTP routes', () => {
     expect(myRank.displayName).toBe('TargetPlayer');
   });
 
-  it('POST /api/example-vote + GET /api/example-tally round-trips', async () => {
-    const voteResp = await post('/api/example-vote', { optionIndex: 8 });
+  it('GET /api/game-config exposes the landing-page Turnstile site key', async () => {
+    const resp = await getWithEnv(exampleVoteEnv, '/api/game-config');
+    expect(resp.status).toBe(200);
+    const data = (await resp.json()) as {
+      commitDuration: number;
+      revealDuration: number;
+      turnstileSiteKey: string | null;
+    };
+    expect(data.commitDuration).toBeGreaterThan(0);
+    expect(data.revealDuration).toBeGreaterThan(0);
+    expect(data.turnstileSiteKey).toBe(TURNSTILE_SITE_KEY);
+  });
+
+  it('POST /api/example-vote + GET /api/example-tally round-trips with a valid Turnstile token', async () => {
+    mockTurnstileValidation({
+      success: true,
+      action: TURNSTILE_ACTION,
+      hostname: TURNSTILE_HOSTNAME,
+    });
+
+    const voteResp = await postWithEnv(exampleVoteEnv, '/api/example-vote', {
+      optionIndex: 8,
+      turnstileToken: 'token-8',
+    });
     expect(voteResp.status).toBe(200);
 
     const tallyResp = await get('/api/example-tally');
@@ -685,11 +764,96 @@ describe('HTTP routes', () => {
     ).toBeGreaterThanOrEqual(1);
   });
 
+  it('POST /api/example-vote rejects missing Turnstile tokens', async () => {
+    const resp = await postWithEnv(exampleVoteEnv, '/api/example-vote', {
+      optionIndex: 8,
+    });
+    expect(resp.status).toBe(400);
+    await expect(resp.json()).resolves.toEqual({
+      error: 'turnstileToken is required',
+    });
+  });
+
+  it('POST /api/example-vote rejects failed Turnstile verification', async () => {
+    mockTurnstileValidation({
+      success: false,
+      action: TURNSTILE_ACTION,
+      hostname: TURNSTILE_HOSTNAME,
+      'error-codes': ['invalid-input-response'],
+    });
+
+    const resp = await postWithEnv(exampleVoteEnv, '/api/example-vote', {
+      optionIndex: 8,
+      turnstileToken: 'token-fail',
+    });
+    expect(resp.status).toBe(403);
+    await expect(resp.json()).resolves.toEqual({
+      error: 'Human verification failed.',
+    });
+  });
+
+  it('POST /api/example-vote rejects Turnstile action mismatches', async () => {
+    mockTurnstileValidation({
+      success: true,
+      action: 'different_action',
+      hostname: TURNSTILE_HOSTNAME,
+    });
+
+    const resp = await postWithEnv(exampleVoteEnv, '/api/example-vote', {
+      optionIndex: 8,
+      turnstileToken: 'token-action-mismatch',
+    });
+    expect(resp.status).toBe(403);
+  });
+
+  it('POST /api/example-vote rejects Turnstile hostname mismatches', async () => {
+    mockTurnstileValidation({
+      success: true,
+      action: TURNSTILE_ACTION,
+      hostname: 'evil.example',
+    });
+
+    const resp = await postWithEnv(exampleVoteEnv, '/api/example-vote', {
+      optionIndex: 8,
+      turnstileToken: 'token-hostname-mismatch',
+    });
+    expect(resp.status).toBe(403);
+  });
+
+  it('POST /api/example-vote returns 503 when Turnstile is not configured', async () => {
+    const resp = await postWithEnv(
+      {
+        DB: env.DB,
+        GAME_ROOM: {} as DurableObjectNamespace,
+      } as Env,
+      '/api/example-vote',
+      {
+        optionIndex: 8,
+        turnstileToken: 'token-missing-config',
+      },
+    );
+    expect(resp.status).toBe(503);
+  });
+
   it('POST /api/example-vote rate limits write bursts per IP', async () => {
     const headers = { 'CF-Connecting-IP': '203.0.113.207' };
+    mockTurnstileValidation({
+      success: true,
+      action: TURNSTILE_ACTION,
+      hostname: TURNSTILE_HOSTNAME,
+    });
+
     let lastStatus = 0;
     for (let i = 0; i < 41; i += 1) {
-      const resp = await post('/api/example-vote', {}, headers);
+      const resp = await postWithEnv(
+        exampleVoteEnv,
+        '/api/example-vote',
+        {
+          optionIndex: 8,
+          turnstileToken: `token-${i}`,
+        },
+        headers,
+      );
       lastStatus = resp.status;
     }
     expect(lastStatus).toBe(429);

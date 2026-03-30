@@ -36,6 +36,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link rel="preload" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'"/>
 <noscript><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/></noscript>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
 
 <!-- Structured Data -->
 <script type="application/ld+json">
@@ -517,6 +518,35 @@ section{padding:6rem 2rem}
   padding-left:1rem;
   border-left:2px solid var(--accent);
 }
+.example-vote-status{
+  min-height:1.5rem;
+  margin:.85rem 0 1rem;
+  font-size:.88rem;
+  color:var(--muted);
+}
+.example-vote-status.pending{color:var(--accent)}
+.example-vote-status.error{color:#d9a29a}
+.example-vote-status.success{color:var(--muted-strong)}
+.example-turnstile{
+  min-height:66px;
+  margin:0 0 1rem;
+}
+.example-turnstile[hidden]{display:none}
+.example-layout.verifying .example-opt,
+.example-layout.demo-disabled .example-opt{
+  pointer-events:none;
+}
+.example-layout.verifying .example-opt{
+  opacity:.72;
+}
+.example-layout.demo-disabled .example-opt{
+  cursor:not-allowed;
+  opacity:.55;
+}
+.example-layout.demo-disabled .example-opt:hover{
+  border-color:var(--border);
+  color:var(--text);
+}
 
 /* ── LEARN (Educational) ────────────────── */
 .learn{border-top:1px solid var(--border)}
@@ -977,6 +1007,8 @@ footer{
       </div>
       <div class="example-demo">
         <div class="example-question">Pick the number you think most others will pick.</div>
+        <div class="example-vote-status" aria-live="polite"></div>
+        <div class="example-turnstile" id="example-turnstile" hidden></div>
         <div class="example-options">
           <button class="example-opt">13</button>
           <button class="example-opt">7</button>
@@ -1311,11 +1343,33 @@ footer{
   window.addEventListener('resize', resize);
 })();
 
+var gameConfigPromise = fetch('/api/game-config')
+  .then(function(response) {
+    if (!response.ok) throw new Error('Unable to load game config');
+    return response.json();
+  })
+  .catch(function() {
+    return {
+      commitDuration: null,
+      revealDuration: null,
+      turnstileSiteKey: null
+    };
+  });
+
 /* ── Example option interaction ──────────── */
 (function() {
   var demo = document.querySelector('.example-layout');
   var opts = document.querySelectorAll('.example-opt');
   var insight = document.querySelector('.example-insight');
+  var status = document.querySelector('.example-vote-status');
+  var turnstileContainer = document.getElementById('example-turnstile');
+  var configLoaded = false;
+  var siteKey = null;
+  var widgetId = null;
+  var widgetInitPromise = null;
+  var pendingChallenge = null;
+
+  if (!demo || !opts.length || !insight || !status || !turnstileContainer) return;
 
   // Inject vote-bar and vote-pct elements into each option
   opts.forEach(function(opt) {
@@ -1326,6 +1380,126 @@ footer{
     opt.appendChild(bar);
     opt.appendChild(pct);
   });
+
+  function setStatus(message, tone) {
+    status.textContent = message || '';
+    status.classList.remove('pending', 'error', 'success');
+    if (tone) status.classList.add(tone);
+  }
+
+  function setDemoDisabled(disabled) {
+    demo.classList.toggle('demo-disabled', disabled);
+  }
+
+  function rejectPendingChallenge(message) {
+    if (!pendingChallenge) return;
+    var current = pendingChallenge;
+    pendingChallenge = null;
+    current.reject(new Error(message));
+  }
+
+  function resetTurnstileWidget() {
+    pendingChallenge = null;
+    if (window.turnstile && widgetId !== null) {
+      window.turnstile.reset(widgetId);
+    }
+  }
+
+  function waitForTurnstileReady() {
+    return new Promise(function(resolve, reject) {
+      var startedAt = Date.now();
+
+      function check() {
+        if (window.turnstile && typeof window.turnstile.render === 'function') {
+          resolve(window.turnstile);
+          return;
+        }
+        if (Date.now() - startedAt > 5000) {
+          reject(new Error('Human verification failed to load. Please try again.'));
+          return;
+        }
+        setTimeout(check, 50);
+      }
+
+      check();
+    });
+  }
+
+  function ensureTurnstileWidget() {
+    if (!siteKey) {
+      return Promise.reject(new Error('Demo voting is temporarily unavailable.'));
+    }
+    if (widgetId !== null) {
+      turnstileContainer.hidden = false;
+      return Promise.resolve(widgetId);
+    }
+    if (widgetInitPromise) return widgetInitPromise;
+
+    turnstileContainer.hidden = false;
+    widgetInitPromise = waitForTurnstileReady()
+      .then(function(turnstile) {
+        widgetId = turnstile.render(turnstileContainer, {
+          sitekey: siteKey,
+          action: 'landing_example_vote',
+          appearance: 'interaction-only',
+          execution: 'execute',
+          callback: function(token) {
+            if (!pendingChallenge) return;
+            var current = pendingChallenge;
+            pendingChallenge = null;
+            current.resolve(token);
+          },
+          'error-callback': function() {
+            rejectPendingChallenge('Human verification failed. Please try again.');
+          },
+          'expired-callback': function() {
+            rejectPendingChallenge('Verification expired. Please try again.');
+          },
+          'timeout-callback': function() {
+            rejectPendingChallenge('Verification timed out. Please try again.');
+          }
+        });
+        return widgetId;
+      })
+      .catch(function(error) {
+        widgetInitPromise = null;
+        turnstileContainer.hidden = true;
+        throw error;
+      });
+
+    return widgetInitPromise;
+  }
+
+  function runTurnstileChallenge() {
+    return ensureTurnstileWidget().then(function(id) {
+      return new Promise(function(resolve, reject) {
+        pendingChallenge = { resolve: resolve, reject: reject };
+        try {
+          window.turnstile.execute(id);
+        } catch (error) {
+          pendingChallenge = null;
+          reject(error instanceof Error ? error : new Error('Human verification failed. Please try again.'));
+        }
+      });
+    });
+  }
+
+  function submitExampleVote(idx, token) {
+    return fetch('/api/example-vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ optionIndex: idx, turnstileToken: token })
+    }).then(function(response) {
+      if (response.ok) return response.json();
+
+      return response.json()
+        .catch(function() { return {}; })
+        .then(function(body) {
+          var message = body && body.error ? body.error : 'Unable to record vote right now.';
+          throw new Error(message);
+        });
+    });
+  }
 
   function renderTally(data) {
     if (!data || !data.total) return;
@@ -1362,6 +1536,8 @@ footer{
 
   function revealWithTally() {
     demo.classList.add('revealed');
+    demo.classList.remove('verifying', 'demo-disabled');
+    turnstileContainer.hidden = true;
     opts.forEach(function(o) { o.style.cursor = 'default'; });
     fetch('/api/example-tally')
       .then(function(r) { return r.json(); })
@@ -1376,28 +1552,71 @@ footer{
     if (!isNaN(idx) && opts[idx]) opts[idx].classList.add('my-pick');
     revealWithTally();
   } else {
+    setStatus('Loading human verification…', 'pending');
+
+    gameConfigPromise.then(function(cfg) {
+      configLoaded = true;
+      siteKey = cfg && typeof cfg.turnstileSiteKey === 'string' && cfg.turnstileSiteKey.trim()
+        ? cfg.turnstileSiteKey.trim()
+        : null;
+
+      if (!siteKey) {
+        setDemoDisabled(true);
+        setStatus('Demo voting is temporarily unavailable.', 'error');
+        return;
+      }
+
+      setDemoDisabled(false);
+      setStatus('', '');
+    });
+
     opts.forEach(function(opt, idx) {
       opt.addEventListener('click', function() {
-        if (demo.classList.contains('revealed')) return;
+        if (
+          demo.classList.contains('revealed') ||
+          demo.classList.contains('verifying') ||
+          demo.classList.contains('demo-disabled')
+        ) {
+          return;
+        }
+        if (!configLoaded) {
+          setStatus('Loading human verification…', 'pending');
+          return;
+        }
+
         opt.classList.add('my-pick');
+        demo.classList.add('verifying');
+        setStatus('Checking that you are human…', 'pending');
 
-        fetch('/api/example-vote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ optionIndex: idx })
-        }).catch(function() {});
-        localStorage.setItem('example-voted', String(idx));
-
-        revealWithTally();
+        runTurnstileChallenge()
+          .then(function(token) {
+            return submitExampleVote(idx, token);
+          })
+          .then(function() {
+            localStorage.setItem('example-voted', String(idx));
+            setStatus('Vote recorded. Loading tally…', 'success');
+            revealWithTally();
+          })
+          .catch(function(error) {
+            demo.classList.remove('verifying');
+            resetTurnstileWidget();
+            turnstileContainer.hidden = false;
+            setStatus(
+              error && error.message ? error.message : 'Unable to record vote right now.',
+              'error',
+            );
+          });
       });
     });
   }
 })();
 
 /* ── Phase durations from server (single source of truth) ── */
-fetch('/api/game-config').then(function(r) { return r.json(); }).then(function(cfg) {
+gameConfigPromise.then(function(cfg) {
   var commitSeconds = document.getElementById('commit-seconds');
-  if (commitSeconds) commitSeconds.textContent = cfg.commitDuration;
+  if (commitSeconds && typeof cfg.commitDuration === 'number') {
+    commitSeconds.textContent = cfg.commitDuration;
+  }
 }).catch(function() {});
 
 /* ── Landing stats ───────────────────────── */

@@ -24,4 +24,6 @@ export interface Env {
   OPEN_TEXT_PROMPTS_ENABLED?: string;
   OPEN_TEXT_NORMALIZER_MODEL?: string;
   OPEN_TEXT_NORMALIZER_TIMEOUT_MS?: string;
+  TURNSTILE_SECRET_KEY?: string;
+  TURNSTILE_SITE_KEY?: string;
 }
