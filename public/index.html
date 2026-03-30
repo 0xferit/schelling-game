@@ -34,7 +34,8 @@
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link rel="preload" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'"/>
+<noscript><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/></noscript>
 
 <!-- Structured Data -->
 <script type="application/ld+json">
@@ -69,6 +70,8 @@
   --border:#222;
   --text:#e8e4de;
   --muted:#807a6f;
+  --muted-strong:#b9b1a4;
+  --muted-soft:#9c9589;
   --accent:#c9a84c;
   --accent2:#dfc06a;
   --serif:'Cormorant Garamond',Georgia,serif;
@@ -350,7 +353,7 @@ section{padding:6rem 2rem}
   font-family:var(--serif);
   font-size:2.5rem;
   font-weight:700;
-  color:rgba(201,168,76,.2);
+  color:rgba(223,192,106,.58);
   line-height:1;
   margin-bottom:.75rem;
 }
@@ -360,7 +363,7 @@ section{padding:6rem 2rem}
   font-weight:600;
   margin-bottom:.5rem;
 }
-.concept-card p{color:var(--muted);font-size:.98rem}
+.concept-card p{color:var(--muted-strong);font-size:.98rem}
 
 /* ── MECHANICS ───────────────────────────── */
 .mechanics{border-top:1px solid var(--border)}
@@ -434,24 +437,30 @@ section{padding:6rem 2rem}
 .example-opt .vote-pct{
   display:none;
   font-size:.78rem;
-  font-weight:600;
+  font-weight:700;
   letter-spacing:.05em;
-  color:var(--muted);
+  color:var(--muted-strong);
   margin-top:.2rem;
 }
 .example-layout.revealed .example-opt .vote-bar,
 .example-layout.revealed .example-opt .vote-pct{display:block}
 /* Dim all options in revealed state, then un-dim popular and my-pick */
-.example-layout.revealed .example-opt{opacity:.45;cursor:default}
+.example-layout.revealed .example-opt{
+  opacity:1;
+  cursor:default;
+  background:#151515;
+  border-color:#38332a;
+  color:var(--muted-strong);
+}
 .example-layout.revealed .example-opt.popular,
 .example-layout.revealed .example-opt.my-pick{opacity:1}
 .example-opt.popular{position:relative}
 .example-layout.revealed .example-opt.popular{
-  border:2px solid var(--accent);
-  background:rgba(201,168,76,.15);
-  color:var(--accent);
+  border:2px solid var(--accent2);
+  background:rgba(223,192,106,.18);
+  color:var(--accent2);
   font-weight:600;
-  box-shadow:0 0 16px rgba(201,168,76,.22),0 0 4px rgba(201,168,76,.12);
+  box-shadow:0 0 16px rgba(223,192,106,.18),0 0 4px rgba(223,192,106,.12);
 }
 .example-opt.popular::after{
   content:'focal point';
@@ -502,7 +511,7 @@ section{padding:6rem 2rem}
 .example-insight{
   margin-top:1.5rem;
   font-size:.92rem;
-  color:var(--muted);
+  color:var(--muted-strong);
   display:none;
   font-style:italic;
   padding-left:1rem;
@@ -554,7 +563,7 @@ section{padding:6rem 2rem}
   font-family:var(--serif);
   font-size:2rem;
   font-weight:700;
-  color:rgba(201,168,76,.2);
+  color:rgba(223,192,106,.58);
   line-height:1;
   margin-bottom:.5rem;
 }
@@ -564,7 +573,7 @@ section{padding:6rem 2rem}
   font-weight:600;
   margin-bottom:.4rem;
 }
-.learn-step p{color:var(--muted);font-size:.96rem}
+.learn-step p{color:var(--muted-strong);font-size:.96rem}
 
 .learn-apps{
   display:grid;
@@ -594,13 +603,15 @@ section{padding:6rem 2rem}
   font-weight:600;
   margin-bottom:.4rem;
 }
-.learn-app p{color:var(--muted);font-size:.95rem}
+.learn-app p{color:var(--muted-strong);font-size:.95rem}
 .learn-app a{
   color:var(--accent);
-  text-decoration:none;
-  transition:color .2s;
+  text-decoration:underline;
+  text-decoration-thickness:1px;
+  text-underline-offset:.16em;
+  transition:color .2s,text-decoration-color .2s;
 }
-.learn-app a:hover{color:var(--accent2)}
+.learn-app a:hover{color:var(--accent2);text-decoration-color:var(--accent2)}
 
 .learn-ethereum{
   position:relative;
@@ -745,7 +756,7 @@ footer{
   padding:2.5rem 2rem;
   border-top:1px solid var(--border);
   font-size:.82rem;
-  color:#555;
+  color:var(--muted-soft);
   letter-spacing:.03em;
 }
 .footer-inner{
@@ -766,7 +777,7 @@ footer{
 }
 .footer-brand span{color:var(--accent)}
 .footer-desc{
-  color:#555;
+  color:var(--muted-soft);
   font-size:.78rem;
   margin-top:.25rem;
 }
@@ -787,7 +798,7 @@ footer{
   gap:1rem;
   font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
   font-size:.74rem;
-  color:#555;
+  color:var(--muted-soft);
 }
 
 /* ── RESPONSIVE ──────────────────────────── */
@@ -967,24 +978,24 @@ footer{
       <div class="example-demo">
         <div class="example-question">Pick the number you think most others will pick.</div>
         <div class="example-options">
-          <button class="example-opt" aria-label="Choose 13">13</button>
-          <button class="example-opt" aria-label="Choose 7">7</button>
-          <button class="example-opt" aria-label="Choose 61">61</button>
-          <button class="example-opt" aria-label="Choose 29">29</button>
-          <button class="example-opt" aria-label="Choose 41">41</button>
-          <button class="example-opt" aria-label="Choose 3">3</button>
-          <button class="example-opt" aria-label="Choose 67">67</button>
-          <button class="example-opt" aria-label="Choose 19">19</button>
-          <button class="example-opt popular" aria-label="Choose 100">100</button>
-          <button class="example-opt" aria-label="Choose 53">53</button>
-          <button class="example-opt" aria-label="Choose 2">2</button>
-          <button class="example-opt" aria-label="Choose 37">37</button>
-          <button class="example-opt" aria-label="Choose 11">11</button>
-          <button class="example-opt" aria-label="Choose 71">71</button>
-          <button class="example-opt" aria-label="Choose 43">43</button>
-          <button class="example-opt" aria-label="Choose 59">59</button>
-          <button class="example-opt" aria-label="Choose 23">23</button>
-          <button class="example-opt" aria-label="Choose 47">47</button>
+          <button class="example-opt">13</button>
+          <button class="example-opt">7</button>
+          <button class="example-opt">61</button>
+          <button class="example-opt">29</button>
+          <button class="example-opt">41</button>
+          <button class="example-opt">3</button>
+          <button class="example-opt">67</button>
+          <button class="example-opt">19</button>
+          <button class="example-opt popular">100</button>
+          <button class="example-opt">53</button>
+          <button class="example-opt">2</button>
+          <button class="example-opt">37</button>
+          <button class="example-opt">11</button>
+          <button class="example-opt">71</button>
+          <button class="example-opt">43</button>
+          <button class="example-opt">59</button>
+          <button class="example-opt">23</button>
+          <button class="example-opt">47</button>
         </div>
       </div>
     </div>
