@@ -33,6 +33,8 @@ const EXAMPLE_VOTE_LIMIT = { max: 40, windowMs: 60 * 1000 };
 const TURNSTILE_VERIFY_URL =
   'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const EXAMPLE_VOTE_TURNSTILE_ACTION = 'landing_example_vote';
+const TURNSTILE_TEST_SITE_KEY = '1x00000000000000000000AA';
+const TURNSTILE_TEST_SECRET_KEY = '1x0000000000000000000000000000000AA';
 
 interface CacheStorageWithDefault extends CacheStorage {
   default?: Cache;
@@ -200,6 +202,27 @@ function getConfiguredTurnstileSecretKey(env: Env): string | null {
   return secretKey ? secretKey : null;
 }
 
+function isLocalHostname(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname.endsWith('.localhost')
+  );
+}
+
+function isCloudflareTurnstileTestMode(
+  siteKey: string,
+  secretKey: string,
+  hostname: string,
+): boolean {
+  return (
+    siteKey === TURNSTILE_TEST_SITE_KEY &&
+    secretKey === TURNSTILE_TEST_SECRET_KEY &&
+    isLocalHostname(hostname)
+  );
+}
+
 async function verifyExampleVoteTurnstileToken(
   request: Request,
   env: Env,
@@ -250,6 +273,13 @@ async function verifyExampleVoteTurnstileToken(
   }
 
   const expectedHostname = new URL(request.url).hostname;
+  if (
+    verificationResult.success &&
+    isCloudflareTurnstileTestMode(siteKey, secretKey, expectedHostname)
+  ) {
+    return null;
+  }
+
   if (
     !verificationResult.success ||
     verificationResult.action !== EXAMPLE_VOTE_TURNSTILE_ACTION ||

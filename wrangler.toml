@@ -23,6 +23,7 @@ AI_BOT_ENABLED = "true"
 AI_BOT_MODELS = "@cf/zai-org/glm-4.7-flash,@cf/moonshotai/kimi-k2.5,@cf/qwen/qwen3-30b-a3b-fp8,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "5000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
+TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
 
 [env.staging]
 name = "schelling-game-staging"

@@ -764,6 +764,27 @@ describe('HTTP routes', () => {
     ).toBeGreaterThanOrEqual(1);
   });
 
+  it('POST /api/example-vote accepts Cloudflare localhost test-key validation responses', async () => {
+    mockTurnstileValidation({
+      success: true,
+      action: 'test',
+      hostname: 'localhost',
+    });
+
+    const voteResp = await handleHttpRequest(
+      new Request('https://localhost/api/example-vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          optionIndex: 7,
+          turnstileToken: 'token-localhost-test-key',
+        }),
+      }),
+      exampleVoteEnv,
+    );
+    expect(voteResp.status).toBe(200);
+  });
+
   it('POST /api/example-vote rejects missing Turnstile tokens', async () => {
     const resp = await postWithEnv(exampleVoteEnv, '/api/example-vote', {
       optionIndex: 8,
