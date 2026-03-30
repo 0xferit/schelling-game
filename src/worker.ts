@@ -3273,7 +3273,7 @@ export class GameRoom {
         });
         this.playerMatchIndex.set(id, rm.matchId);
       }
-      this.activeMatches.set(rm.matchId, {
+      const match: WorkerMatchState = {
         ...rm,
         players,
         commitTimer: null,
@@ -3281,7 +3281,9 @@ export class GameRoom {
         resultsTimer: null,
         normalizingInFlight: false,
         lastGameResult: rm.lastGameResult,
-      });
+      };
+      this.activeMatches.set(rm.matchId, match);
+      this._ensureMatchTimerRunning(match);
     }
   }
 
