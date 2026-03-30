@@ -2211,7 +2211,13 @@ function renderPromptInput(prompt, disabled) {
       btn.textContent = opt;
       btn.dataset.idx = idx;
       btn.disabled = disabled;
-      btn.addEventListener('click', () => selectOption(idx));
+      btn.addEventListener('click', () => selectOption(idx, btn));
+      btn.addEventListener('keydown', (event) => {
+        if (!shouldHandleCommitShortcut(event)) return;
+        if (S.selectedOption !== idx) return;
+        event.preventDefault();
+        void submitCommit();
+      });
       grid.appendChild(btn);
     });
     return;
@@ -2235,6 +2241,12 @@ function renderPromptInput(prompt, disabled) {
     S.selectedAnswerText = event.target.value;
     updateCommitButtonState();
   });
+  input.addEventListener('keydown', (event) => {
+    if (!shouldHandleCommitShortcut(event)) return;
+    if (!validateOpenTextAnswer(S.selectedAnswerText, prompt)) return;
+    event.preventDefault();
+    void submitCommit();
+  });
 
   const hint = document.createElement('div');
   hint.className = 'text-answer-hint';
@@ -2252,16 +2264,49 @@ function renderPromptInput(prompt, disabled) {
   grid.appendChild(wrap);
 }
 
-function selectOption(idx) {
+function selectOption(idx, sourceButton = null) {
   if (S.committed || S.phase !== 'commit') return;
   S.selectedOption = idx;
   S.selectedAnswerText = '';
   $$('.opt-btn').forEach(b => b.classList.toggle('selected', parseInt(b.dataset.idx) === idx));
+  if (sourceButton instanceof HTMLElement) {
+    sourceButton.focus();
+  }
   updateCommitButtonState();
 }
 
 // ── Commit ───────────────────────────────────────────────────────
-$('#commit-btn').addEventListener('click', async () => {
+function isBlockingOverlayOpen() {
+  return (
+    !$('#seed-overlay').classList.contains('hidden') ||
+    !$('#rules-overlay').classList.contains('hidden') ||
+    !$('#forfeit-overlay').classList.contains('hidden')
+  );
+}
+
+function isPlainEnterCommitEvent(event) {
+  return (
+    event.key === 'Enter' &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.shiftKey &&
+    !event.isComposing &&
+    event.keyCode !== 229
+  );
+}
+
+function shouldHandleCommitShortcut(event) {
+  return (
+    isPlainEnterCommitEvent(event) &&
+    S.view === 'play' &&
+    S.phase === 'commit' &&
+    !S.committed &&
+    !isBlockingOverlayOpen()
+  );
+}
+
+async function submitCommit() {
   if (!S.prompt || S.committed) return;
   if (S.prompt.type === 'select' && S.selectedOption === null) return;
   if (
@@ -2291,6 +2336,10 @@ $('#commit-btn').addEventListener('click', async () => {
   $('#commit-btn').disabled = true;
   $('#commit-status').textContent = 'Committed. Waiting for others...';
   $$('.opt-btn').forEach(b => b.classList.add('disabled'));
+}
+
+$('#commit-btn').addEventListener('click', () => {
+  void submitCommit();
 });
 
 function onCommitStatus(msg) {
