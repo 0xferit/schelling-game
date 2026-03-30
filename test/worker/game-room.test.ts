@@ -800,7 +800,11 @@ describe('GameRoom Durable Object', () => {
         started[0]?.matchId as string | undefined,
         'Expected match id from match_started',
       );
-      await Promise.all(gameStartedPromises);
+      const gameStarted = await Promise.all(gameStartedPromises);
+      const prompt = must(
+        gameStarted[0]?.prompt as SchellingPrompt | undefined,
+        'Expected prompt from game_started',
+      );
 
       const beforeStats = await Promise.all(
         players.map(({ accountId }) =>
@@ -815,30 +819,25 @@ describe('GameRoom Durable Object', () => {
       const salt1 = 'a'.repeat(64);
       const salt2 = 'b'.repeat(64);
       const salt3 = 'c'.repeat(64);
+      const action1 = buildPromptAction(prompt, salt1, 0);
+      const action2 = buildPromptAction(prompt, salt2, 0);
+      const action3 = buildPromptAction(prompt, salt3, 1);
 
       const phaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
-      p1.ws.send(
-        JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt1) }),
-      );
-      p2.ws.send(
-        JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt2) }),
-      );
-      p3.ws.send(
-        JSON.stringify({ type: 'commit', hash: createCommitHash(1, salt3) }),
-      );
+      p1.ws.send(JSON.stringify({ type: 'commit', hash: action1.hash }));
+      p2.ws.send(JSON.stringify({ type: 'commit', hash: action2.hash }));
+      p3.ws.send(JSON.stringify({ type: 'commit', hash: action3.hash }));
 
       await phaseChange;
 
-      const gameResult = waitForMessage(p1.ws, 'game_result', 5000);
-      p1.ws.send(
-        JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt1 }),
+      const gameResult = waitForMessage(
+        p1.ws,
+        'game_result',
+        getGameResultTimeoutMs(prompt),
       );
-      p2.ws.send(
-        JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt2 }),
-      );
-      p3.ws.send(
-        JSON.stringify({ type: 'reveal', optionIndex: 1, salt: salt3 }),
-      );
+      p1.ws.send(JSON.stringify(action1.reveal));
+      p2.ws.send(JSON.stringify(action2.reveal));
+      p3.ws.send(JSON.stringify(action3.reveal));
 
       const result = await gameResult;
       expect(result.type).toBe('game_result');
