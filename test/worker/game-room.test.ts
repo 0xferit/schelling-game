@@ -528,6 +528,101 @@ describe('GameRoom Durable Object', () => {
     p3.ws.close();
   });
 
+  it('refresh-style reconnect replays active match state and receives later broadcasts', {
+    timeout: 55_000,
+  }, async () => {
+    const p1 = await connectPlayer(31, 'RefreshP1');
+    const p2 = await connectPlayer(32, 'RefreshP2');
+    const p3 = await connectPlayer(33, 'RefreshP3');
+
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+
+    await joinPlayersAndStartNow([p1, p2, p3]);
+
+    const p1GameStart = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+
+    const [gs1] = await Promise.all([p1Started, p2Started, p3Started]);
+    const originalMatchId = gs1.matchId;
+    expect(originalMatchId).toBeTruthy();
+
+    const roundStart = await p1GameStart;
+    expect(roundStart.phase).toBe('commit');
+
+    const p1r = await reconnectPlayer(31);
+    const replayMessagesP = collectMessages(p1r.ws, 1500);
+    const replayMatchStartedP = waitForMessage(p1r.ws, 'match_started', 3000);
+    const replayGameStartedP = waitForMessage(p1r.ws, 'game_started', 3000);
+    const updatedCommitStatusP = waitForMessageWhere(
+      p1r.ws,
+      (msg) =>
+        msg.type === 'commit_status' &&
+        Array.isArray(msg.committed) &&
+        msg.committed.some(
+          (entry) =>
+            entry &&
+            typeof entry === 'object' &&
+            (entry as { displayName?: unknown }).displayName === 'RefreshP2' &&
+            (entry as { hasCommitted?: unknown }).hasCommitted === true,
+        ),
+      5000,
+    );
+
+    const replayMatchStarted = await replayMatchStartedP;
+    expect(replayMatchStarted.matchId).toBe(originalMatchId);
+
+    const replayGameStarted = await replayGameStartedP;
+    expect(replayGameStarted.phase).toBe('commit');
+
+    const fakeHash =
+      '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: fakeHash }));
+
+    const updatedCommitStatus = await updatedCommitStatusP;
+    expect(updatedCommitStatus).toMatchObject({
+      type: 'commit_status',
+      committed: expect.arrayContaining([
+        expect.objectContaining({
+          displayName: 'RefreshP2',
+          hasCommitted: true,
+        }),
+      ]),
+    });
+
+    const replayMessages = await replayMessagesP;
+    expect(
+      replayMessages.some((message) => message.type === 'queue_state'),
+    ).toBe(false);
+    expect(
+      replayMessages.some((message) => message.type === 'match_started'),
+    ).toBe(true);
+    expect(
+      replayMessages.some((message) => message.type === 'game_started'),
+    ).toBe(true);
+
+    p1.ws.close();
+    p1r.ws.close();
+    p2.ws.close();
+    p3.ws.close();
+  });
+
   it('reconnect replays player_disconnected for peers in grace period', {
     timeout: 55_000,
   }, async () => {
@@ -724,7 +819,11 @@ describe('GameRoom Durable Object', () => {
         started[0]?.matchId as string | undefined,
         'Expected match id from match_started',
       );
-      await Promise.all(gameStartedPromises);
+      const gameStarted = await Promise.all(gameStartedPromises);
+      const prompt = must(
+        gameStarted[0]?.prompt as SchellingPrompt | undefined,
+        'Expected prompt from game_started',
+      );
 
       const beforeStats = await Promise.all(
         players.map(({ accountId }) =>
@@ -739,30 +838,25 @@ describe('GameRoom Durable Object', () => {
       const salt1 = 'a'.repeat(64);
       const salt2 = 'b'.repeat(64);
       const salt3 = 'c'.repeat(64);
+      const action1 = buildPromptAction(prompt, salt1, 0);
+      const action2 = buildPromptAction(prompt, salt2, 0);
+      const action3 = buildPromptAction(prompt, salt3, 1);
 
       const phaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
-      p1.ws.send(
-        JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt1) }),
-      );
-      p2.ws.send(
-        JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt2) }),
-      );
-      p3.ws.send(
-        JSON.stringify({ type: 'commit', hash: createCommitHash(1, salt3) }),
-      );
+      p1.ws.send(JSON.stringify({ type: 'commit', hash: action1.hash }));
+      p2.ws.send(JSON.stringify({ type: 'commit', hash: action2.hash }));
+      p3.ws.send(JSON.stringify({ type: 'commit', hash: action3.hash }));
 
       await phaseChange;
 
-      const gameResult = waitForMessage(p1.ws, 'game_result', 5000);
-      p1.ws.send(
-        JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt1 }),
+      const gameResult = waitForMessage(
+        p1.ws,
+        'game_result',
+        getGameResultTimeoutMs(prompt),
       );
-      p2.ws.send(
-        JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt2 }),
-      );
-      p3.ws.send(
-        JSON.stringify({ type: 'reveal', optionIndex: 1, salt: salt3 }),
-      );
+      p1.ws.send(JSON.stringify(action1.reveal));
+      p2.ws.send(JSON.stringify(action2.reveal));
+      p3.ws.send(JSON.stringify(action3.reveal));
 
       const result = await gameResult;
       expect(result.type).toBe('game_result');

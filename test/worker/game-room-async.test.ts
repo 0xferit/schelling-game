@@ -93,6 +93,7 @@ function createConnectionState(displayName: string, wsOverride?: WebSocket) {
 function createSocketWithListeners() {
   const listeners = new Map<string, (evt?: MessageEvent) => void>();
   const ws = {
+    accept: vi.fn(),
     send: vi.fn(),
     close: vi.fn(),
     addEventListener: vi.fn(
@@ -100,6 +101,9 @@ function createSocketWithListeners() {
         listeners.set(type, handler);
       },
     ),
+    removeEventListener: vi.fn((type: string) => {
+      listeners.delete(type);
+    }),
   } as unknown as WebSocket;
   return { ws, listeners };
 }
@@ -223,6 +227,77 @@ describe('GameRoom async task tracking', () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it('treats an active-match refresh as a silent socket replacement', () => {
+    const { room } = createRoom();
+    const sendMatchStateToPlayer = vi
+      .spyOn(room, '_sendMatchStateToPlayer')
+      .mockImplementation(() => {});
+    const sendQueueState = vi
+      .spyOn(room, '_sendQueueState')
+      .mockImplementation(() => {});
+    const checkpointPlayerAction = vi
+      .spyOn(room, '_checkpointPlayerAction')
+      .mockImplementation(() => {});
+    const broadcastToMatch = vi
+      .spyOn(room, '_broadcastToMatch')
+      .mockImplementation(() => {});
+    const handleDisconnect = vi
+      .spyOn(room, '_handleDisconnect')
+      .mockImplementation(() => {});
+    const { ws: oldWs, listeners: oldListeners } = createSocketWithListeners();
+
+    room.connections.set('acct-1', createConnectionState('Alice', oldWs));
+    room._setupWsListeners(oldWs, 'acct-1');
+
+    const match = createMatch();
+    match.phase = 'commit';
+    match.players.set('acct-1', {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: oldWs,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+    room.activeMatches.set(match.matchId, match);
+    room.playerMatchIndex.set('acct-1', match.matchId);
+
+    const { ws: newWs } = createSocketWithListeners();
+
+    room._handleWebSocket(newWs, 'acct-1', 'Alice Reloaded', 0);
+
+    expect(room.connections.get('acct-1')?.ws).toBe(newWs);
+    expect(room.connections.get('acct-1')?.displayName).toBe('Alice Reloaded');
+    expect(match.players.get('acct-1')?.ws).toBe(newWs);
+    expect(sendMatchStateToPlayer).toHaveBeenCalledOnce();
+    expect(sendMatchStateToPlayer).toHaveBeenCalledWith(match, 'acct-1');
+    expect(sendQueueState).not.toHaveBeenCalled();
+    expect(checkpointPlayerAction).not.toHaveBeenCalled();
+    expect(broadcastToMatch).not.toHaveBeenCalled();
+    expect(oldWs.close).toHaveBeenCalledWith(
+      1000,
+      'Replaced by new connection',
+    );
+
+    const onOldClose = must(
+      oldListeners.get('close'),
+      'Expected close listener on the old socket',
+    );
+    onOldClose();
+    expect(handleDisconnect).not.toHaveBeenCalled();
+
+    room._clearConnectionLivenessMonitor('acct-1');
   });
 
   it('responds to ping with pong metadata', async () => {
