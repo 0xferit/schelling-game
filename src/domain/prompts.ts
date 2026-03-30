@@ -5,6 +5,9 @@ import type {
   SchellingPrompt,
   SelectPrompt,
 } from '../types/domain';
+import { validateAnswerText } from './commitReveal';
+import { MATCH_GAME_COUNT } from './constants';
+import { canonicalizeOpenTextAnswer } from './openText';
 
 export type PromptRoot =
   | 'coin_side'
@@ -231,9 +234,9 @@ function normalizeOptionIdentity(value: string): string {
 function getPromptIssues(pool: readonly SchellingPrompt[]): string[] {
   const issues: string[] = [];
 
-  if (pool.length !== 10) {
+  if (pool.length < MATCH_GAME_COUNT) {
     issues.push(
-      `Canonical prompt pool must contain exactly 10 prompts; found ${pool.length}.`,
+      `Prompt pool must contain at least ${MATCH_GAME_COUNT} prompts; found ${pool.length}.`,
     );
   }
 
@@ -273,17 +276,35 @@ function getPromptIssues(pool: readonly SchellingPrompt[]): string[] {
       if (!prompt.answerSpec?.kind) {
         issues.push(`Prompt ${prompt.id} must declare an answerSpec.`);
       }
+      if (!prompt.canonicalExamples || prompt.canonicalExamples.length === 0) {
+        issues.push(
+          `Prompt ${prompt.id} must declare at least one canonicalExample.`,
+        );
+      } else {
+        for (const example of prompt.canonicalExamples) {
+          if (!validateAnswerText(example, prompt)) {
+            issues.push(
+              `Prompt ${prompt.id} canonicalExample "${example}" fails answer validation.`,
+            );
+          } else if (!canonicalizeOpenTextAnswer(example, prompt)) {
+            issues.push(
+              `Prompt ${prompt.id} canonicalExample "${example}" fails canonicalization.`,
+            );
+          }
+        }
+      }
     }
   }
 
-  if (selectCount !== 5) {
+  const minPerType = Math.ceil(MATCH_GAME_COUNT / 2);
+  if (selectCount < minPerType) {
     issues.push(
-      `Canonical pool must contain exactly 5 select prompts; found ${selectCount}.`,
+      `Prompt pool must contain at least ${minPerType} select prompts; found ${selectCount}.`,
     );
   }
-  if (openTextCount !== 5) {
+  if (openTextCount < minPerType) {
     issues.push(
-      `Canonical pool must contain exactly 5 open_text prompts; found ${openTextCount}.`,
+      `Prompt pool must contain at least ${minPerType} open_text prompts; found ${openTextCount}.`,
     );
   }
 
@@ -308,16 +329,18 @@ function getRecordIssues(records: readonly PromptCatalogRecord[]): string[] {
     );
   }
 
-  const expectedIds = Array.from({ length: 10 }, (_, index) => 1001 + index);
-  for (const id of expectedIds) {
-    if (!ids.has(id)) {
-      issues.push(`Canonical prompt records must include prompt id ${id}.`);
+  for (const record of records) {
+    if (record.prompt.id <= 0) {
+      issues.push(`Prompt id must be positive; found ${record.prompt.id}.`);
     }
   }
+  if (ids.size !== records.length) {
+    issues.push('Canonical prompt records contain duplicate prompt ids.');
+  }
 
-  if (calibrationCount !== 1) {
+  if (calibrationCount < 1) {
     issues.push(
-      `Canonical prompt records must contain exactly one calibration prompt; found ${calibrationCount}.`,
+      `Canonical prompt records must contain at least one calibration prompt; found ${calibrationCount}.`,
     );
   }
 
@@ -339,7 +362,7 @@ export function getPromptRecordById(
 }
 
 export function selectPromptsForMatch(
-  count = 10,
+  count = MATCH_GAME_COUNT,
   options: { includeOpenText?: boolean } = {},
 ): SchellingPrompt[] {
   if (options.includeOpenText === false) {
@@ -348,15 +371,35 @@ export function selectPromptsForMatch(
     );
   }
 
-  if (count !== CANONICAL_PROMPT_RECORDS.length) {
+  if (count <= 0 || count > CANONICAL_PROMPT_RECORDS.length) {
     throw new RangeError(
-      `Current prompt catalog requires selecting all ${CANONICAL_PROMPT_RECORDS.length} prompts per match`,
+      `Cannot select ${count} prompts from a catalog of ${CANONICAL_PROMPT_RECORDS.length}`,
     );
   }
 
-  return shuffleInPlace([...CANONICAL_PROMPT_RECORDS]).map((record) =>
-    cloneJson(record.prompt),
+  const selectRecords = CANONICAL_PROMPT_RECORDS.filter(
+    (r) => r.prompt.type === 'select',
   );
+  const openTextRecords = CANONICAL_PROMPT_RECORDS.filter(
+    (r) => r.prompt.type === 'open_text',
+  );
+  const selectNeeded = Math.floor(count / 2);
+  const openTextNeeded = count - selectNeeded;
+
+  if (
+    selectRecords.length < selectNeeded ||
+    openTextRecords.length < openTextNeeded
+  ) {
+    throw new RangeError(
+      `Catalog lacks enough prompts of each type for a balanced ${count}-game match`,
+    );
+  }
+
+  const picked = [
+    ...shuffleInPlace([...selectRecords]).slice(0, selectNeeded),
+    ...shuffleInPlace([...openTextRecords]).slice(0, openTextNeeded),
+  ];
+  return shuffleInPlace(picked).map((record) => cloneJson(record.prompt));
 }
 
 export function getPromptPoolQualityIssues(

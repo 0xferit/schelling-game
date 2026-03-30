@@ -32,10 +32,9 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 
 - Match size is any number from `3` to `21`.
 - Every match lasts `10` games unless it ends early under the rule in section 4.
-- Every match draws from the canonical public seed catalog of exactly `10` prompts:
-  - `5` `select` prompts: coin side, fruit, colour, day of week, planet
-  - `5` `open_text` prompts: number `1..10`, playing card, fair split keep amount, city, word
-- Every public human match uses all `10` prompts exactly once in shuffled order.
+- Every match draws `10` prompts from the canonical public prompt catalog (which may contain more than `10` prompts).
+- Each match sample contains an equal number of `select` and `open_text` prompts (`5` of each for `10`-game matches).
+- Prompts are sampled per type, then shuffled into a single match order.
 - `open_text` prompts are a hard prerequisite for public play. If `OPEN_TEXT_PROMPTS_ENABLED` is off, public matches do not start and the reserved cohort is restored to the waiting queue.
 - Limited AI backfill may raise a `1`- or `2`-human public queue to the minimum match size of `3`.
 - AI-assisted public matches remain off the record for this catalog: balances, streaks, and leaderboard standing do not change.
@@ -277,7 +276,7 @@ Canonical prompts may not rely on:
 
 Because settlement uses exact-match plurality or strict canonical bucket plurality, prompts should present salient coordination targets rather than requiring interpretation or specialist lookup.
 
-The current canonical pool is a fixed 10-prompt seed set designed to cover the main coordination archetypes without duplicative variants.
+The canonical prompt catalog is extensible beyond the initial 10-prompt seed set. Each match samples a balanced subset; the catalog may grow without changing match length.
 
 Prompt design rules:
 

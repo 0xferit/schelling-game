@@ -1,6 +1,6 @@
 # ADR 0010: Ten-seed AI-normalized public mode
 
-Status: Accepted
+Status: Superseded by [ADR 0012](0012-decouple-catalog-from-match-length.md)
 Date: 2026-03-30
 
 Supersession note: This ADR supersedes ADR [0009](0009-hybrid-prompt-public-mode.md).
