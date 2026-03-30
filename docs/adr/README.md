@@ -25,3 +25,4 @@ Format:
 | [0011](./0011-restore-limited-ai-backfill.md) | Restore limited AI backfill for ten-seed public mode | Accepted | 2026-03-30 |
 | [0012](./0012-decouple-catalog-from-match-length.md) | Decouple prompt catalog size from match length | Accepted | 2026-03-30 |
 | [0013](./0013-raise-ai-backfill-target-to-five-players.md) | Raise AI backfill target to five players | Accepted | 2026-03-30 |
+| [0014](./0014-require-distinct-models-for-ai-backfill-seats.md) | Require distinct models for AI backfill seats | Accepted | 2026-03-30 |

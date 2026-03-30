@@ -37,6 +37,13 @@ const TEST_SELECT_PROMPT: SchellingPrompt = {
   options: ['A', 'B'],
 };
 
+const FOUR_DISTINCT_AI_MODELS = [
+  '@cf/test/model-a',
+  '@cf/test/model-b',
+  '@cf/test/model-c',
+  '@cf/test/model-d',
+].join(',');
+
 function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
   return {
     toArray: () => rows,
@@ -1417,6 +1424,7 @@ describe('GameRoom async task tracking', () => {
   it('injects three bots once two humans are queued', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
@@ -1435,6 +1443,13 @@ describe('GameRoom async task tracking', () => {
     expect(
       room.formingMatch?.players.filter((id) => room._isAiBot(id)),
     ).toHaveLength(3);
+    expect(
+      new Set(
+        (room.formingMatch?.players || [])
+          .filter((id) => room._isAiBot(id))
+          .map((id) => room._getAiBotModel(id)),
+      ).size,
+    ).toBe(3);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
@@ -1442,6 +1457,7 @@ describe('GameRoom async task tracking', () => {
   it('keeps backfilling until five seats are reserved when the third human arrives', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: ['@cf/test/model-a', '@cf/test/model-b'].join(','),
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
@@ -1467,6 +1483,7 @@ describe('GameRoom async task tracking', () => {
   it('injects four bots for a solo human when AI_BOT_ENABLED is true', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
@@ -1483,6 +1500,13 @@ describe('GameRoom async task tracking', () => {
     expect(
       room.formingMatch?.players.filter((id) => room._isAiBot(id)),
     ).toHaveLength(4);
+    expect(
+      new Set(
+        (room.formingMatch?.players || [])
+          .filter((id) => room._isAiBot(id))
+          .map((id) => room._getAiBotModel(id)),
+      ).size,
+    ).toBe(4);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
@@ -1490,6 +1514,7 @@ describe('GameRoom async task tracking', () => {
   it('injects one bot when four humans are queued', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: '@cf/test/model-a',
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
@@ -1513,6 +1538,24 @@ describe('GameRoom async task tracking', () => {
     ).toHaveLength(1);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('does not backfill when there are not enough distinct models for the missing seats', async () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: ['@cf/test/model-a', '@cf/test/model-b'].join(','),
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+
+    await room._handleJoinQueue('acct-1');
+    await room._handleJoinQueue('acct-2');
+
+    expect(room.formingMatch).toBeNull();
+    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
   });
 
   it('forms a pure-human match once five humans are queued', async () => {

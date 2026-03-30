@@ -575,20 +575,34 @@ export class GameRoom {
   _getAiBotModels(): string[] {
     const raw = this.env.AI_BOT_MODELS?.trim();
     if (raw) {
-      const models = raw
-        .split(',')
-        .map((m) => m.trim())
-        .filter(Boolean);
-      if (models.length > 0) return models;
+      const uniqueModels = [
+        ...new Set(
+          raw
+            .split(',')
+            .map((m) => m.trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (uniqueModels.length > 0) return uniqueModels;
     }
-    return DEFAULT_AI_BOT_MODELS;
+    return [...new Set(DEFAULT_AI_BOT_MODELS)];
+  }
+
+  _getAiBotBackfillModelIndexes(neededBots: number): number[] {
+    const models = this._getAiBotModels();
+    if (neededBots > models.length) {
+      return [];
+    }
+    return Array.from({ length: neededBots }, (_, index) => index);
   }
 
   _getAiBotModel(accountId: string): string {
     const models = this._getAiBotModels();
     const index = this._getBotModelIndex(accountId);
-    // models is guaranteed non-empty by _getAiBotModels
-    return models[index % models.length] as string;
+    if (index >= 0 && index < models.length) {
+      return models[index] as string;
+    }
+    return models[0] as string;
   }
 
   _openTextPromptsEnabled(): boolean {
@@ -726,8 +740,13 @@ export class GameRoom {
     }
 
     const neededBots = AI_BOT_TARGET_MATCH_SIZE - queuedHumans;
-    for (let i = 0; i < neededBots; i += 1) {
-      this.waitingQueue.push(this._createAiBotId(i));
+    const modelIndexes = this._getAiBotBackfillModelIndexes(neededBots);
+    if (modelIndexes.length < neededBots) {
+      return;
+    }
+
+    for (const modelIndex of modelIndexes) {
+      this.waitingQueue.push(this._createAiBotId(modelIndex));
     }
   }
 

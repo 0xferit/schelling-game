@@ -36,7 +36,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 - Each match sample contains an equal number of `select` and `open_text` prompts (`5` of each for `10`-game matches).
 - Prompts are sampled per type, then shuffled into a single match order.
 - `open_text` prompts are a hard prerequisite for public play. If `OPEN_TEXT_PROMPTS_ENABLED` is off, public matches do not start and the reserved cohort is restored to the waiting queue.
-- Limited AI backfill may raise a `1`- to `4`-human public queue to a `5`-player public match.
+- Limited AI backfill may raise an undersized public queue to a `5`-player public match when enough distinct AI bot models are configured for the missing seats. The same model may not be used more than once in a single AI-assisted public match.
 - AI-assisted public matches remain off the record for this catalog: balances, streaks, and leaderboard standing do not change.
 - Phase timings are fixed (source of truth: `src/domain/constants.ts`):
   - commit: `60` seconds
