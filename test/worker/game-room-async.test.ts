@@ -3,7 +3,11 @@ import {
   createCommitHash,
   createOpenTextCommitHash,
 } from '../../src/domain/commitReveal';
-import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
+import {
+  GAME_ANTE,
+  MIN_ALLOWED_BALANCE,
+  RESULTS_DURATION,
+} from '../../src/domain/constants';
 import type { SchellingPrompt } from '../../src/types/domain';
 import type {
   GameResultMessage,
@@ -896,6 +900,49 @@ describe('GameRoom async task tracking', () => {
     );
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('does not reject match start for balances below the old queue floor', async () => {
+    const first = vi
+      .fn()
+      .mockResolvedValue({ token_balance: MIN_ALLOWED_BALANCE - 120 });
+    const prepare = vi.fn(() => ({
+      bind: vi.fn(() => ({
+        first,
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        run: vi.fn().mockResolvedValue(undefined),
+      })),
+    }));
+
+    const { room } = createRoom({
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+      DB: {
+        prepare,
+        batch: vi.fn().mockResolvedValue(undefined),
+      } as unknown as D1Database,
+    });
+
+    const alice = createConnectionState('Alice');
+    const bob = createConnectionState('Bob');
+    const carol = createConnectionState('Carol');
+    room.connections.set('acct-1', alice);
+    room.connections.set('acct-2', bob);
+    room.connections.set('acct-3', carol);
+
+    await room._startMatch(['acct-1', 'acct-2', 'acct-3'], 'match-low-balance');
+
+    expect(room.activeMatches.has('match-low-balance')).toBe(true);
+    const sentMessages = [alice, bob, carol]
+      .flatMap((conn) => conn.ws.send.mock.calls)
+      .map(([payload]) => JSON.parse(payload as string));
+    expect(
+      sentMessages.find(
+        (msg) =>
+          msg.type === 'error' &&
+          typeof msg.message === 'string' &&
+          msg.message.includes('Balance too low to enter queue'),
+      ),
+    ).toBeUndefined();
   });
 
   it('starts the full reserved cohort when fill closes on 10 players', async () => {

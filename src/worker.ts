@@ -9,7 +9,10 @@ import {
 } from './domain/commitReveal';
 import {
   COMMIT_DURATION,
+  clampTokenBalance,
   GAME_ANTE,
+  MATCH_GAME_COUNT,
+  MIN_ALLOWED_BALANCE,
   RESULTS_DURATION,
   REVEAL_DURATION,
 } from './domain/constants';
@@ -147,12 +150,10 @@ function neutralizeAiAssistedResult(result: GameResult): GameResult {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const TOTAL_GAMES = 10;
 const FILL_TIMER_MS = 30_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
-const MIN_ALLOWED_BALANCE = -TOTAL_GAMES * GAME_ANTE;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
@@ -617,17 +618,6 @@ export class GameRoom {
     return match.aiAssisted ? 0 : GAME_ANTE;
   }
 
-  _isMatchEntryBalanceAllowed(balance: number): boolean {
-    return balance >= MIN_ALLOWED_BALANCE;
-  }
-
-  _matchEntryBalanceError(balance: number): string {
-    return (
-      `Balance too low to enter queue. Minimum allowed balance is ${MIN_ALLOWED_BALANCE}, ` +
-      `current balance is ${balance}.`
-    );
-  }
-
   _getAiBotTimeoutMs(): number {
     const parsed = Number.parseInt(this.env.AI_BOT_TIMEOUT_MS || '', 10);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -752,12 +742,6 @@ export class GameRoom {
       return this._sendTo(accountId, {
         type: 'error',
         message: 'Unable to verify balance. Please try joining again.',
-      });
-    }
-    if (!this._isMatchEntryBalanceAllowed(balance)) {
-      return this._sendTo(accountId, {
-        type: 'error',
-        message: this._matchEntryBalanceError(balance),
       });
     }
 
@@ -969,7 +953,9 @@ export class GameRoom {
 
     let prompts: SchellingPrompt[];
     try {
-      prompts = selectPromptsForMatch(TOTAL_GAMES, { includeOpenText: true });
+      prompts = selectPromptsForMatch(MATCH_GAME_COUNT, {
+        includeOpenText: true,
+      });
     } catch (error) {
       this._failMatchStart(
         playerIds,
@@ -990,26 +976,8 @@ export class GameRoom {
         displayName = conn.displayName;
         ws = conn.ws;
 
-        // Load current balance from D1
-        try {
-          const row = (await this.env.DB.prepare(
-            'SELECT token_balance FROM accounts WHERE account_id = ?',
-          )
-            .bind(accountId)
-            .first()) as { token_balance: number } | null;
-          if (row) balance = row.token_balance ?? 0;
-        } catch (e) {
-          console.error('D1: fetch balance for', accountId, e);
-        }
-
-        if (!aiAssisted && !this._isMatchEntryBalanceAllowed(balance)) {
-          conn.startNow = false;
-          this._sendTo(accountId, {
-            type: 'error',
-            message: this._matchEntryBalanceError(balance),
-          });
-          continue;
-        }
+        const persistedBalance = await this._fetchAccountBalance(accountId);
+        if (persistedBalance !== null) balance = persistedBalance;
       }
 
       playersMap.set(accountId, {
@@ -1055,7 +1023,7 @@ export class GameRoom {
       players: playersMap,
       prompts,
       currentGame: 0,
-      totalGames: TOTAL_GAMES,
+      totalGames: MATCH_GAME_COUNT,
       phase: 'starting',
       phaseEnteredAt: Date.now(),
       lastSettledGame: 0,
@@ -1076,7 +1044,7 @@ export class GameRoom {
         ).bind(
           matchId,
           new Date().toISOString(),
-          TOTAL_GAMES,
+          MATCH_GAME_COUNT,
           playersMap.size,
           'active',
           match.aiAssisted ? 1 : 0,
@@ -1104,7 +1072,7 @@ export class GameRoom {
     this._broadcastToMatch(match, {
       type: 'match_started',
       matchId,
-      gameCount: TOTAL_GAMES,
+      gameCount: MATCH_GAME_COUNT,
       aiAssisted: match.aiAssisted,
       players: playersInfo,
     });
@@ -2945,11 +2913,12 @@ export class GameRoom {
     accountId: string,
     currentBalance: number,
   ): Promise<void> {
+    const normalizedBalance = clampTokenBalance(currentBalance);
     try {
       await this.env.DB.prepare(
         'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
       )
-        .bind(currentBalance, accountId)
+        .bind(normalizedBalance, accountId)
         .run();
     } catch (error) {
       console.error('D1: persist account balance for', accountId, error);
@@ -2964,7 +2933,12 @@ export class GameRoom {
         .bind(accountId)
         .first<{ token_balance: number | null }>();
       if (!row) return null;
-      return row.token_balance ?? 0;
+      const rawBalance = row.token_balance ?? 0;
+      const normalizedBalance = clampTokenBalance(rawBalance);
+      if (normalizedBalance !== rawBalance) {
+        await this._persistAccountBalance(accountId, normalizedBalance);
+      }
+      return normalizedBalance;
     } catch (error) {
       console.error('D1: fetch account balance for', accountId, error);
       return null;
