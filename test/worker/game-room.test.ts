@@ -4,7 +4,10 @@ import {
   createCommitHash,
   createOpenTextCommitHash,
 } from '../../src/domain/commitReveal';
-import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
+import {
+  MIN_ALLOWED_BALANCE,
+  RESULTS_DURATION,
+} from '../../src/domain/constants';
 import type { OpenTextPrompt, SchellingPrompt } from '../../src/types/domain';
 import {
   createTestSession,
@@ -395,20 +398,32 @@ describe('GameRoom Durable Object', () => {
     ws.close();
   });
 
-  it('rejects join_queue when balance is below the allowed floor', async () => {
-    const minAllowedBalance = -10 * GAME_ANTE;
-    const { ws } = await connectPlayer(9, 'LowBalance', minAllowedBalance - 1);
+  it('repairs stale below-floor balances before queue entry', async () => {
+    const { ws, accountId } = await connectPlayer(
+      9,
+      'LowBalance',
+      MIN_ALLOWED_BALANCE - 120,
+    );
 
     // Drain initial queue_state
     await collectMessages(ws, 200);
 
     ws.send(JSON.stringify({ type: 'join_queue' }));
     const msgs = await collectMessages(ws, 300);
-    const errorMsg = msgs.find((m) => m.type === 'error');
-    expect(errorMsg).toBeDefined();
-    expect(
-      must(errorMsg, 'Expected error for insufficient balance').message,
-    ).toContain('Balance too low to enter queue');
+    expect(msgs.find((m) => m.type === 'error')).toBeUndefined();
+
+    const queueState = msgs.find((m) => m.type === 'queue_state');
+    expect(queueState).toBeDefined();
+    expect(must(queueState, 'Expected queue_state after repair').status).toBe(
+      'queued',
+    );
+
+    const row = (await env.DB.prepare(
+      'SELECT token_balance FROM accounts WHERE account_id = ?',
+    )
+      .bind(accountId)
+      .first()) as { token_balance: number } | null;
+    expect(row?.token_balance).toBe(MIN_ALLOWED_BALANCE);
 
     ws.close();
   });

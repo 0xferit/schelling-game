@@ -1,6 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { MIN_ESTABLISHED_MATCHES } from '../../src/domain/constants';
+import {
+  MIN_ALLOWED_BALANCE,
+  MIN_ESTABLISHED_MATCHES,
+} from '../../src/domain/constants';
 import type { Env } from '../../src/types/worker-env';
 import {
   fetchAccountWithStats,
@@ -27,6 +30,27 @@ describe('accountRepo', () => {
     expect(row?.matches_played).toBe(12);
     expect(row?.games_played).toBe(120);
     expect(row?.coherent_games).toBe(60);
+  });
+
+  it('fetchAccountWithStats clamps stale balances below the allowed floor', async () => {
+    const accountId = `acct_repo_floor_${Date.now()}`;
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO accounts (account_id, display_name, token_balance, leaderboard_eligible, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).bind(
+        accountId,
+        'FloorUser',
+        MIN_ALLOWED_BALANCE - 120,
+        1,
+        new Date().toISOString(),
+      ),
+      env.DB.prepare(
+        'INSERT INTO player_stats (account_id, matches_played, games_played, coherent_games, current_streak, longest_streak) VALUES (?, ?, ?, ?, ?, ?)',
+      ).bind(accountId, 3, 30, 10, 1, 4),
+    ]);
+
+    const row = await fetchAccountWithStats(env.DB, accountId);
+    expect(row?.token_balance).toBe(MIN_ALLOWED_BALANCE);
   });
 
   it('shapeLeaderboardEntry computes derived fields correctly', () => {

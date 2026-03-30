@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import {
   COMMIT_DURATION,
+  clampTokenBalance,
   LEADERBOARD_LIMIT,
   REVEAL_DURATION,
 } from '../domain/constants';
@@ -249,7 +250,7 @@ function parseLeaderboardEntryRow(row: Record<string, unknown>): {
 
   return {
     display_name: displayName,
-    token_balance: tokenBalance,
+    token_balance: clampTokenBalance(tokenBalance),
     leaderboard_eligible: leaderboardEligible,
     matches_played: matchesPlayed,
     games_played: gamesPlayed,

@@ -1,4 +1,7 @@
-import { MIN_ESTABLISHED_MATCHES } from '../domain/constants';
+import {
+  clampTokenBalance,
+  MIN_ESTABLISHED_MATCHES,
+} from '../domain/constants';
 import type { Env } from '../types/worker-env';
 
 // ---------------------------------------------------------------------------
@@ -28,10 +31,15 @@ export async function fetchAccountWithStats(
   db: D1Database,
   accountId: string,
 ): Promise<AccountWithStats | null> {
-  return (await db
+  const row = (await db
     .prepare(ACCOUNT_WITH_STATS_SQL)
     .bind(accountId)
     .first()) as AccountWithStats | null;
+  if (!row) return null;
+  return {
+    ...row,
+    token_balance: clampTokenBalance(row.token_balance ?? 0),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +80,7 @@ export function shapeLeaderboardEntry(
   const mp = row.matches_played || 0;
   const gp = row.games_played || 0;
   const cg = row.coherent_games || 0;
-  const balance = row.token_balance ?? 0;
+  const balance = clampTokenBalance(row.token_balance ?? 0);
 
   return {
     displayName: row.display_name,
