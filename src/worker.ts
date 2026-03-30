@@ -376,6 +376,27 @@ export class GameRoom {
       }
     }
 
+    const queuedConnection =
+      existingConn &&
+      !this.playerMatchIndex.has(accountId) &&
+      (this.waitingQueue.includes(accountId) ||
+        (this.formingMatch?.players.includes(accountId) ?? false));
+
+    if (queuedConnection) {
+      const oldWs = existingConn.ws;
+      this._clearConnectionLivenessMonitor(accountId);
+      existingConn.ws = ws;
+      existingConn.displayName = displayName;
+      existingConn.startNow = false;
+      existingConn.lastActivityAt = Date.now();
+      this._setupWsListeners(ws, accountId);
+      try {
+        oldWs.close(1000, 'Replaced by new connection');
+      } catch {}
+      this._broadcastQueueState();
+      return;
+    }
+
     // Close previous connection if any (not a match reconnect)
     if (existingConn) {
       this._clearConnectionLivenessMonitor(accountId);
