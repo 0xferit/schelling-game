@@ -366,7 +366,7 @@ section{padding:6rem 2rem}
 .mechanics{border-top:1px solid var(--border)}
 .mech-steps{
   display:grid;
-  grid-template-columns:repeat(3,1fr);
+  grid-template-columns:repeat(4,1fr);
   gap:2rem;
   margin-top:3rem;
 }
@@ -858,7 +858,7 @@ footer{
       coordination without communication is not only possible, it is predictable.
       Schelling won the 2005 Nobel Prize in Economics for his work on
       conflict and cooperation through game-theory analysis.
-      This game is a playable adaptation of that idea, built from literature-rooted focal-point prompt families.
+      This game is a playable adaptation of that idea, built around a fixed seed set of canonical coordination prompts.
     </p>
     <div class="origin-accent reveal"></div>
   </div>
@@ -921,7 +921,7 @@ footer{
 <section class="mechanics">
   <div class="container">
     <div class="section-label reveal">How It Works</div>
-    <h2 class="section-title reveal">Commit, auto-reveal, settle</h2>
+    <h2 class="section-title reveal">Commit, reveal, normalize, settle</h2>
     <div class="mech-steps">
       <div class="mech-step reveal reveal-delay-1">
         <span class="icon">I</span>
@@ -930,11 +930,16 @@ footer{
       </div>
       <div class="mech-step reveal reveal-delay-2">
         <span class="icon">II</span>
-        <h3>Auto-reveal</h3>
-        <p>Reveal happens automatically when commit closes. Submitted answers are opened and each hash is verified before settlement.</p>
+        <h3>Reveal</h3>
+        <p>When commit closes, the reveal window opens. You submit the exact answer and salt behind your commitment so the hash can be verified.</p>
       </div>
       <div class="mech-step reveal reveal-delay-3">
         <span class="icon">III</span>
+        <h3>Normalize</h3>
+        <p>Open-text answers pass through an AI normalization step so equivalent signals such as <em>NYC</em> and <em>New York</em> can land in the same bucket.</p>
+      </div>
+      <div class="mech-step reveal reveal-delay-4">
+        <span class="icon">IV</span>
         <h3>Settle</h3>
         <p>The plurality wins. Token ante is collected from all players, then redistributed to those who converged. Any indivisible remainder is burned.</p>
       </div>

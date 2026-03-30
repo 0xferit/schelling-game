@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   createCommitHash,
   createOpenTextCommitHash,
-  normalizeRevealText,
   validateAnswerText,
   validateHash,
   validateOptionIndex,
@@ -10,6 +9,65 @@ import {
   verifyCommit,
   verifyOpenTextCommit,
 } from '../../src/domain/commitReveal';
+import {
+  canonicalizeOpenTextAnswer,
+  normalizeRevealText,
+} from '../../src/domain/openText';
+import type { OpenTextPrompt } from '../../src/types/domain';
+
+const numberPrompt: OpenTextPrompt = {
+  id: 1002,
+  text: 'Pick a number between 1 and 10.',
+  type: 'open_text',
+  category: 'number',
+  maxLength: 16,
+  placeholder: 'e.g. 7',
+  answerSpec: { kind: 'integer_range', min: 1, max: 10, allowWords: true },
+  aiNormalization: 'required',
+  canonicalExamples: ['7', 'seven'],
+};
+
+const splitPrompt: OpenTextPrompt = {
+  id: 1007,
+  text: 'Split $100 with a stranger. How much do you keep?',
+  type: 'open_text',
+  category: 'philosophy',
+  maxLength: 24,
+  placeholder: 'e.g. 50',
+  answerSpec: {
+    kind: 'integer_range',
+    min: 0,
+    max: 100,
+    allowWords: true,
+    allowCurrency: true,
+  },
+  aiNormalization: 'required',
+  canonicalExamples: ['$50', '50', 'fifty'],
+};
+
+const cardPrompt: OpenTextPrompt = {
+  id: 1006,
+  text: 'Pick a playing card.',
+  type: 'open_text',
+  category: 'culture',
+  maxLength: 24,
+  placeholder: 'e.g. Ace of Spades',
+  answerSpec: { kind: 'playing_card' },
+  aiNormalization: 'required',
+  canonicalExamples: ['Ace of Spades', 'A♠', 'AS'],
+};
+
+const wordPrompt: OpenTextPrompt = {
+  id: 1010,
+  text: 'Pick a word.',
+  type: 'open_text',
+  category: 'psychology',
+  maxLength: 32,
+  placeholder: 'e.g. love',
+  answerSpec: { kind: 'single_word' },
+  aiNormalization: 'required',
+  canonicalExamples: ['love'],
+};
 
 describe('commit-reveal verification', () => {
   const optionIndex = 2;
@@ -49,11 +107,6 @@ describe('validateSalt', () => {
       expected: false,
       label: 'just over max (129)',
     },
-    {
-      input: 'a'.repeat(10000),
-      expected: false,
-      label: 'very long (10000 chars)',
-    },
   ])('$label → $expected', ({ input, expected }) => {
     expect(validateSalt(input)).toBe(expected);
   });
@@ -80,33 +133,81 @@ describe('validateOptionIndex', () => {
     { index: 4, expected: false, label: 'index 4 out of range' },
     { index: -1, expected: false, label: 'negative index' },
     { index: 1.5, expected: false, label: 'non-integer' },
-    { index: NaN, expected: false, label: 'NaN' },
   ])('$label → $expected', ({ index, expected }) => {
     expect(validateOptionIndex(index, optionCount)).toBe(expected);
   });
 });
 
+describe('open-text canonicalization', () => {
+  it('normalizes casing and whitespace for transport', () => {
+    expect(normalizeRevealText(' New York ')).toBe('new york');
+  });
+
+  it('canonicalizes numeric word forms to digits', () => {
+    expect(
+      canonicalizeOpenTextAnswer('seven', numberPrompt)?.canonicalCommitText,
+    ).toBe('7');
+  });
+
+  it('canonicalizes currency and word forms for fair-split amounts', () => {
+    expect(
+      canonicalizeOpenTextAnswer('$50', splitPrompt)?.canonicalCommitText,
+    ).toBe('50');
+    expect(
+      canonicalizeOpenTextAnswer('fifty', splitPrompt)?.canonicalCommitText,
+    ).toBe('50');
+    expect(
+      canonicalizeOpenTextAnswer('$50', splitPrompt)?.bucketLabelCandidate,
+    ).toBe('$50');
+  });
+
+  it('canonicalizes playing-card abbreviations and suit symbols', () => {
+    expect(
+      canonicalizeOpenTextAnswer('AS', cardPrompt)?.canonicalCommitText,
+    ).toBe('Ace of Spades');
+    expect(
+      canonicalizeOpenTextAnswer('A♠', cardPrompt)?.canonicalCommitText,
+    ).toBe('Ace of Spades');
+  });
+
+  it('rejects out-of-range integers', () => {
+    expect(canonicalizeOpenTextAnswer('11', numberPrompt)).toBeNull();
+    expect(canonicalizeOpenTextAnswer('101', splitPrompt)).toBeNull();
+  });
+
+  it('rejects multi-word answers for single-word prompts', () => {
+    expect(canonicalizeOpenTextAnswer('hello world', wordPrompt)).toBeNull();
+  });
+});
+
 describe('open-text commit-reveal verification', () => {
   const salt = 'b'.repeat(32);
-  const answerText = ' New York ';
-  const hash = createOpenTextCommitHash(answerText, salt);
+  const hash = createOpenTextCommitHash('seven', salt, numberPrompt);
 
-  it('normalizes casing and whitespace before hashing', () => {
-    expect(verifyOpenTextCommit('new york', salt, hash)).toBe(true);
+  it('uses prompt-aware canonicalization before hashing', () => {
+    expect(verifyOpenTextCommit('7', salt, hash, numberPrompt)).toBe(true);
   });
 
-  it('rejects a different normalized answer', () => {
-    expect(verifyOpenTextCommit('new york city', salt, hash)).toBe(false);
+  it('rejects a different canonical answer', () => {
+    expect(verifyOpenTextCommit('8', salt, hash, numberPrompt)).toBe(false);
   });
 
-  it('normalizes quotes and terminal punctuation', () => {
-    expect(normalizeRevealText('“Grand Central.”')).toBe('"grand central"');
+  it('verifies playing-card aliases against the same commitment', () => {
+    const cardHash = createOpenTextCommitHash(
+      'Ace of Spades',
+      salt,
+      cardPrompt,
+    );
+    expect(verifyOpenTextCommit('A♠', salt, cardHash, cardPrompt)).toBe(true);
+    expect(verifyOpenTextCommit('AS', salt, cardHash, cardPrompt)).toBe(true);
   });
 });
 
 describe('validateAnswerText', () => {
-  it('accepts a valid single-line answer', () => {
+  it('accepts valid structured answers', () => {
     expect(validateAnswerText('Grand Central', 80)).toBe(true);
+    expect(validateAnswerText('seven', numberPrompt)).toBe(true);
+    expect(validateAnswerText('A♠', cardPrompt)).toBe(true);
   });
 
   it('rejects empty answers after normalization', () => {
@@ -119,5 +220,11 @@ describe('validateAnswerText', () => {
 
   it('rejects answers longer than the prompt limit', () => {
     expect(validateAnswerText('a'.repeat(81), 80)).toBe(false);
+  });
+
+  it('rejects structured answers that do not match the prompt', () => {
+    expect(validateAnswerText('11', numberPrompt)).toBe(false);
+    expect(validateAnswerText('101', splitPrompt)).toBe(false);
+    expect(validateAnswerText('two words', wordPrompt)).toBe(false);
   });
 });

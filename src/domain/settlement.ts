@@ -28,7 +28,7 @@ export function settleGame(
   const validRevealCount = validReveals.length;
 
   if (validRevealCount === 0) {
-    return buildVoidResult(players, gamePlayerCount, 'zero_valid_reveals');
+    return voidGame(players, 'zero_valid_reveals');
   }
 
   const bucketCounts = new Map<string, number>();
@@ -116,11 +116,12 @@ export function settleGame(
   };
 }
 
-function buildVoidResult(
+export function voidGame(
   players: PlayerSettlementInput[],
-  gamePlayerCount: number,
   reason: string,
 ): GameResult {
+  const attachedPlayers = players.filter((player) => player.attached);
+  const gamePlayerCount = attachedPlayers.length;
   const playerResults: PlayerResult[] = players
     .filter((player) => player.attached)
     .map((player) => ({

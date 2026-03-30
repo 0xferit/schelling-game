@@ -8,7 +8,7 @@ Authentication, transport, persistence, leaderboard implementation, and UI are o
 
 ## 1. Game Summary
 
-The Schelling Game is a multiplayer coordination game played as matches. In each game within a match, every player independently submits the answer they expect the most other players to submit. Answers are hidden during commit, opened during reveal, and settled by exact-match plurality for `select` prompts or by normalized bucket plurality for `open_text` prompts.
+The Schelling Game is a multiplayer coordination game played as matches. In each game within a match, every player independently submits the answer they expect the most other players to submit. Answers are hidden during commit, opened during reveal, and settled by exact-option plurality for `select` prompts or by Workers-AI-normalized bucket plurality for `open_text` prompts.
 
 Each game distinguishes between two outcomes:
 
@@ -20,7 +20,7 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 ## 2. Core Concepts
 
 - Match: one complete session with any number of players from `3` to `21`.
-- Game: one `commit -> reveal -> results` cycle built around one Schelling prompt.
+- Game: one `commit -> reveal -> [normalizing] -> results` cycle built around one Schelling prompt.
 - Schelling prompt: a fixed prompt designed to elicit focal-point coordination. A prompt is either:
   - `select`: an ordered list of discrete answer options
   - `open_text`: a single short free-text answer field with deterministic transport normalization and post-reveal bucketing
@@ -32,22 +32,17 @@ The intended skill is not specialist knowledge. It is identifying focal points t
 
 - Match size is any number from `3` to `21`.
 - Every match lasts `10` games unless it ends early under the rule in section 4.
-- Every match draws from the canonical public prompt pool of `100` literature-rooted prompt adaptations:
-  - `80` `select` prompts
-  - `20` `open_text` prompts
-- Public selection is root-balanced:
-  - prompts are used without replacement inside a match
-  - a match contains at least `8` distinct prompt families
-  - `open_text` prompts are capped at `2` per match
-  - the same semantic family may not appear in both `select` and `open_text` form in one match
-  - contextualized roots such as `city_in_england`, `nyc_meeting_place`, and `nyc_meeting_time` appear at most once per match
-  - a `10`-game match may contain at most one calibration prompt
-- `open_text` prompts are available only when Workers AI normalization is enabled and the match is not AI-assisted. Otherwise selection is `select`-only.
-- Prompts are used without replacement inside a match.
+- Every match draws from the canonical public seed catalog of exactly `10` prompts:
+  - `5` `select` prompts: coin side, fruit, colour, day of week, planet
+  - `5` `open_text` prompts: number `1..10`, playing card, fair split keep amount, city, word
+- Every public human match uses all `10` prompts exactly once in shuffled order.
+- `open_text` prompts are a hard prerequisite for public play. If `OPEN_TEXT_PROMPTS_ENABLED` is off, public matches do not start and the reserved cohort is restored to the waiting queue.
+- AI-assisted public matches and select-only public matches are unavailable for this catalog.
 - Phase timings are fixed (source of truth: `src/domain/constants.ts`):
   - commit: `60` seconds
   - reveal: `15` seconds
   - results: `7` seconds
+  - normalizing: no player timer; the system may spend additional time retrying Workers AI normalization with `2s`, `5s`, and `10s` backoff before deciding whether to settle or void the game
 
 ## 4. Game Flow
 
@@ -60,9 +55,14 @@ For each game:
 5. During reveal, each committed non-forfeited player reveals:
    - for `select`: the exact option index and salt used in the commitment
    - for `open_text`: the raw `answerText` and salt used in the commitment
-6. The game finalizes when either all committed non-forfeited players have revealed or the reveal timer expires.
-7. The game is settled and the results phase runs for `7` seconds.
-8. The next game starts unless the match has ended.
+6. When reveal closes, the game branches:
+   - `select` prompts finalize immediately
+   - `open_text` prompts enter `normalizing`
+7. During `normalizing`, player actions are closed. The system deduplicates valid revealed answers, applies prompt-aware canonicalization, and asks Workers AI to assign canonical answer buckets.
+8. If Workers AI fails, times out, or returns invalid schema, normalization is retried up to `3` times with `2s`, `5s`, and `10s` backoff.
+9. If normalization succeeds, the game is settled. If every retry fails, the game is voided with reason `open_text_normalization_failed`.
+10. The results phase runs for `7` seconds.
+11. The next game starts unless the match has ended.
 
 The match ends after `10` games, or earlier only if no non-forfeited player remains able to reveal in future games.
 
@@ -101,9 +101,10 @@ Prompt rules:
   - scoring uses exact option identity, not numeric distance or proximity
   - option order must not be randomized within a game
 - `open_text` prompts:
-  - clients must submit one short single-line answer
+  - clients must submit one short single-line answer that satisfies the prompt's answer spec
   - clients must preserve the raw answer for reveal
-  - settlement does not use embedding similarity or free-form semantic scoring; it uses deterministic transport normalization plus conservative bucket assignment
+  - commitment verification uses deterministic transport normalization plus prompt-aware canonicalization
+  - settlement does not use embedding similarity or free-form semantic scoring; it uses deterministic transport normalization plus strict Workers AI bucket assignment
 
 The `select` commitment preimage is:
 
@@ -116,9 +117,9 @@ where:
 
 The `open_text` commitment preimage is:
 
-`"${normalizeRevealText(answerText)}:${salt}"`
+`"${canonicalCommitText(answerText, prompt)}:${salt}"`
 
-`normalizeRevealText(answerText)` applies:
+`canonicalCommitText(answerText, prompt)` first applies deterministic transport normalization:
 
 - Unicode `NFKC`
 - edge trimming
@@ -126,6 +127,13 @@ The `open_text` commitment preimage is:
 - lowercasing
 - curly-quote / apostrophe normalization
 - terminal punctuation stripping
+
+It then applies prompt-aware canonicalization:
+
+- `integer_range`: canonicalize to bare digits inside the configured range; prompts may allow number words and currency markers
+- `playing_card`: canonicalize to `Rank of Suit`; common abbreviations and suit symbols are accepted
+- `single_word`: canonicalize to exactly one normalized token
+- `free_text`: keep the normalized text string
 
 Reveal verification succeeds only if the recomputed hash exactly matches the committed hash after the appropriate preimage rule is applied.
 
@@ -163,6 +171,9 @@ For `open_text`, a valid reveal must also pass answer-shape validation:
 - single line only
 - non-empty after deterministic transport normalization
 - within the prompt-specific maximum length
+- `integer_range` prompts must canonicalize to a value inside the prompt's configured range
+- `playing_card` prompts must canonicalize to one valid card identity
+- `single_word` prompts must canonicalize to exactly one token
 
 ### Void Rule
 
@@ -189,12 +200,14 @@ Definitions:
 
 For `select` prompts, the bucket key is the exact option identity.
 
-For `open_text` prompts, settlement first runs one normalization pass over the deduplicated valid revealed answers:
+For `open_text` prompts, settlement first runs one Workers AI normalization pass over the deduplicated valid revealed answers during a dedicated `normalizing` phase:
 
-- primary mode: Workers AI returns a strict JSON verdict assigning each normalized input string to one canonical bucket
-- merge policy: only clearly identical referents or spelling/casing/punctuation variants may be merged
-- fallback mode: if the AI call fails, times out, or returns invalid schema, the game falls back to exact-match plurality on deterministically normalized text
-- normalization verdicts are persisted so settled outcomes remain replayable and auditable
+- deterministic transport normalization and prompt-aware canonicalization run before the AI call
+- Workers AI returns a strict JSON verdict assigning each normalized input string to one canonical bucket
+- merge policy: only clearly identical referents or standard aliases, abbreviations, numeral-vs-word forms, spelling variants, or symbol variants may be merged
+- if the AI call fails, times out, or returns invalid schema, the system retries up to `3` times with `2s`, `5s`, and `10s` backoff
+- if every retry fails, the game is voided rather than falling back to exact-match plurality
+- normalization runs, verdicts, attempts, and failure payloads are persisted so settled outcomes remain replayable and auditable
 
 A player wins the game if and only if:
 
@@ -261,18 +274,18 @@ Canonical prompts may not rely on:
 - exact percentages
 - expert estimation
 
-Because settlement uses exact-match plurality or conservative bucket plurality, prompts should present salient coordination targets rather than requiring interpretation or specialist lookup.
+Because settlement uses exact-match plurality or strict canonical bucket plurality, prompts should present salient coordination targets rather than requiring interpretation or specialist lookup.
 
-The canonical pool is literature-rooted: it adapts published focal-point prompt families rather than treating the pool as an unconstrained trivia or survey set.
+The current canonical pool is a fixed 10-prompt seed set designed to cover the main coordination archetypes without duplicative variants.
 
 Prompt design rules:
 
 - one plausible focal-answer family should map to one option or one canonical bucket
 - prompts must stay on one abstraction level
 - region-specific prompts must be explicitly anchored in the text
-- `open_text` prompts are a minority subset used to cover canonical free-response focal-point families without forcing artificial option lists
+- the fixed seed set deliberately mixes `5` `select` and `5` `open_text` prompts; expansion should add new roots rather than duplicating one root across multiple variants
 
-The canonical pool may include a small calibration subset of intentionally obvious prompts. Calibration prompts are optional, must be answerable without lookup, and a `10`-game match may contain at most one such prompt.
+The current seed set includes exactly one calibration prompt: `Pick a side of a coin.` Calibration prompts must remain answerable without lookup.
 
 ## 9. Worked Examples
 

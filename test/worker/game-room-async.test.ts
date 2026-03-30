@@ -13,6 +13,18 @@ import type { Env } from '../../src/types/worker-env';
 import { GameRoom } from '../../src/worker';
 import { must } from './helpers';
 
+const CITY_PROMPT: SchellingPrompt = {
+  id: 1009,
+  text: 'Pick a city.',
+  type: 'open_text',
+  category: 'culture',
+  maxLength: 64,
+  placeholder: 'e.g. New York',
+  answerSpec: { kind: 'free_text' },
+  aiNormalization: 'required',
+  canonicalExamples: ['New York', 'NYC'],
+};
+
 function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
   return {
     toArray: () => rows,
@@ -80,6 +92,7 @@ function createMatch() {
     commitTimer: null,
     revealTimer: null,
     resultsTimer: null,
+    normalizingInFlight: false,
     lastGameResult: null,
     aiAssisted: false,
   };
@@ -180,7 +193,7 @@ describe('GameRoom async task tracking', () => {
       currentBalance: 100,
       committed: true,
       revealed: false,
-      hash: createOpenTextCommitHash('New York', salt),
+      hash: createOpenTextCommitHash('New York', salt, CITY_PROMPT),
       optionIndex: null,
       answerText: null,
       normalizedRevealText: null,
@@ -192,16 +205,7 @@ describe('GameRoom async task tracking', () => {
       pendingAiCommit: false,
     };
     const match = createMatch();
-    match.prompts = [
-      {
-        id: 101,
-        text: 'Type the most iconic city.',
-        type: 'open_text',
-        category: 'culture',
-        maxLength: 64,
-        placeholder: 'e.g. New York',
-      },
-    ];
+    match.prompts = [CITY_PROMPT];
     match.players.set(player.accountId, player);
 
     room.playerMatchIndex.set(player.accountId, match.matchId);
@@ -227,6 +231,188 @@ describe('GameRoom async task tracking', () => {
         salt,
       },
     );
+  });
+
+  it('enters the normalizing phase for open-text games', async () => {
+    const { room, waitUntil } = createRoom();
+    const checkpointMatch = vi
+      .spyOn(room, '_checkpointMatch')
+      .mockImplementation(() => {});
+    const broadcastToMatch = vi
+      .spyOn(room, '_broadcastToMatch')
+      .mockImplementation(() => {});
+    const normalizeAndFinalize = vi
+      .spyOn(room, '_normalizeAndFinalizeOpenTextGame')
+      .mockResolvedValue(undefined);
+
+    const match = createMatch();
+    match.prompts = [CITY_PROMPT];
+
+    room._startNormalizingPhase(match);
+
+    expect(match.phase).toBe('normalizing');
+    expect(match.normalizingInFlight).toBe(true);
+    expect(checkpointMatch).toHaveBeenCalledWith(match);
+    expect(broadcastToMatch).toHaveBeenCalledWith(match, {
+      type: 'phase_change',
+      phase: 'normalizing',
+      status: 'Normalizing open-text answers...',
+    });
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
+    expect(normalizeAndFinalize).toHaveBeenCalledWith(match);
+  });
+
+  it('merges syntactic open-text variants into a shared AI bucket', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      response: JSON.stringify({
+        verdicts: [
+          {
+            normalizedInputText: 'new york',
+            bucketLabel: 'New York',
+          },
+          {
+            normalizedInputText: 'nyc',
+            bucketLabel: 'New York',
+          },
+        ],
+      }),
+    });
+    const { room } = createRoom({
+      AI: { run: aiRun },
+    });
+
+    const run = await room._normalizeOpenTextReveals(CITY_PROMPT, [
+      {
+        normalizedInputText: 'new york',
+        rawAnswerText: 'New York',
+        canonicalCandidate: 'new york',
+        bucketLabelCandidate: 'New York',
+      },
+      {
+        normalizedInputText: 'nyc',
+        rawAnswerText: 'NYC',
+        canonicalCandidate: 'nyc',
+        bucketLabelCandidate: 'NYC',
+      },
+    ]);
+
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(run.mode).toBe('llm');
+    expect(run.verdicts.get('new york')).toEqual({
+      normalizedInputText: 'new york',
+      bucketKey: 'new york',
+      bucketLabel: 'New York',
+    });
+    expect(run.verdicts.get('nyc')).toEqual({
+      normalizedInputText: 'nyc',
+      bucketKey: 'new york',
+      bucketLabel: 'New York',
+    });
+  });
+
+  it('retries Workers AI normalization with 2s, 5s, and 10s backoff before failing', async () => {
+    const { room } = createRoom();
+    const recordedDelays: number[] = [];
+    const setTimeoutSpy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation(((
+        callback: TimerHandler,
+        delay?: number,
+        ...args: unknown[]
+      ) => {
+        recordedDelays.push(Number(delay ?? 0));
+        if (typeof callback === 'function') {
+          callback(...args);
+        }
+        return 0 as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout);
+
+    try {
+      const run = await room._normalizeOpenTextReveals(CITY_PROMPT, [
+        {
+          normalizedInputText: 'new york',
+          rawAnswerText: 'New York',
+          canonicalCandidate: 'new york',
+          bucketLabelCandidate: 'New York',
+        },
+      ]);
+
+      const responsePayload = JSON.parse(run.responseJson ?? '{}') as {
+        attempts?: Array<Record<string, unknown>>;
+        failureReason?: string;
+      };
+
+      expect(run.mode).toBe('llm_failed');
+      expect(responsePayload.failureReason).toBe(
+        'open_text_normalization_failed',
+      );
+      expect(responsePayload.attempts).toHaveLength(4);
+      expect(recordedDelays.filter((delay) => delay > 0)).toEqual([
+        2000, 5000, 10000,
+      ]);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('voids open-text results after normalization retry exhaustion', async () => {
+    const bind = vi.fn(() => ({}) as D1PreparedStatement);
+    const prepare = vi.fn(() => ({ bind }));
+    const batch = vi.fn().mockResolvedValue([]);
+    const { room } = createRoom({
+      DB: { prepare, batch } as unknown as D1Database,
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.prompts = [CITY_PROMPT];
+    match.phase = 'normalizing';
+
+    match.players.set('acct-open', {
+      accountId: 'acct-open',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: true,
+      revealed: true,
+      hash: null,
+      optionIndex: null,
+      answerText: 'New York',
+      normalizedRevealText: 'new york',
+      salt: null,
+      forfeited: false,
+      forfeitedAtGame: null,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    });
+
+    await room._finalizeGame(match, {
+      runId: 'run-1',
+      mode: 'llm_failed',
+      verdicts: new Map(),
+      model: '@cf/meta/mock-normalizer',
+      normalizerPrompt: 'prompt',
+      requestJson: '{}',
+      responseJson: '{}',
+      failureReason: 'open_text_normalization_failed',
+    });
+
+    expect(match.phase).toBe('results');
+    expect(match.lastGameResult?.voided).toBe(true);
+    expect(match.lastGameResult?.voidReason).toBe(
+      'open_text_normalization_failed',
+    );
+    expect(match.lastGameResult?.players[0]?.newBalance).toBe(100);
+    expect(batch).toHaveBeenCalledTimes(1);
+
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
   });
 
   it('tracks settled results-phase forfeit balance persistence with state.waitUntil', async () => {
@@ -443,6 +629,78 @@ describe('GameRoom async task tracking', () => {
     await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
   });
 
+  it('rejects queue joins while open-text public prompts are disabled', () => {
+    const { room } = createRoom();
+    const conn = createConnectionState('Alice');
+    room.connections.set('acct-1', conn);
+
+    room._handleJoinQueue('acct-1');
+
+    expect(room.waitingQueue).toEqual([]);
+    expect(conn.ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'error',
+        message:
+          'Public matches are unavailable until open-text prompts are enabled',
+      }),
+    );
+  });
+
+  it('restores humans to the waiting queue when match start is blocked', async () => {
+    const { room } = createRoom();
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+    room.waitingQueue = ['acct-queued'];
+
+    await room._startMatch(['acct-1', 'acct-2', 'acct-3'], 'match-disabled');
+
+    expect(room.activeMatches.size).toBe(0);
+    expect(room.waitingQueue).toEqual([
+      'acct-1',
+      'acct-2',
+      'acct-3',
+      'acct-queued',
+    ]);
+  });
+
+  it('restores humans and rejects forced AI-assisted starts', async () => {
+    const { room } = createRoom({
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    const alice = createConnectionState('Alice');
+    const bob = createConnectionState('Bob');
+    room.connections.set('acct-1', alice);
+    room.connections.set('acct-2', bob);
+    room.waitingQueue = ['acct-queued'];
+
+    await room._startMatch(
+      ['acct-1', 'ai-bot:0:test-bot', 'acct-2'],
+      'match-ai-assisted',
+    );
+
+    expect(room.activeMatches.size).toBe(0);
+    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2', 'acct-queued']);
+    expect(alice.ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'error',
+        message:
+          'AI-assisted matches are unavailable with the current mixed prompt catalog',
+      }),
+    );
+    expect(bob.ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'error',
+        message:
+          'AI-assisted matches are unavailable with the current mixed prompt catalog',
+      }),
+    );
+  });
+
   it('starts the full reserved cohort when fill closes on 10 players', async () => {
     const { room, waitUntil } = createRoom();
     const startMatch = vi
@@ -628,8 +886,29 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('injects one bot for two humans and removes it when a third human arrives', () => {
-    const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
+  it('does not inject bots while waiting for the third human', () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+
+    room._handleJoinQueue('acct-1');
+    room._handleJoinQueue('acct-2');
+
+    expect(room.formingMatch).toBeNull();
+    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
+    expect(room.waitingQueue.some((id) => room._isAiBot(id))).toBe(false);
+  });
+
+  it('forms a pure-human match when the third human arrives', () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
     room.connections.set('acct-1', createConnectionState('Alice'));
@@ -638,45 +917,36 @@ describe('GameRoom async task tracking', () => {
 
     room._handleJoinQueue('acct-1');
     room._handleJoinQueue('acct-2');
-
-    expect(room.waitingQueue).toHaveLength(0);
-    expect(room.formingMatch).not.toBeNull();
-    const bots =
-      room.formingMatch?.players.filter((id) => room._isAiBot(id)) ?? [];
-    expect(bots).toHaveLength(1);
-    expect(
-      room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
-    ).toEqual(['acct-1', 'acct-2']);
-
     room._handleJoinQueue('acct-3');
 
-    expect(room.waitingQueue).toHaveLength(0);
     expect(room.formingMatch?.players).toEqual(['acct-1', 'acct-2', 'acct-3']);
+    expect(room.formingMatch?.players.some((id) => room._isAiBot(id))).toBe(
+      false,
+    );
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('injects two bots with distinct model indices for a solo human', () => {
-    const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
+  it('does not inject bots for a solo human even when AI_BOT_ENABLED is true', () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
     room.connections.set('acct-1', createConnectionState('Alice'));
 
     room._handleJoinQueue('acct-1');
 
-    expect(room.formingMatch).not.toBeNull();
-    const bots =
-      room.formingMatch?.players.filter((id) => room._isAiBot(id)) ?? [];
-    expect(bots).toHaveLength(2);
-
-    const indices = bots.map((id) => room._getBotModelIndex(id));
-    expect(new Set(indices).size).toBe(2);
-
-    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+    expect(room.formingMatch).toBeNull();
+    expect(room.waitingQueue).toEqual(['acct-1']);
   });
 
   it('does not inject a bot for six humans', () => {
-    const { room } = createRoom({ AI_BOT_ENABLED: 'true' });
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
     for (const [accountId, displayName] of [

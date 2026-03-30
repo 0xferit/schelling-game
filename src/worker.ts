@@ -1,6 +1,5 @@
 import {
   createCommitHash,
-  normalizeRevealText,
   validateAnswerText,
   validateHash,
   validateOptionIndex,
@@ -14,11 +13,15 @@ import {
   RESULTS_DURATION,
   REVEAL_DURATION,
 } from './domain/constants';
+import {
+  canonicalizeOpenTextAnswer,
+  normalizeRevealText,
+} from './domain/openText';
 import { selectPromptsForMatch } from './domain/prompts';
-import { settleGame } from './domain/settlement';
+import { settleGame, voidGame } from './domain/settlement';
 import type {
   GameResult,
-  NormalizationMode,
+  OpenTextPrompt,
   PlayerResultWithBalance,
   PlayerSettlementInput,
   SchellingPrompt,
@@ -65,6 +68,7 @@ interface WorkerMatchState extends PersistedMatchFields {
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
+  normalizingInFlight: boolean;
 }
 
 interface FormingMatchState {
@@ -79,14 +83,22 @@ interface NormalizationVerdict {
   bucketLabel: string;
 }
 
+interface NormalizationCandidate {
+  normalizedInputText: string;
+  rawAnswerText: string;
+  canonicalCandidate: string;
+  bucketLabelCandidate: string;
+}
+
 interface NormalizationRun {
   runId: string | null;
-  mode: NormalizationMode;
+  mode: 'llm' | 'llm_failed' | null;
   verdicts: Map<string, NormalizationVerdict>;
   model: string | null;
   normalizerPrompt: string | null;
   requestJson: string | null;
   responseJson: string | null;
+  failureReason: string | null;
 }
 
 function neutralizeAiAssistedResult(result: GameResult): GameResult {
@@ -123,6 +135,8 @@ const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
+const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
+const OPEN_TEXT_NORMALIZING_STATUS = 'Normalizing open-text answers...';
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -549,43 +563,7 @@ export class GameRoom {
   // both waitingQueue and formingMatch to count humans, so the caller
   // must not move players between those structures between the two calls.
   _ensureAiBotBackfill(): void {
-    const queuedBotIds = this._getQueuedAiBotIds();
-
-    if (!this._aiBotEnabled()) {
-      for (const botId of queuedBotIds) {
-        this._removeFromQueue(botId);
-      }
-      return;
-    }
-
-    const humanCount = this._countQueuedHumans();
-    const botsNeeded =
-      humanCount >= 1 && humanCount < MIN_MATCH_SIZE
-        ? MIN_MATCH_SIZE - humanCount
-        : 0;
-
-    if (botsNeeded > 0) {
-      // Remove excess bots
-      while (queuedBotIds.length > botsNeeded) {
-        const excess = queuedBotIds.pop();
-        if (excess) this._removeFromQueue(excess);
-      }
-      // Add missing bots, each with a distinct model index
-      const usedIndices = new Set(
-        queuedBotIds.map((id) => this._getBotModelIndex(id)),
-      );
-      let nextIndex = 0;
-      while (queuedBotIds.length < botsNeeded) {
-        while (usedIndices.has(nextIndex)) nextIndex++;
-        this.waitingQueue.push(this._createAiBotId(nextIndex));
-        usedIndices.add(nextIndex);
-        queuedBotIds.push(''); // track count
-        nextIndex++;
-      }
-      return;
-    }
-
-    for (const botId of queuedBotIds) {
+    for (const botId of this._getQueuedAiBotIds()) {
       this._removeFromQueue(botId);
     }
   }
@@ -597,6 +575,14 @@ export class GameRoom {
   _handleJoinQueue(accountId: string): void {
     const conn = this.connections.get(accountId);
     if (!conn) return;
+
+    if (!this._openTextPromptsEnabled()) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message:
+          'Public matches are unavailable until open-text prompts are enabled',
+      });
+    }
 
     // Cannot join if already in a match
     if (this.playerMatchIndex.has(accountId)) {
@@ -779,11 +765,54 @@ export class GameRoom {
   // Match lifecycle
   // -------------------------------------------------------------------------
 
+  _failMatchStart(playerIds: string[], message: string): void {
+    const returningHumans = playerIds.filter(
+      (accountId) =>
+        !this._isAiBot(accountId) && !this.waitingQueue.includes(accountId),
+    );
+
+    this._clearStartNowFlags(playerIds);
+    if (returningHumans.length > 0) {
+      this.waitingQueue.unshift(...returningHumans);
+    }
+
+    for (const accountId of playerIds) {
+      if (this._isAiBot(accountId)) continue;
+      this._sendTo(accountId, {
+        type: 'error',
+        message,
+      });
+    }
+    this._broadcastQueueState();
+  }
+
   async _startMatch(playerIds: string[], matchId: string): Promise<void> {
     const aiAssisted = playerIds.some((id) => this._isAiBot(id));
-    const includeOpenText =
-      !aiAssisted && this._openTextPromptsEnabled() && !!this.env.AI;
-    const prompts = selectPromptsForMatch(TOTAL_GAMES, { includeOpenText });
+    if (!this._openTextPromptsEnabled()) {
+      this._failMatchStart(
+        playerIds,
+        'Public matches are unavailable until open-text prompts are enabled',
+      );
+      return;
+    }
+    if (aiAssisted) {
+      this._failMatchStart(
+        playerIds,
+        'AI-assisted matches are unavailable with the current mixed prompt catalog',
+      );
+      return;
+    }
+
+    let prompts: SchellingPrompt[];
+    try {
+      prompts = selectPromptsForMatch(TOTAL_GAMES, { includeOpenText: true });
+    } catch (error) {
+      this._failMatchStart(
+        playerIds,
+        (error as Error).message || 'Unable to start a public match',
+      );
+      return;
+    }
 
     const playersMap = new Map<string, WorkerPlayerState>();
     for (const accountId of playerIds) {
@@ -845,6 +874,7 @@ export class GameRoom {
       commitTimer: null,
       revealTimer: null,
       resultsTimer: null,
+      normalizingInFlight: false,
       lastGameResult: null,
       aiAssisted,
     };
@@ -903,6 +933,7 @@ export class GameRoom {
     match.currentGame = nextGame;
     match.phaseEnteredAt = Date.now();
     match.lastGameResult = null;
+    match.normalizingInFlight = false;
 
     // Reset per-game player state
     for (const p of match.players.values()) {
@@ -954,20 +985,60 @@ export class GameRoom {
 
     match.revealTimer = setTimeout(() => {
       match.revealTimer = null;
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
     }, REVEAL_DURATION * 1000);
 
     this._autoRevealAiBots(match);
   }
 
-  async _finalizeGame(match: WorkerMatchState): Promise<void> {
+  _completeRevealPhase(match: WorkerMatchState): void {
+    const prompt = this._getPromptForGame(match, match.currentGame);
+    if (prompt.type === 'open_text') {
+      this._startNormalizingPhase(match);
+      return;
+    }
+
+    this._waitUntil(
+      this._finalizeGame(match),
+      `finalize game ${match.currentGame} for ${match.matchId}`,
+    );
+  }
+
+  _startNormalizingPhase(match: WorkerMatchState): void {
     if (match.revealTimer) {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
+    if (match.normalizingInFlight) {
+      return;
+    }
+
+    match.phase = 'normalizing';
+    match.phaseEnteredAt = Date.now();
+    match.normalizingInFlight = true;
+
+    this._checkpointMatch(match);
+    this._broadcastToMatch(match, {
+      type: 'phase_change',
+      phase: 'normalizing',
+      status: OPEN_TEXT_NORMALIZING_STATUS,
+    });
+
+    this._waitUntil(
+      this._normalizeAndFinalizeOpenTextGame(match),
+      `normalize game ${match.currentGame} for ${match.matchId}`,
+    );
+  }
+
+  async _finalizeGame(
+    match: WorkerMatchState,
+    normalizationRun: NormalizationRun | null = null,
+  ): Promise<void> {
+    if (match.revealTimer) {
+      clearTimeout(match.revealTimer);
+      match.revealTimer = null;
+    }
+    match.normalizingInFlight = false;
     const prompt = this._getPromptForGame(match, match.currentGame);
 
     match.phase = 'results';
@@ -1009,53 +1080,37 @@ export class GameRoom {
       };
     });
 
-    let normalizationRun: NormalizationRun = {
-      runId: null,
-      mode: null,
-      verdicts: new Map(),
-      model: null,
-      normalizerPrompt: null,
-      requestJson: null,
-      responseJson: null,
-    };
-
+    let result: GameResult;
     if (prompt.type === 'open_text') {
-      const normalizedInputs = [
-        ...new Set(
-          settlementPlayers
-            .filter((player) => player.validReveal)
-            .map((player) => player.normalizedRevealText)
-            .filter((value): value is string => !!value),
-        ),
-      ].sort();
-
-      normalizationRun = await this._normalizeOpenTextReveals(
-        prompt,
-        normalizedInputs,
-      );
-
-      for (const player of settlementPlayers) {
-        if (!player.validReveal || !player.normalizedRevealText) continue;
-        const verdict =
-          normalizationRun.verdicts.get(player.normalizedRevealText) || null;
-        if (verdict) {
-          player.bucketKey = verdict.bucketKey;
-          player.bucketLabel = verdict.bucketLabel;
-        } else {
-          player.bucketKey = player.normalizedRevealText;
-          player.bucketLabel = player.normalizedRevealText;
-        }
+      if (!normalizationRun) {
+        throw new Error('Open-text settlement requires a normalization run');
       }
+
+      if (normalizationRun.mode === 'llm_failed') {
+        result = voidGame(settlementPlayers, 'open_text_normalization_failed');
+      } else {
+        for (const player of settlementPlayers) {
+          if (!player.validReveal || !player.normalizedRevealText) continue;
+          const verdict =
+            normalizationRun.verdicts.get(player.normalizedRevealText) || null;
+          if (verdict) {
+            player.bucketKey = verdict.bucketKey;
+            player.bucketLabel = verdict.bucketLabel;
+          }
+        }
+        result = settleGame(
+          settlementPlayers,
+          prompt,
+          normalizationRun.mode === 'llm' ? 'llm' : null,
+        );
+      }
+    } else {
+      result = settleGame(settlementPlayers, prompt, null);
     }
 
-    const settledResult = settleGame(
-      settlementPlayers,
-      prompt,
-      prompt.type === 'open_text' ? normalizationRun.mode : null,
-    );
-    const result: GameResult = match.aiAssisted
-      ? neutralizeAiAssistedResult(settledResult)
-      : settledResult;
+    if (match.aiAssisted) {
+      result = neutralizeAiAssistedResult(result);
+    }
 
     // Apply balance changes to in-memory state (always needed for correct broadcast)
     for (const pr of result.players) {
@@ -1077,7 +1132,7 @@ export class GameRoom {
       const stmts: D1PreparedStatement[] = [];
       const now = new Date().toISOString();
 
-      if (prompt.type === 'open_text' && normalizationRun.runId) {
+      if (prompt.type === 'open_text' && normalizationRun?.runId) {
         stmts.push(
           this.env.DB.prepare(
             'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1160,7 +1215,7 @@ export class GameRoom {
                 'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
                 'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
                 'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             ).bind(
               match.matchId,
               match.currentGame,
@@ -1174,7 +1229,7 @@ export class GameRoom {
               pr.revealedBucketKey,
               pr.revealedBucketLabel,
               result.normalizationMode,
-              normalizationRun.runId,
+              normalizationRun?.runId ?? null,
               pr.wonGame ? 1 : 0,
               pr.earnsCoordinationCredit ? 1 : 0,
               pr.antePaid,
@@ -1636,43 +1691,56 @@ export class GameRoom {
     return null;
   }
 
-  _buildFallbackNormalizationRun(normalizedInputs: string[]): NormalizationRun {
+  _buildEmptyNormalizationRun(): NormalizationRun {
     return {
       runId: null,
-      mode: 'fallback_exact',
-      verdicts: new Map(
-        normalizedInputs.map((normalizedInputText) => [
-          normalizedInputText,
-          {
-            normalizedInputText,
-            bucketKey: normalizedInputText,
-            bucketLabel: normalizedInputText,
-          },
-        ]),
-      ),
+      mode: null,
+      verdicts: new Map(),
       model: null,
       normalizerPrompt: null,
       requestJson: null,
       responseJson: null,
+      failureReason: null,
     };
   }
 
   _buildOpenTextNormalizationPrompt(
-    prompt: SchellingPrompt,
-    normalizedInputs: string[],
+    prompt: OpenTextPrompt,
+    candidates: NormalizationCandidate[],
   ): string {
+    const answerSpecKind = prompt.answerSpec?.kind || 'free_text';
+    const exampleLines =
+      prompt.canonicalExamples && prompt.canonicalExamples.length > 0
+        ? [
+            '',
+            'Canonical examples for this prompt:',
+            ...prompt.canonicalExamples.map(
+              (example, index) => `${index + 1}. ${example}`,
+            ),
+          ]
+        : [];
+
     return [
       'You are normalizing open-text answers for a Schelling coordination game.',
-      'Merge only clearly identical referents or spelling, casing, punctuation, and whitespace variants.',
-      'Do not merge nearby but distinct landmarks, concepts, or categories.',
-      'Return one verdict for each input string exactly once.',
+      'Your job is to decide when players are signaling the same underlying answer.',
+      'Merge only when the intended answer is genuinely the same.',
+      'You may merge spelling variants, abbreviations, suit symbols, numeral-vs-word forms, and standard aliases.',
+      'Do not merge nearby-but-different places, categories, concepts, or objects.',
+      'Return one verdict for each normalizedInputText exactly once.',
       '',
       `Game prompt: ${prompt.text}`,
-      'Unique normalized player answers:',
-      ...normalizedInputs.map((input, index) => `${index + 1}. ${input}`),
+      `Answer spec: ${answerSpecKind}`,
+      ...exampleLines,
       '',
-      'For each input, choose a short canonical bucketLabel that humans can read in results.',
-      'If two inputs are not clearly the same referent, keep them in separate buckets.',
+      'Unique normalized player answers:',
+      ...candidates.map(
+        (candidate, index) =>
+          `${index + 1}. normalizedInputText="${candidate.normalizedInputText}" | rawAnswerText="${candidate.rawAnswerText}" | canonicalCandidate="${candidate.canonicalCandidate}" | bucketLabelCandidate="${candidate.bucketLabelCandidate}"`,
+      ),
+      '',
+      'For each entry, choose a short human-readable bucketLabel.',
+      'If canonicalCandidate or bucketLabelCandidate already captures the intended answer, prefer it.',
+      'If two inputs are not clearly the same intended answer, keep them in separate buckets.',
     ].join('\n');
   }
 
@@ -1683,7 +1751,7 @@ export class GameRoom {
 
   _parseNormalizationVerdicts(
     output: unknown,
-    normalizedInputs: string[],
+    candidates: NormalizationCandidate[],
   ): Map<string, NormalizationVerdict> | null {
     const responseText = this._extractAiResponseText(output);
     if (!responseText) {
@@ -1701,7 +1769,9 @@ export class GameRoom {
         return null;
       }
 
-      const expectedInputs = new Set(normalizedInputs);
+      const expectedInputs = new Set(
+        candidates.map((candidate) => candidate.normalizedInputText),
+      );
       const verdicts = new Map<string, NormalizationVerdict>();
 
       for (const verdict of parsed.verdicts) {
@@ -1750,29 +1820,74 @@ export class GameRoom {
     }
   }
 
-  async _normalizeOpenTextReveals(
-    prompt: SchellingPrompt,
-    normalizedInputs: string[],
-  ): Promise<NormalizationRun> {
-    if (normalizedInputs.length === 0) {
-      return {
-        runId: null,
-        mode: null,
-        verdicts: new Map(),
-        model: null,
-        normalizerPrompt: null,
-        requestJson: null,
-        responseJson: null,
-      };
+  _buildFailedNormalizationRun(
+    runId: string,
+    model: string,
+    normalizerPrompt: string,
+    requestPayload: Record<string, unknown>,
+    attemptLog: unknown[],
+    failureReason: string,
+  ): NormalizationRun {
+    return {
+      runId,
+      mode: 'llm_failed',
+      verdicts: new Map(),
+      model,
+      normalizerPrompt,
+      requestJson: JSON.stringify({
+        request: requestPayload,
+        attempts: attemptLog,
+      }),
+      responseJson: JSON.stringify({
+        attempts: attemptLog,
+        failureReason,
+      }),
+      failureReason,
+    };
+  }
+
+  _collectOpenTextNormalizationCandidates(
+    match: WorkerMatchState,
+    prompt: OpenTextPrompt,
+  ): NormalizationCandidate[] {
+    const candidatesByNormalizedInput = new Map<
+      string,
+      NormalizationCandidate
+    >();
+
+    for (const player of match.players.values()) {
+      const validReveal =
+        player.committed && player.revealed && !player.forfeited;
+      if (!validReveal || player.answerText === null) continue;
+      const canonical = canonicalizeOpenTextAnswer(player.answerText, prompt);
+      if (!canonical) continue;
+      if (candidatesByNormalizedInput.has(canonical.normalizedRevealText)) {
+        continue;
+      }
+      candidatesByNormalizedInput.set(canonical.normalizedRevealText, {
+        normalizedInputText: canonical.normalizedRevealText,
+        rawAnswerText: player.answerText,
+        canonicalCandidate: canonical.canonicalCandidate,
+        bucketLabelCandidate: canonical.bucketLabelCandidate,
+      });
     }
 
-    if (!this.env.AI) {
-      return this._buildFallbackNormalizationRun(normalizedInputs);
+    return [...candidatesByNormalizedInput.values()].sort((left, right) =>
+      left.normalizedInputText.localeCompare(right.normalizedInputText),
+    );
+  }
+
+  async _normalizeOpenTextReveals(
+    prompt: OpenTextPrompt,
+    candidates: NormalizationCandidate[],
+  ): Promise<NormalizationRun> {
+    if (candidates.length === 0) {
+      return this._buildEmptyNormalizationRun();
     }
 
     const normalizerPrompt = this._buildOpenTextNormalizationPrompt(
       prompt,
-      normalizedInputs,
+      candidates,
     );
     const model = this._getOpenTextNormalizerModel();
     const requestPayload = {
@@ -1784,8 +1899,8 @@ export class GameRoom {
         properties: {
           verdicts: {
             type: 'array',
-            minItems: normalizedInputs.length,
-            maxItems: normalizedInputs.length,
+            minItems: candidates.length,
+            maxItems: candidates.length,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -1801,39 +1916,108 @@ export class GameRoom {
       max_tokens: 512,
       temperature: 0,
     };
+    const runId = crypto.randomUUID();
+    const attemptLog: Array<Record<string, unknown>> = [];
 
-    try {
-      const output = await Promise.race([
-        this.env.AI.run(model, requestPayload),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error('Open-text normalization timed out')),
-            this._getOpenTextNormalizerTimeoutMs(),
-          );
-        }),
-      ]);
+    for (
+      let attemptIndex = 0;
+      attemptIndex <= OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS.length;
+      attemptIndex += 1
+    ) {
+      const attemptNumber = attemptIndex + 1;
 
-      const verdicts = this._parseNormalizationVerdicts(
-        output,
-        normalizedInputs,
-      );
-      if (!verdicts) {
-        return this._buildFallbackNormalizationRun(normalizedInputs);
+      try {
+        if (!this.env.AI) {
+          throw new Error('Workers AI binding unavailable');
+        }
+
+        const output = await Promise.race([
+          this.env.AI.run(model, requestPayload),
+          new Promise<never>((_, reject) => {
+            setTimeout(
+              () => reject(new Error('Open-text normalization timed out')),
+              this._getOpenTextNormalizerTimeoutMs(),
+            );
+          }),
+        ]);
+
+        const responseText =
+          this._extractAiResponseText(output) ?? JSON.stringify(output);
+        const verdicts = this._parseNormalizationVerdicts(output, candidates);
+        if (verdicts) {
+          attemptLog.push({
+            attempt: attemptNumber,
+            status: 'success',
+            responseText,
+          });
+          return {
+            runId,
+            mode: 'llm',
+            verdicts,
+            model,
+            normalizerPrompt,
+            requestJson: JSON.stringify({
+              request: requestPayload,
+              attempts: attemptLog,
+            }),
+            responseJson: JSON.stringify({
+              attempts: attemptLog,
+              finalResponseText: responseText,
+            }),
+            failureReason: null,
+          };
+        }
+
+        attemptLog.push({
+          attempt: attemptNumber,
+          status: 'invalid_schema',
+          responseText,
+        });
+      } catch (error) {
+        console.error('Workers AI open-text normalization failed', error);
+        attemptLog.push({
+          attempt: attemptNumber,
+          status: 'error',
+          error: (error as Error).message,
+        });
       }
 
-      return {
-        runId: crypto.randomUUID(),
-        mode: 'llm',
-        verdicts,
-        model,
-        normalizerPrompt,
-        requestJson: JSON.stringify(requestPayload),
-        responseJson:
-          this._extractAiResponseText(output) ?? JSON.stringify(output),
-      };
-    } catch (error) {
-      console.error('Workers AI open-text normalization failed', error);
-      return this._buildFallbackNormalizationRun(normalizedInputs);
+      const delayMs =
+        OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS[attemptIndex] ?? null;
+      if (delayMs !== null) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, delayMs);
+        });
+      }
+    }
+
+    return this._buildFailedNormalizationRun(
+      runId,
+      model,
+      normalizerPrompt,
+      requestPayload,
+      attemptLog,
+      'open_text_normalization_failed',
+    );
+  }
+
+  async _normalizeAndFinalizeOpenTextGame(
+    match: WorkerMatchState,
+  ): Promise<void> {
+    const prompt = this._getPromptForGame(match, match.currentGame);
+    if (prompt.type !== 'open_text') {
+      match.normalizingInFlight = false;
+      return;
+    }
+
+    try {
+      const normalizationRun = await this._normalizeOpenTextReveals(
+        prompt,
+        this._collectOpenTextNormalizationCandidates(match, prompt),
+      );
+      await this._finalizeGame(match, normalizationRun);
+    } finally {
+      match.normalizingInFlight = false;
     }
   }
 
@@ -1867,10 +2051,7 @@ export class GameRoom {
     this._broadcastRevealStatus(match);
 
     if (this._allCommittedNonForfeitedRevealed(match)) {
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
       return true;
     }
 
@@ -2032,14 +2213,15 @@ export class GameRoom {
         salt,
       });
     } else {
-      if (!validateAnswerText(answerText, prompt.maxLength)) {
+      const canonicalAnswer = canonicalizeOpenTextAnswer(answerText, prompt);
+      if (!canonicalAnswer || !validateAnswerText(answerText, prompt)) {
         return this._sendTo(accountId, {
           type: 'error',
-          message: `Answer must be a single line between 1 and ${prompt.maxLength} characters`,
+          message: `Answer must match the prompt format and stay within ${prompt.maxLength} characters`,
         });
       }
 
-      const valid = verifyOpenTextCommit(answerText, salt, player.hash);
+      const valid = verifyOpenTextCommit(answerText, salt, player.hash, prompt);
       if (!valid) {
         return this._sendTo(accountId, {
           type: 'error',
@@ -2050,7 +2232,7 @@ export class GameRoom {
       player.revealed = true;
       player.optionIndex = null;
       player.answerText = answerText;
-      player.normalizedRevealText = normalizeRevealText(answerText);
+      player.normalizedRevealText = canonicalAnswer.normalizedRevealText;
       player.salt = salt;
       this._checkpointPlayerAction(match.matchId, accountId, {
         revealed: true,
@@ -2066,10 +2248,7 @@ export class GameRoom {
 
     // Auto-advance if all committed non-forfeited players revealed
     if (this._allCommittedNonForfeitedRevealed(match)) {
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
     }
   }
 
@@ -2287,10 +2466,7 @@ export class GameRoom {
       match.phase === 'reveal' &&
       this._allCommittedNonForfeitedRevealed(match)
     ) {
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
     }
   }
 
@@ -2506,6 +2682,7 @@ export class GameRoom {
         commitTimer: null,
         revealTimer: null,
         resultsTimer: null,
+        normalizingInFlight: false,
         lastGameResult: rm.lastGameResult,
       });
     }
@@ -2539,20 +2716,20 @@ export class GameRoom {
         if (this._autoRevealAiBots(match)) {
           return;
         }
-        this._waitUntil(
-          this._finalizeGame(match),
-          `finalize game ${match.currentGame} for ${match.matchId}`,
-        );
+        this._completeRevealPhase(match);
       } else {
         match.revealTimer = setTimeout(() => {
           match.revealTimer = null;
-          this._waitUntil(
-            this._finalizeGame(match),
-            `finalize game ${match.currentGame} for ${match.matchId}`,
-          );
+          this._completeRevealPhase(match);
         }, remaining);
         this._autoRevealAiBots(match);
       }
+    } else if (match.phase === 'normalizing' && !match.normalizingInFlight) {
+      match.normalizingInFlight = true;
+      this._waitUntil(
+        this._normalizeAndFinalizeOpenTextGame(match),
+        `resume normalization for game ${match.currentGame} in ${match.matchId}`,
+      );
     } else if (match.phase === 'results' && !match.resultsTimer) {
       const remaining = Math.max(0, RESULTS_DURATION * 1000 - elapsed);
       if (remaining <= 0) {
@@ -2661,6 +2838,7 @@ export class GameRoom {
     if (
       match.phase === 'commit' ||
       match.phase === 'reveal' ||
+      match.phase === 'normalizing' ||
       match.phase === 'results'
     ) {
       const prompt = this._getPromptForGame(match, match.currentGame);
@@ -2697,6 +2875,12 @@ export class GameRoom {
           phase: 'reveal',
           revealDuration: revealRemaining,
         });
+      } else if (match.phase === 'normalizing') {
+        this._sendTo(accountId, {
+          type: 'phase_change',
+          phase: 'normalizing',
+          status: OPEN_TEXT_NORMALIZING_STATUS,
+        });
       }
 
       // Send commit status
@@ -2709,7 +2893,11 @@ export class GameRoom {
       });
 
       // Send reveal status if in reveal or results
-      if (match.phase === 'reveal' || match.phase === 'results') {
+      if (
+        match.phase === 'reveal' ||
+        match.phase === 'normalizing' ||
+        match.phase === 'results'
+      ) {
         this._sendTo(accountId, {
           type: 'reveal_status',
           revealed: [...match.players.values()].map((p) => ({

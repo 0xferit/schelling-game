@@ -101,11 +101,12 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | --- | --- | --- | --- |
 | `DB` | Yes | `wrangler.toml` | D1 database binding for accounts, stats, auth challenges, vote/export data, and other persistent state. |
 | `GAME_ROOM` | Yes | `wrangler.toml` | Durable Object namespace for the singleton `GameRoom` lobby/match coordinator. |
-| `AI` | Optional | `wrangler.toml` | Workers AI binding used by the optional queue backfill bot. |
+| `AI` | Optional | `wrangler.toml` | Workers AI binding used for open-text answer normalization. |
 | `ADMIN_KEY` | Optional | Worker secret/var | Protects admin-only HTTP routes such as leaderboard eligibility and CSV export. |
-| `AI_BOT_ENABLED` | Optional | `wrangler.toml` var | Enables or disables AI queue backfill. |
+| `AI_BOT_ENABLED` | Optional | `wrangler.toml` var | Legacy flag for AI queue backfill. Public mixed-mode matches now disable bot backfill even if this is enabled. |
 | `AI_BOT_MODELS` | Optional | `wrangler.toml` var | Comma-separated Workers AI model list for backfill bot selection. |
 | `AI_BOT_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for Workers AI bot decisions. |
+| `OPEN_TEXT_PROMPTS_ENABLED` | Required for public play | `wrangler.toml` var | Enables the canonical mixed prompt catalog. If disabled, public matches will not start. |
 | `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for staging and production operations. |
 | `STAGING_BASE_URL` | Required only for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed staging Worker that the smoke script targets. |
 
