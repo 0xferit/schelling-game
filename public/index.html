@@ -595,6 +595,12 @@ section{padding:6rem 2rem}
   margin-bottom:.4rem;
 }
 .learn-app p{color:var(--muted);font-size:.95rem}
+.learn-app a{
+  color:var(--accent);
+  text-decoration:none;
+  transition:color .2s;
+}
+.learn-app a:hover{color:var(--accent2)}
 
 .learn-ethereum{
   position:relative;
@@ -1053,17 +1059,17 @@ footer{
         <div class="learn-app reveal reveal-delay-1">
           <div class="learn-app-label">Oracles</div>
           <h3>Decentralized Price Feeds</h3>
-          <p>Report what you think most others will report. When honest reporting is the Nash equilibrium, truth emerges without a trusted data provider.</p>
+          <p>Example: a derivatives protocol needs the ETH/USD price at exactly 4:00 PM UTC to settle expiring contracts. Independent reporters submit the price they observed, and the coordinated result becomes the onchain settlement value, as in <a href="https://docs.uma.xyz/protocol-overview/how-does-umas-oracle-work" target="_blank" rel="noopener noreferrer">UMA's oracle and DVM</a>.</p>
         </div>
         <div class="learn-app reveal reveal-delay-2">
           <div class="learn-app-label">Prediction Markets</div>
           <h3>Outcome Resolution</h3>
-          <p>Resolve disputed outcomes without a judge. Reporters independently evaluate evidence and converge on the correct result. Augur pioneered this on Ethereum.</p>
+          <p>Example: a market asks whether a merger closed before the deadline. Reporters review the filings, submit yes or no independently, and the majority answer resolves the market without a central judge. This is the same reporting and dispute pattern used by <a href="https://augur.net/learn/fork/disputes-and-bonds/" target="_blank" rel="noopener noreferrer">Augur</a>.</p>
         </div>
         <div class="learn-app reveal reveal-delay-3">
           <div class="learn-app-label">Justice</div>
           <h3>Decentralized Courts</h3>
-          <p>Jurors independently evaluate cases and are rewarded for agreeing with the majority verdict. Kleros applies this to real-world dispute arbitration.</p>
+          <p>Example: a freelancer and client dispute whether a milestone was actually delivered. Jurors review the contract, messages, and submitted work in isolation, then vote; jurors who align with the majority are rewarded. <a href="https://docs.kleros.io/products/escrow" target="_blank" rel="noopener noreferrer">Kleros Escrow</a> applies this model to real dispute resolution.</p>
         </div>
       </div>
     </div>
