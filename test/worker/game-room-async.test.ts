@@ -1056,7 +1056,7 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('does not inject bots while waiting for the third human', () => {
+  it('does not inject bots while waiting for the third human', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
@@ -1066,8 +1066,8 @@ describe('GameRoom async task tracking', () => {
     room.connections.set('acct-1', createConnectionState('Alice'));
     room.connections.set('acct-2', createConnectionState('Bob'));
 
-    room._handleJoinQueue('acct-1');
-    room._handleJoinQueue('acct-2');
+    await room._handleJoinQueue('acct-1');
+    await room._handleJoinQueue('acct-2');
 
     expect(room.formingMatch).toBeNull();
     expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
@@ -1836,16 +1836,7 @@ describe('GameRoom async task tracking', () => {
     const match = createMatch();
     match.phase = 'settling';
     match.currentGame = 1;
-    match.prompts = [
-      {
-        id: 101,
-        text: 'Name the most iconic city.',
-        type: 'open_text',
-        category: 'culture',
-        maxLength: 64,
-        placeholder: 'e.g. Paris',
-      },
-    ];
+    match.prompts = [CITY_PROMPT];
     match.players.set('acct-1', {
       accountId: 'acct-1',
       displayName: 'Alice',
@@ -1854,7 +1845,7 @@ describe('GameRoom async task tracking', () => {
       currentBalance: 5_000,
       committed: true,
       revealed: true,
-      hash: createOpenTextCommitHash('Paris', 'a'.repeat(64)),
+      hash: createOpenTextCommitHash('Paris', 'a'.repeat(64), CITY_PROMPT),
       optionIndex: null,
       answerText: 'Paris',
       normalizedRevealText: 'paris',
@@ -1873,7 +1864,7 @@ describe('GameRoom async task tracking', () => {
       currentBalance: 5_000,
       committed: true,
       revealed: true,
-      hash: createOpenTextCommitHash('paris', 'b'.repeat(64)),
+      hash: createOpenTextCommitHash('paris', 'b'.repeat(64), CITY_PROMPT),
       optionIndex: null,
       answerText: 'paris',
       normalizedRevealText: 'paris',
@@ -1892,7 +1883,7 @@ describe('GameRoom async task tracking', () => {
       currentBalance: 5_000,
       committed: true,
       revealed: true,
-      hash: createOpenTextCommitHash('London', 'c'.repeat(64)),
+      hash: createOpenTextCommitHash('London', 'c'.repeat(64), CITY_PROMPT),
       optionIndex: null,
       answerText: 'London',
       normalizedRevealText: 'london',
@@ -1984,16 +1975,7 @@ describe('GameRoom async task tracking', () => {
       const match = createMatch();
       match.phase = 'settling';
       match.currentGame = 1;
-      match.prompts = [
-        {
-          id: 101,
-          text: 'Name the most iconic city.',
-          type: 'open_text',
-          category: 'culture',
-          maxLength: 64,
-          placeholder: 'e.g. Paris',
-        },
-      ];
+      match.prompts = [CITY_PROMPT];
       match.players.set('acct-1', {
         accountId: 'acct-1',
         displayName: 'Alice',
@@ -2002,7 +1984,7 @@ describe('GameRoom async task tracking', () => {
         currentBalance: 5_000,
         committed: true,
         revealed: true,
-        hash: createOpenTextCommitHash('Paris', 'a'.repeat(64)),
+        hash: createOpenTextCommitHash('Paris', 'a'.repeat(64), CITY_PROMPT),
         optionIndex: null,
         answerText: 'Paris',
         normalizedRevealText: 'paris',

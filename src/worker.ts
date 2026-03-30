@@ -33,7 +33,7 @@ import type {
   QueueStateMessage,
   ServerMessage,
 } from './types/messages';
-import type { Env } from './types/worker-env';
+import type { AiBinding, Env } from './types/worker-env';
 import { handleHttpRequest } from './worker/httpHandler';
 import type {
   PersistedMatchFields,
@@ -594,6 +594,15 @@ export class GameRoom {
       return DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS;
     }
     return parsed;
+  }
+
+  _getAiBinding(): AiBinding | null {
+    try {
+      return this.env.AI ?? null;
+    } catch (error) {
+      console.error('Workers AI binding access failed', error);
+      return null;
+    }
   }
 
   _getDisplayName(accountId: string): string {
@@ -1306,7 +1315,10 @@ export class GameRoom {
 
       if (prompt.type === 'open_text') {
         if (effectiveNormalizationRun.mode === 'llm_failed') {
-          result = voidGame(settlementPlayers, 'open_text_normalization_failed');
+          result = voidGame(
+            settlementPlayers,
+            'open_text_normalization_failed',
+          );
         } else {
           for (const player of settlementPlayers) {
             if (!player.validReveal || !player.normalizedRevealText) continue;
@@ -1329,9 +1341,7 @@ export class GameRoom {
         result = settleGame(settlementPlayers, prompt, null);
       }
 
-      result = match.aiAssisted
-        ? neutralizeAiAssistedResult(result)
-        : result;
+      result = match.aiAssisted ? neutralizeAiAssistedResult(result) : result;
 
       const projectedBalances = new Map<string, number>();
       const shouldProjectSettledBalances =
@@ -1805,7 +1815,8 @@ export class GameRoom {
       throw new Error('AI bot selection requires a select prompt');
     }
 
-    if (!this.env.AI) {
+    const ai = this._getAiBinding();
+    if (!ai) {
       return this._pickAiBotFallbackOption(prompt);
     }
 
@@ -1820,7 +1831,7 @@ export class GameRoom {
 
     try {
       const output = await Promise.race([
-        this.env.AI.run(this._getAiBotModel(accountId), {
+        ai.run(this._getAiBotModel(accountId), {
           prompt: this._buildAiBotPrompt(prompt),
           guided_json: {
             type: 'object',
@@ -2202,12 +2213,13 @@ export class GameRoom {
       const attemptNumber = attemptIndex + 1;
 
       try {
-        if (!this.env.AI) {
+        const ai = this._getAiBinding();
+        if (!ai) {
           throw new Error('Workers AI binding unavailable');
         }
 
         const output = await Promise.race([
-          this.env.AI.run(model, requestPayload),
+          ai.run(model, requestPayload),
           new Promise<never>((_, reject) => {
             setTimeout(
               () => reject(new Error('Open-text normalization timed out')),
