@@ -8,6 +8,7 @@ import {
   MIN_ALLOWED_BALANCE,
   RESULTS_DURATION,
 } from '../../src/domain/constants';
+import { getPromptRecordById } from '../../src/domain/prompts';
 import type { SchellingPrompt } from '../../src/types/domain';
 import type {
   GameResultMessage,
@@ -1472,6 +1473,7 @@ describe('GameRoom async task tracking', () => {
       AI_BOT_ENABLED: 'true',
       AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
+      AI: { run: vi.fn() },
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -1505,6 +1507,7 @@ describe('GameRoom async task tracking', () => {
       AI_BOT_ENABLED: 'true',
       AI_BOT_MODELS: ['@cf/test/model-a', '@cf/test/model-b'].join(','),
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
+      AI: { run: vi.fn() },
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -1531,6 +1534,7 @@ describe('GameRoom async task tracking', () => {
       AI_BOT_ENABLED: 'true',
       AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
+      AI: { run: vi.fn() },
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -1562,6 +1566,7 @@ describe('GameRoom async task tracking', () => {
       AI_BOT_ENABLED: 'true',
       AI_BOT_MODELS: '@cf/test/model-a',
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
+      AI: { run: vi.fn() },
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -1591,6 +1596,7 @@ describe('GameRoom async task tracking', () => {
       AI_BOT_ENABLED: 'true',
       AI_BOT_MODELS: ['@cf/test/model-a', '@cf/test/model-b'].join(','),
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
+      AI: { run: vi.fn() },
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
 
@@ -1801,13 +1807,11 @@ describe('GameRoom async task tracking', () => {
 
   it('uses a plain backfill prompt that biases toward common answers without chain-of-thought coaching', () => {
     const { room } = createRoom();
-    const prompt = room._buildAiBotPrompt({
-      id: 1,
-      text: 'Pick a color.',
-      type: 'select',
-      category: 'aesthetics',
-      options: ['Red', 'Blue', 'Green'],
-    });
+    const record = getPromptRecordById(1002);
+    if (!record) {
+      throw new Error('Expected canonical number prompt');
+    }
+    const prompt = room._buildAiBotPrompt(record.prompt);
 
     expect(prompt).toContain('most human players');
     expect(prompt).toContain(
@@ -1816,8 +1820,64 @@ describe('GameRoom async task tracking', () => {
     expect(prompt).toContain(
       'Prefer the most common, boring, mainstream answer',
     );
+    expect(prompt).toContain('Focality hints:');
+    expect(prompt).toContain(
+      'Prefer a memorable number that many people pick immediately',
+    );
     expect(prompt).not.toContain('Think step by step');
-    expect(prompt).not.toContain('Round numbers over odd ones');
+    expect(prompt).not.toContain('Chain-of-thought');
+  });
+
+  it('does not commit a synthetic AI player when the model output is unusable', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      response: 'not valid json',
+    });
+    const { room, waitUntil } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_TIMEOUT_MS: '250',
+      AI: {
+        run: aiRun,
+      },
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastCommitStatus').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.currentGame = 0;
+    match.phase = 'starting';
+
+    const bot = {
+      accountId: 'ai-bot:0:test',
+      displayName: 'AI Backfill',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    match.players.set(bot.accountId, bot);
+
+    room._startCommitPhase(match);
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected AI bot waitUntil call')[0];
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(bot.committed).toBe(false);
+    expect(bot.hash).toBeNull();
+    expect(bot.salt).toBeNull();
+
+    if (match.commitTimer) clearTimeout(match.commitTimer);
   });
 
   it('does not persist AI bot rows into vote_logs', async () => {
@@ -3279,5 +3339,23 @@ describe('GameRoom async task tracking', () => {
       type: 'queue_state',
       status: 'idle',
     });
+  });
+
+  it('does not backfill when the AI binding is unavailable', async () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+
+    await room._handleJoinQueue('acct-1');
+    await room._handleJoinQueue('acct-2');
+
+    expect(room.formingMatch).toBeNull();
+    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
   });
 });
