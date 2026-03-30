@@ -37,6 +37,7 @@ function createRoom(envOverrides: Partial<Env> = {}) {
   const state = {
     waitUntil,
     storage: {
+      transactionSync: vi.fn((fn: () => unknown) => fn()),
       sql: {
         exec: vi.fn((query: string) => {
           if (query.includes('PRAGMA table_info(match_checkpoints)')) {
