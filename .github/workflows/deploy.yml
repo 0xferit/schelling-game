@@ -34,4 +34,30 @@ jobs:
       - name: Deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler deploy
+        run: |
+          set -o pipefail
+
+          attempts=3
+          for attempt in $(seq 1 "$attempts"); do
+            log_file="$(mktemp)"
+            if npx wrangler deploy 2>&1 | tee "$log_file"; then
+              rm -f "$log_file"
+              exit 0
+            fi
+
+            if ! grep -q 'Service unavailable \[code: 7010\]' "$log_file"; then
+              rm -f "$log_file"
+              exit 1
+            fi
+
+            rm -f "$log_file"
+
+            if [ "$attempt" -eq "$attempts" ]; then
+              echo "wrangler deploy hit transient Cloudflare API 7010 after ${attempts} attempts" >&2
+              exit 1
+            fi
+
+            sleep_seconds=$((attempt * 10))
+            echo "Retrying wrangler deploy after transient Cloudflare API 7010 (${attempt}/${attempts}) in ${sleep_seconds}s..." >&2
+            sleep "$sleep_seconds"
+          done
