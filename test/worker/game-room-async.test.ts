@@ -1395,6 +1395,92 @@ describe('GameRoom async task tracking', () => {
     if (match.revealTimer) clearTimeout(match.revealTimer);
   });
 
+  it('commits and auto-reveals synthetic AI players for open-text prompts', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      response: '{"answerText":"Paris"}',
+    });
+    const { room, waitUntil } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_TIMEOUT_MS: '250',
+      AI: {
+        run: aiRun,
+      },
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastCommitStatus').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastRevealStatus').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.prompts = [CITY_PROMPT];
+    match.currentGame = 0;
+    match.phase = 'starting';
+
+    const human = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    const bot = {
+      accountId: 'ai-bot:0:test',
+      displayName: 'AI Backfill',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      answerText: null,
+      normalizedRevealText: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    match.players.set(human.accountId, human);
+    match.players.set(bot.accountId, bot);
+
+    room._startCommitPhase(match);
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected AI bot waitUntil call')[0];
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(bot.committed).toBe(true);
+    expect(bot.answerText).toBe('Paris');
+    expect(bot.hash).toBeTruthy();
+    expect(bot.salt).toBeTruthy();
+
+    human.committed = true;
+    human.hash = createOpenTextCommitHash(
+      'London',
+      'a'.repeat(64),
+      CITY_PROMPT,
+    );
+
+    room._startRevealPhase(match);
+
+    expect(bot.revealed).toBe(true);
+    expect(bot.normalizedRevealText).toBe('paris');
+
+    if (match.revealTimer) clearTimeout(match.revealTimer);
+  });
+
   it('uses a plain backfill prompt instead of coaching the model into stronger Schelling behavior', () => {
     const { room } = createRoom();
     const prompt = room._buildAiBotPrompt({

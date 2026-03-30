@@ -1,5 +1,6 @@
 import {
   createCommitHash,
+  createOpenTextCommitHash,
   validateAnswerText,
   validateHash,
   validateOptionIndex,
@@ -1746,52 +1747,97 @@ export class GameRoom {
     }
 
     const prompt = this._getPromptForGame(match, match.currentGame);
-    if (prompt.type !== 'select') {
-      player.pendingAiCommit = false;
-      return;
-    }
     const gameAtDispatch = match.currentGame;
 
     player.pendingAiCommit = true;
     try {
-      const optionIndex = await this._selectAiBotOption(
-        match,
-        prompt,
-        accountId,
-      );
-      if (
-        match.phase !== 'commit' ||
-        match.currentGame !== gameAtDispatch ||
-        player.forfeited ||
-        player.committed
-      ) {
-        return;
+      if (prompt.type === 'select') {
+        const optionIndex = await this._selectAiBotOption(
+          match,
+          prompt,
+          accountId,
+        );
+        if (
+          match.phase !== 'commit' ||
+          match.currentGame !== gameAtDispatch ||
+          player.forfeited ||
+          player.committed
+        ) {
+          return;
+        }
+
+        const safeOptionIndex = validateOptionIndex(
+          optionIndex,
+          prompt.options.length,
+        )
+          ? optionIndex
+          : this._pickAiBotFallbackOption(prompt);
+        const salt = this._createAiBotSalt();
+        const hash = createCommitHash(safeOptionIndex, salt);
+
+        player.committed = true;
+        player.hash = hash;
+        player.optionIndex = safeOptionIndex;
+        player.answerText = null;
+        player.normalizedRevealText = null;
+        player.salt = salt;
+        this._checkpointPlayerAction(match.matchId, accountId, {
+          committed: true,
+          hash,
+          optionIndex: safeOptionIndex,
+          answerText: null,
+          normalizedRevealText: null,
+          salt,
+        });
+      } else {
+        const answerText = await this._selectAiBotOpenTextAnswer(
+          match,
+          prompt,
+          accountId,
+        );
+        if (
+          match.phase !== 'commit' ||
+          match.currentGame !== gameAtDispatch ||
+          player.forfeited ||
+          player.committed
+        ) {
+          return;
+        }
+
+        const canonicalAnswer = canonicalizeOpenTextAnswer(answerText, prompt);
+        if (!canonicalAnswer) {
+          throw new Error('AI bot open-text answer failed canonicalization');
+        }
+        const salt = this._createAiBotSalt();
+        const hash = createOpenTextCommitHash(answerText, salt, prompt);
+
+        player.committed = true;
+        player.hash = hash;
+        player.optionIndex = null;
+        player.answerText = answerText;
+        player.normalizedRevealText = null;
+        player.salt = salt;
+        this._checkpointPlayerAction(match.matchId, accountId, {
+          committed: true,
+          hash,
+          optionIndex: null,
+          answerText,
+          normalizedRevealText: null,
+          salt,
+        });
       }
 
-      const safeOptionIndex = validateOptionIndex(
-        optionIndex,
-        prompt.options.length,
-      )
-        ? optionIndex
-        : this._pickAiBotFallbackOption(prompt);
-      const salt = this._createAiBotSalt();
-      const hash = createCommitHash(safeOptionIndex, salt);
+      if (
+        match.phase === 'commit' &&
+        match.currentGame === gameAtDispatch &&
+        match.players.get(accountId) === player &&
+        player.committed
+      ) {
+        this._broadcastCommitStatus(match);
 
-      player.committed = true;
-      player.hash = hash;
-      player.optionIndex = safeOptionIndex;
-      player.salt = salt;
-      this._checkpointPlayerAction(match.matchId, accountId, {
-        committed: true,
-        hash,
-        optionIndex: safeOptionIndex,
-        salt,
-      });
-
-      this._broadcastCommitStatus(match);
-
-      if (this._allNonForfeitedCommitted(match)) {
-        this._startRevealPhase(match);
+        if (this._allNonForfeitedCommitted(match)) {
+          this._startRevealPhase(match);
+        }
       }
     } finally {
       if (
@@ -1864,10 +1910,100 @@ export class GameRoom {
     return this._pickAiBotFallbackOption(prompt);
   }
 
+  async _selectAiBotOpenTextAnswer(
+    match: WorkerMatchState,
+    prompt: OpenTextPrompt,
+    accountId: string,
+  ): Promise<string> {
+    const ai = this._getAiBinding();
+    if (!ai) {
+      return this._pickAiBotFallbackAnswer(prompt);
+    }
+
+    const elapsedMs = Date.now() - match.phaseEnteredAt;
+    const remainingCommitMs =
+      COMMIT_DURATION * 1000 - elapsedMs - AI_BOT_COMMIT_BUFFER_MS;
+    const timeoutMs = Math.min(this._getAiBotTimeoutMs(), remainingCommitMs);
+
+    if (timeoutMs <= 0) {
+      return this._pickAiBotFallbackAnswer(prompt);
+    }
+
+    try {
+      const output = await Promise.race([
+        ai.run(this._getAiBotModel(accountId), {
+          prompt: this._buildAiBotPrompt(prompt),
+          guided_json: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['answerText'],
+            properties: {
+              answerText: {
+                type: 'string',
+                minLength: 1,
+                maxLength: prompt.maxLength,
+              },
+            },
+          },
+          max_tokens: 32,
+          temperature: 0,
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error('AI bot commit timed out')),
+            timeoutMs,
+          );
+        }),
+      ]);
+
+      const parsedAnswer = this._parseAiBotAnswerText(output, prompt);
+      if (parsedAnswer !== null) {
+        return parsedAnswer;
+      }
+    } catch (error) {
+      console.error('Workers AI bot inference failed', error);
+    }
+
+    return this._pickAiBotFallbackAnswer(prompt);
+  }
+
   _buildAiBotPrompt(prompt: SchellingPrompt): string {
     if (prompt.type !== 'select') {
-      throw new Error('AI bot prompt builder requires a select prompt');
+      const answerSpecLine = (() => {
+        switch (prompt.answerSpec.kind) {
+          case 'integer_range':
+            return `Answer with a whole number from ${prompt.answerSpec.min} to ${prompt.answerSpec.max}.`;
+          case 'playing_card':
+            return 'Answer with one playing card, such as "Ace of Spades" or "10 of Hearts".';
+          case 'single_word':
+            return 'Answer with exactly one word.';
+          default:
+            return 'Answer with one short text response.';
+        }
+      })();
+      const exampleLines =
+        prompt.canonicalExamples && prompt.canonicalExamples.length > 0
+          ? [
+              '',
+              'Valid examples:',
+              ...prompt.canonicalExamples.map((x) => `- ${x}`),
+            ]
+          : [];
+      return [
+        'You are filling one seat in a multiplayer coordination game.',
+        'Choose the answer you expect the most human players in this match to give.',
+        "Base the choice on an ordinary player's first instinct, not your personal preference.",
+        'Do not explain your reasoning.',
+        '',
+        `Game prompt: ${prompt.text}`,
+        answerSpecLine,
+        `Keep the answer within ${prompt.maxLength} characters.`,
+        ...exampleLines,
+        '',
+        'Respond with JSON: {"answerText": "<answer>"}',
+      ].join('\n');
     }
+
     const options = prompt.options
       .map((option, index) => `${index}: ${option}`)
       .join('\n');
@@ -1933,6 +2069,40 @@ export class GameRoom {
     return parsedIndex;
   }
 
+  _parseAiBotAnswerText(
+    output: unknown,
+    prompt: OpenTextPrompt,
+  ): string | null {
+    const response = this._extractAiResponseText(output);
+    if (!response) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(response) as { answerText?: unknown };
+      if (
+        validateAnswerText(parsed.answerText, prompt) &&
+        canonicalizeOpenTextAnswer(parsed.answerText, prompt)
+      ) {
+        return parsed.answerText;
+      }
+    } catch {}
+
+    const strippedResponse = response
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim()
+      .replace(/^"(.*)"$/s, '$1');
+    if (
+      validateAnswerText(strippedResponse, prompt) &&
+      canonicalizeOpenTextAnswer(strippedResponse, prompt)
+    ) {
+      return strippedResponse;
+    }
+
+    return null;
+  }
+
   // Heuristic fallback when Workers AI is unavailable or times out.
   // Only matches numeric-style option labels; for text labels like
   // "Heads"/"Tails" this falls through to the middle-index default.
@@ -1950,6 +2120,32 @@ export class GameRoom {
       }
     }
     return Math.floor(prompt.options.length / 2);
+  }
+
+  _pickAiBotFallbackAnswer(prompt: OpenTextPrompt): string {
+    for (const example of prompt.canonicalExamples || []) {
+      if (
+        validateAnswerText(example, prompt) &&
+        canonicalizeOpenTextAnswer(example, prompt)
+      ) {
+        return example;
+      }
+    }
+
+    switch (prompt.answerSpec.kind) {
+      case 'integer_range': {
+        const midpoint = Math.floor(
+          (prompt.answerSpec.min + prompt.answerSpec.max) / 2,
+        );
+        return String(midpoint);
+      }
+      case 'playing_card':
+        return 'Ace of Spades';
+      case 'single_word':
+        return 'love';
+      default:
+        return 'New York';
+    }
   }
 
   _createAiBotSalt(): string {
@@ -2307,24 +2503,53 @@ export class GameRoom {
 
   _autoRevealAiBots(match: WorkerMatchState): boolean {
     let anyRevealed = false;
+    const prompt = this._getPromptForGame(match, match.currentGame);
     for (const player of match.players.values()) {
       if (
         !this._isAiBot(player.accountId) ||
         player.forfeited ||
         !player.committed ||
         player.revealed ||
-        player.optionIndex === null ||
         !player.salt
       ) {
         continue;
       }
 
-      player.revealed = true;
-      this._checkpointPlayerAction(match.matchId, player.accountId, {
-        revealed: true,
-        optionIndex: player.optionIndex,
-        salt: player.salt,
-      });
+      if (prompt.type === 'select') {
+        if (player.optionIndex === null) {
+          continue;
+        }
+        player.revealed = true;
+        this._checkpointPlayerAction(match.matchId, player.accountId, {
+          revealed: true,
+          optionIndex: player.optionIndex,
+          answerText: null,
+          normalizedRevealText: null,
+          salt: player.salt,
+        });
+      } else {
+        if (!player.answerText) {
+          continue;
+        }
+        const canonicalAnswer = canonicalizeOpenTextAnswer(
+          player.answerText,
+          prompt,
+        );
+        if (!canonicalAnswer) {
+          continue;
+        }
+        player.revealed = true;
+        player.optionIndex = null;
+        player.normalizedRevealText = canonicalAnswer.normalizedRevealText;
+        this._checkpointPlayerAction(match.matchId, player.accountId, {
+          revealed: true,
+          optionIndex: null,
+          answerText: player.answerText,
+          normalizedRevealText: player.normalizedRevealText,
+          salt: player.salt,
+        });
+      }
+
       anyRevealed = true;
     }
 
