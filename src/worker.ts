@@ -2028,24 +2028,19 @@ export class GameRoom {
     if (prompt.type !== 'select') {
       return null;
     }
-    const response =
-      typeof output === 'object' &&
-      output !== null &&
-      'response' in output &&
-      typeof output.response === 'string'
-        ? output.response.trim()
-        : null;
+    const parsed = this._parseAiResponseObject(output);
+    if (
+      parsed &&
+      validateOptionIndex(parsed.optionIndex, prompt.options.length)
+    ) {
+      return parsed.optionIndex;
+    }
+
+    const response = this._extractAiResponseText(output);
 
     if (!response) {
       return null;
     }
-
-    try {
-      const parsed = JSON.parse(response) as { optionIndex?: unknown };
-      if (validateOptionIndex(parsed.optionIndex, prompt.options.length)) {
-        return parsed.optionIndex;
-      }
-    } catch {}
 
     // Defense-in-depth: guided_json should guarantee structured output,
     // but some models silently ignore the constraint. These branches
@@ -2073,20 +2068,19 @@ export class GameRoom {
     output: unknown,
     prompt: OpenTextPrompt,
   ): string | null {
+    const parsed = this._parseAiResponseObject(output);
+    if (
+      parsed &&
+      validateAnswerText(parsed.answerText, prompt) &&
+      canonicalizeOpenTextAnswer(parsed.answerText, prompt)
+    ) {
+      return parsed.answerText;
+    }
+
     const response = this._extractAiResponseText(output);
     if (!response) {
       return null;
     }
-
-    try {
-      const parsed = JSON.parse(response) as { answerText?: unknown };
-      if (
-        validateAnswerText(parsed.answerText, prompt) &&
-        canonicalizeOpenTextAnswer(parsed.answerText, prompt)
-      ) {
-        return parsed.answerText;
-      }
-    } catch {}
 
     const strippedResponse = response
       .replace(/^```(?:json)?\s*/i, '')
@@ -2156,17 +2150,67 @@ export class GameRoom {
   }
 
   _extractAiResponseText(output: unknown): string | null {
+    const responseValue = this._extractAiResponseValue(output);
+    if (typeof responseValue === 'string') {
+      return responseValue;
+    }
+    if (responseValue === null) {
+      return null;
+    }
+    try {
+      return JSON.stringify(responseValue);
+    } catch {
+      return null;
+    }
+  }
+
+  _extractAiResponseValue(output: unknown): unknown | null {
     if (typeof output === 'string') {
       return output.trim() || null;
     }
-    if (
-      typeof output === 'object' &&
-      output !== null &&
-      'response' in output &&
-      typeof output.response === 'string'
-    ) {
-      return output.response.trim() || null;
+    if (typeof output === 'object' && output !== null && 'response' in output) {
+      const response = output.response;
+      if (typeof response === 'string') {
+        return response.trim() || null;
+      }
+      if (response !== undefined && response !== null) {
+        return response;
+      }
     }
+    return null;
+  }
+
+  _parseAiResponseObject(output: unknown): Record<string, unknown> | null {
+    const responseValue = this._extractAiResponseValue(output);
+    if (!responseValue) {
+      return null;
+    }
+    if (typeof responseValue === 'object' && !Array.isArray(responseValue)) {
+      return responseValue as Record<string, unknown>;
+    }
+    if (typeof responseValue !== 'string') {
+      return null;
+    }
+
+    const strippedResponse = responseValue
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+    if (!strippedResponse) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(strippedResponse);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        !Array.isArray(parsed)
+      ) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {}
+
     return null;
   }
 
@@ -2232,71 +2276,62 @@ export class GameRoom {
     output: unknown,
     candidates: NormalizationCandidate[],
   ): Map<string, NormalizationVerdict> | null {
-    const responseText = this._extractAiResponseText(output);
-    if (!responseText) {
+    const parsed = this._parseAiResponseObject(output) as {
+      verdicts?: Array<{
+        normalizedInputText?: unknown;
+        bucketLabel?: unknown;
+      }>;
+    } | null;
+    if (!parsed || !Array.isArray(parsed.verdicts)) {
       return null;
     }
 
-    try {
-      const parsed = JSON.parse(responseText) as {
-        verdicts?: Array<{
-          normalizedInputText?: unknown;
-          bucketLabel?: unknown;
-        }>;
-      };
-      if (!Array.isArray(parsed.verdicts)) {
+    const expectedInputs = new Set(
+      candidates.map((candidate) => candidate.normalizedInputText),
+    );
+    const verdicts = new Map<string, NormalizationVerdict>();
+
+    for (const verdict of parsed.verdicts) {
+      if (
+        !verdict ||
+        typeof verdict.normalizedInputText !== 'string' ||
+        typeof verdict.bucketLabel !== 'string'
+      ) {
         return null;
       }
 
-      const expectedInputs = new Set(
-        candidates.map((candidate) => candidate.normalizedInputText),
-      );
-      const verdicts = new Map<string, NormalizationVerdict>();
+      const normalizedInputText = verdict.normalizedInputText.trim();
+      const bucketLabel = verdict.bucketLabel.trim();
+      const bucketKey = this._buildBucketKey(bucketLabel);
 
-      for (const verdict of parsed.verdicts) {
-        if (
-          !verdict ||
-          typeof verdict.normalizedInputText !== 'string' ||
-          typeof verdict.bucketLabel !== 'string'
-        ) {
-          return null;
-        }
-
-        const normalizedInputText = verdict.normalizedInputText.trim();
-        const bucketLabel = verdict.bucketLabel.trim();
-        const bucketKey = this._buildBucketKey(bucketLabel);
-
-        if (
-          !normalizedInputText ||
-          !bucketLabel ||
-          !bucketKey ||
-          !expectedInputs.has(normalizedInputText) ||
-          verdicts.has(normalizedInputText)
-        ) {
-          return null;
-        }
-
-        verdicts.set(normalizedInputText, {
-          normalizedInputText,
-          bucketKey,
-          bucketLabel,
-        });
-      }
-
-      if (verdicts.size !== expectedInputs.size) {
+      if (
+        !normalizedInputText ||
+        !bucketLabel ||
+        !bucketKey ||
+        !expectedInputs.has(normalizedInputText) ||
+        verdicts.has(normalizedInputText)
+      ) {
         return null;
       }
 
-      for (const normalizedInputText of expectedInputs) {
-        if (!verdicts.has(normalizedInputText)) {
-          return null;
-        }
-      }
+      verdicts.set(normalizedInputText, {
+        normalizedInputText,
+        bucketKey,
+        bucketLabel,
+      });
+    }
 
-      return verdicts;
-    } catch {
+    if (verdicts.size !== expectedInputs.size) {
       return null;
     }
+
+    for (const normalizedInputText of expectedInputs) {
+      if (!verdicts.has(normalizedInputText)) {
+        return null;
+      }
+    }
+
+    return verdicts;
   }
 
   _buildFailedNormalizationRun(
@@ -2362,6 +2397,34 @@ export class GameRoom {
   ): Promise<NormalizationRun> {
     if (candidates.length === 0) {
       return this._buildEmptyNormalizationRun();
+    }
+    if (candidates.length === 1) {
+      const [candidate] = candidates;
+      if (!candidate) {
+        return this._buildEmptyNormalizationRun();
+      }
+      const bucketKey =
+        this._buildBucketKey(candidate.bucketLabelCandidate) ??
+        candidate.normalizedInputText;
+      return {
+        runId: null,
+        mode: null,
+        verdicts: new Map([
+          [
+            candidate.normalizedInputText,
+            {
+              normalizedInputText: candidate.normalizedInputText,
+              bucketKey,
+              bucketLabel: candidate.bucketLabelCandidate,
+            },
+          ],
+        ]),
+        model: null,
+        normalizerPrompt: null,
+        requestJson: null,
+        responseJson: null,
+        failureReason: null,
+      };
     }
 
     const normalizerPrompt = this._buildOpenTextNormalizationPrompt(

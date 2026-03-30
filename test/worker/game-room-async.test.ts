@@ -511,6 +511,129 @@ describe('GameRoom async task tracking', () => {
     });
   });
 
+  it('accepts fenced JSON normalization responses from Workers AI', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      response: `\`\`\`json
+{
+  "verdicts": [
+    {
+      "normalizedInputText": "istanbul",
+      "bucketLabel": "Istanbul"
+    },
+    {
+      "normalizedInputText": "new york",
+      "bucketLabel": "New York"
+    }
+  ]
+}
+\`\`\``,
+    });
+    const { room } = createRoom({
+      AI: { run: aiRun },
+    });
+
+    const run = await room._normalizeOpenTextReveals(CITY_PROMPT, [
+      {
+        normalizedInputText: 'istanbul',
+        rawAnswerText: 'istanbul',
+        canonicalCandidate: 'istanbul',
+        bucketLabelCandidate: 'istanbul',
+      },
+      {
+        normalizedInputText: 'new york',
+        rawAnswerText: 'New York',
+        canonicalCandidate: 'new york',
+        bucketLabelCandidate: 'New York',
+      },
+    ]);
+
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(run.mode).toBe('llm');
+    expect(run.verdicts.get('istanbul')).toEqual({
+      normalizedInputText: 'istanbul',
+      bucketKey: 'istanbul',
+      bucketLabel: 'Istanbul',
+    });
+    expect(run.verdicts.get('new york')).toEqual({
+      normalizedInputText: 'new york',
+      bucketKey: 'new york',
+      bucketLabel: 'New York',
+    });
+  });
+
+  it('accepts JSON-mode object envelopes from Workers AI normalization', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      response: {
+        verdicts: [
+          {
+            normalizedInputText: 'istanbul',
+            bucketLabel: 'Istanbul',
+          },
+          {
+            normalizedInputText: 'new york',
+            bucketLabel: 'New York',
+          },
+        ],
+      },
+      tool_calls: [],
+    });
+    const { room } = createRoom({
+      AI: { run: aiRun },
+    });
+
+    const run = await room._normalizeOpenTextReveals(CITY_PROMPT, [
+      {
+        normalizedInputText: 'istanbul',
+        rawAnswerText: 'istanbul',
+        canonicalCandidate: 'istanbul',
+        bucketLabelCandidate: 'istanbul',
+      },
+      {
+        normalizedInputText: 'new york',
+        rawAnswerText: 'New York',
+        canonicalCandidate: 'new york',
+        bucketLabelCandidate: 'New York',
+      },
+    ]);
+
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(run.mode).toBe('llm');
+    expect(run.verdicts.get('istanbul')).toEqual({
+      normalizedInputText: 'istanbul',
+      bucketKey: 'istanbul',
+      bucketLabel: 'Istanbul',
+    });
+    expect(run.verdicts.get('new york')).toEqual({
+      normalizedInputText: 'new york',
+      bucketKey: 'new york',
+      bucketLabel: 'New York',
+    });
+  });
+
+  it('skips Workers AI normalization when only one candidate remains', async () => {
+    const aiRun = vi.fn();
+    const { room } = createRoom({
+      AI: { run: aiRun },
+    });
+
+    const run = await room._normalizeOpenTextReveals(CITY_PROMPT, [
+      {
+        normalizedInputText: 'istanbul',
+        rawAnswerText: 'istanbul',
+        canonicalCandidate: 'istanbul',
+        bucketLabelCandidate: 'Istanbul',
+      },
+    ]);
+
+    expect(aiRun).not.toHaveBeenCalled();
+    expect(run.mode).toBe(null);
+    expect(run.verdicts.get('istanbul')).toEqual({
+      normalizedInputText: 'istanbul',
+      bucketKey: 'istanbul',
+      bucketLabel: 'Istanbul',
+    });
+  });
+
   it('escapes quoted normalization candidates before building the AI prompt', () => {
     const { room } = createRoom();
 
@@ -552,6 +675,12 @@ describe('GameRoom async task tracking', () => {
           rawAnswerText: 'New York',
           canonicalCandidate: 'new york',
           bucketLabelCandidate: 'New York',
+        },
+        {
+          normalizedInputText: 'nyc',
+          rawAnswerText: 'NYC',
+          canonicalCandidate: 'nyc',
+          bucketLabelCandidate: 'NYC',
         },
       ]);
 
