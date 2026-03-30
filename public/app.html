@@ -219,7 +219,13 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 .opt-btn.disabled{opacity:.4;cursor:default;pointer-events:none}
 .opt-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .text-answer-wrap{display:flex;flex-direction:column;gap:.45rem}
-.text-answer-wrap input{font-size:1rem;padding:.8rem .95rem}
+.text-answer-wrap input,.text-answer-wrap select{font-size:1rem;padding:.8rem .95rem}
+.text-answer-wrap select{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--sans);width:100%;outline:none;transition:border-color .15s}
+.text-answer-wrap select:focus{border-color:var(--accent)}
+.card-picker-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}
+.card-picker-field{display:flex;flex-direction:column;gap:.35rem}
+.card-picker-label{font-size:.74rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.card-picker-preview{font-size:.88rem;color:var(--text);min-height:1.3rem}
 .text-answer-hint{font-size:.8rem;color:var(--muted);line-height:1.45}
 #commit-area{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
 #commit-btn{flex:1;min-width:140px}
@@ -394,6 +400,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 @media(max-width:560px){
   .question-meta-row{margin-bottom:.7rem}
   #off-record-banner{max-width:none;justify-content:flex-start;text-align:left}
+  .card-picker-grid{grid-template-columns:1fr}
   #summary-stats,#summary-highlights-grid{grid-template-columns:1fr}
 }
 @media(max-width:480px){
@@ -1071,6 +1078,29 @@ const CARD_SUIT_LABELS = {
   '♠': 'Spades',
 };
 
+const CARD_RANK_OPTIONS = [
+  'Ace',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  'Jack',
+  'Queen',
+  'King',
+];
+
+const CARD_SUIT_OPTIONS = [
+  { value: 'Clubs', label: 'Clubs ♣' },
+  { value: 'Diamonds', label: 'Diamonds ♦' },
+  { value: 'Hearts', label: 'Hearts ♥' },
+  { value: 'Spades', label: 'Spades ♠' },
+];
+
 function normalizeNumberWords(value) {
   return value
     .replace(/-/g, ' ')
@@ -1138,6 +1168,22 @@ function parsePlayingCardAnswer(normalizedRevealText) {
   const suit = CARD_SUIT_LABELS[(tokens[1] || '').toLowerCase()];
   if (!rank || !suit) return null;
   return `${rank} of ${suit}`;
+}
+
+function getPlayingCardSelection(answerText) {
+  if (typeof answerText !== 'string') {
+    return { rank: '', suit: '', label: '' };
+  }
+  const normalizedRevealText = normalizeRevealText(answerText);
+  if (!normalizedRevealText) {
+    return { rank: '', suit: '', label: '' };
+  }
+  const label = parsePlayingCardAnswer(normalizedRevealText);
+  if (!label) {
+    return { rank: '', suit: '', label: '' };
+  }
+  const [rank = '', suit = ''] = label.split(' of ');
+  return { rank, suit, label };
 }
 
 function canonicalizeOpenTextAnswer(answerText, prompt) {
@@ -2325,6 +2371,11 @@ function renderPromptInput(prompt, disabled) {
     return;
   }
 
+  if (prompt.answerSpec.kind === 'playing_card') {
+    renderPlayingCardInput(disabled, grid);
+    return;
+  }
+
   const wrap = document.createElement('div');
   wrap.className = 'text-answer-wrap';
   wrap.style.gridColumn = '1 / -1';
@@ -2362,6 +2413,104 @@ function renderPromptInput(prompt, disabled) {
   hint.textContent = `${answerHint} Max ${prompt.maxLength} characters.`;
 
   wrap.appendChild(input);
+  wrap.appendChild(hint);
+  grid.appendChild(wrap);
+}
+
+function renderPlayingCardInput(disabled, grid) {
+  const wrap = document.createElement('div');
+  wrap.className = 'text-answer-wrap';
+  wrap.style.gridColumn = '1 / -1';
+
+  const pickerGrid = document.createElement('div');
+  pickerGrid.className = 'card-picker-grid';
+
+  const currentSelection = getPlayingCardSelection(S.selectedAnswerText);
+  if (currentSelection.label && currentSelection.label !== S.selectedAnswerText) {
+    S.selectedAnswerText = currentSelection.label;
+  }
+
+  const rankSelect = document.createElement('select');
+  rankSelect.disabled = disabled;
+  rankSelect.setAttribute('aria-label', 'Card rank');
+
+  const rankPlaceholder = document.createElement('option');
+  rankPlaceholder.value = '';
+  rankPlaceholder.textContent = 'Choose rank';
+  rankSelect.appendChild(rankPlaceholder);
+  CARD_RANK_OPTIONS.forEach((rank) => {
+    const option = document.createElement('option');
+    option.value = rank;
+    option.textContent = rank;
+    option.selected = rank === currentSelection.rank;
+    rankSelect.appendChild(option);
+  });
+
+  const suitSelect = document.createElement('select');
+  suitSelect.disabled = disabled;
+  suitSelect.setAttribute('aria-label', 'Card suit');
+
+  const suitPlaceholder = document.createElement('option');
+  suitPlaceholder.value = '';
+  suitPlaceholder.textContent = 'Choose suit';
+  suitSelect.appendChild(suitPlaceholder);
+  CARD_SUIT_OPTIONS.forEach((suit) => {
+    const option = document.createElement('option');
+    option.value = suit.value;
+    option.textContent = suit.label;
+    option.selected = suit.value === currentSelection.suit;
+    suitSelect.appendChild(option);
+  });
+
+  const preview = document.createElement('div');
+  preview.className = 'card-picker-preview';
+
+  const syncPlayingCardSelection = () => {
+    const rank = rankSelect.value;
+    const suit = suitSelect.value;
+    S.selectedAnswerText = rank && suit ? `${rank} of ${suit}` : '';
+    preview.textContent = S.selectedAnswerText
+      ? `Locking in: ${S.selectedAnswerText}`
+      : 'Choose both a rank and a suit.';
+    updateCommitButtonState();
+  };
+
+  rankSelect.addEventListener('change', () => {
+    if (S.committed || S.phase !== 'commit') return;
+    syncPlayingCardSelection();
+  });
+  suitSelect.addEventListener('change', () => {
+    if (S.committed || S.phase !== 'commit') return;
+    syncPlayingCardSelection();
+  });
+
+  const rankField = document.createElement('label');
+  rankField.className = 'card-picker-field';
+  const rankLabel = document.createElement('span');
+  rankLabel.className = 'card-picker-label';
+  rankLabel.textContent = 'Rank';
+  rankField.appendChild(rankLabel);
+  rankField.appendChild(rankSelect);
+
+  const suitField = document.createElement('label');
+  suitField.className = 'card-picker-field';
+  const suitLabel = document.createElement('span');
+  suitLabel.className = 'card-picker-label';
+  suitLabel.textContent = 'Suit';
+  suitField.appendChild(suitLabel);
+  suitField.appendChild(suitSelect);
+
+  pickerGrid.appendChild(rankField);
+  pickerGrid.appendChild(suitField);
+
+  const hint = document.createElement('div');
+  hint.className = 'text-answer-hint';
+  hint.textContent = 'Choose a rank and a suit. We will format the card name for you.';
+
+  syncPlayingCardSelection();
+
+  wrap.appendChild(pickerGrid);
+  wrap.appendChild(preview);
   wrap.appendChild(hint);
   grid.appendChild(wrap);
 }
