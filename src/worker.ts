@@ -277,33 +277,47 @@ export class GameRoom {
     const existingConn = this.connections.get(accountId);
 
     if (existingConn && existingMatchId) {
-      // Reconnecting to an active match
       const match = this.activeMatches.get(existingMatchId);
       if (match) {
         const playerState = match.players.get(accountId);
-        if (playerState?.disconnectedAt && !playerState.forfeited) {
-          // Clear grace timer and reattach
-          if (playerState.graceTimer) {
-            clearTimeout(playerState.graceTimer);
-            playerState.graceTimer = null;
+        if (playerState && !playerState.forfeited) {
+          if (playerState.disconnectedAt !== null) {
+            // Reconnecting after a real disconnect during an active match.
+            if (playerState.graceTimer) {
+              clearTimeout(playerState.graceTimer);
+              playerState.graceTimer = null;
+            }
+            playerState.disconnectedAt = null;
+            playerState.ws = ws;
+            this._clearConnectionLivenessMonitor(accountId);
+            existingConn.ws = ws;
+            existingConn.lastActivityAt = Date.now();
+            this._checkpointPlayerAction(existingMatchId, accountId, {
+              disconnectedAt: null,
+            });
+            this._setupWsListeners(ws, accountId);
+
+            this._broadcastToMatch(match, {
+              type: 'player_reconnected',
+              displayName,
+            });
+
+            this._sendMatchStateToPlayer(match, accountId);
+            return;
           }
-          playerState.disconnectedAt = null;
-          playerState.ws = ws;
+
+          // Browser refresh during an active match: replace the connection
+          // without creating a disconnect/reconnect lifecycle event.
+          const oldWs = existingConn.ws;
           this._clearConnectionLivenessMonitor(accountId);
           existingConn.ws = ws;
+          existingConn.displayName = displayName;
           existingConn.lastActivityAt = Date.now();
-          this._checkpointPlayerAction(existingMatchId, accountId, {
-            disconnectedAt: null,
-          });
+          playerState.ws = ws;
           this._setupWsListeners(ws, accountId);
-
-          // Broadcast reconnection
-          this._broadcastToMatch(match, {
-            type: 'player_reconnected',
-            displayName,
-          });
-
-          // Send current match state to reconnected player
+          try {
+            oldWs.close(1000, 'Replaced by new connection');
+          } catch {}
           this._sendMatchStateToPlayer(match, accountId);
           return;
         }

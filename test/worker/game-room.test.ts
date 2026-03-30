@@ -509,6 +509,101 @@ describe('GameRoom Durable Object', () => {
     p3.ws.close();
   });
 
+  it('refresh-style reconnect replays active match state and receives later broadcasts', {
+    timeout: 55_000,
+  }, async () => {
+    const p1 = await connectPlayer(31, 'RefreshP1');
+    const p2 = await connectPlayer(32, 'RefreshP2');
+    const p3 = await connectPlayer(33, 'RefreshP3');
+
+    const p1Started = waitForMessage(
+      p1.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p2Started = waitForMessage(
+      p2.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+    const p3Started = waitForMessage(
+      p3.ws,
+      'match_started',
+      MATCH_START_TIMEOUT_MS,
+    );
+
+    await joinPlayersAndStartNow([p1, p2, p3]);
+
+    const p1GameStart = waitForMessage(
+      p1.ws,
+      'game_started',
+      GAME_START_TIMEOUT_MS,
+    );
+
+    const [gs1] = await Promise.all([p1Started, p2Started, p3Started]);
+    const originalMatchId = gs1.matchId;
+    expect(originalMatchId).toBeTruthy();
+
+    const roundStart = await p1GameStart;
+    expect(roundStart.phase).toBe('commit');
+
+    const p1r = await reconnectPlayer(31);
+    const replayMessagesP = collectMessages(p1r.ws, 1500);
+    const replayMatchStartedP = waitForMessage(p1r.ws, 'match_started', 3000);
+    const replayGameStartedP = waitForMessage(p1r.ws, 'game_started', 3000);
+    const updatedCommitStatusP = waitForMessageWhere(
+      p1r.ws,
+      (msg) =>
+        msg.type === 'commit_status' &&
+        Array.isArray(msg.committed) &&
+        msg.committed.some(
+          (entry) =>
+            entry &&
+            typeof entry === 'object' &&
+            (entry as { displayName?: unknown }).displayName === 'RefreshP2' &&
+            (entry as { hasCommitted?: unknown }).hasCommitted === true,
+        ),
+      5000,
+    );
+
+    const replayMatchStarted = await replayMatchStartedP;
+    expect(replayMatchStarted.matchId).toBe(originalMatchId);
+
+    const replayGameStarted = await replayGameStartedP;
+    expect(replayGameStarted.phase).toBe('commit');
+
+    const fakeHash =
+      '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: fakeHash }));
+
+    const updatedCommitStatus = await updatedCommitStatusP;
+    expect(updatedCommitStatus).toMatchObject({
+      type: 'commit_status',
+      committed: expect.arrayContaining([
+        expect.objectContaining({
+          displayName: 'RefreshP2',
+          hasCommitted: true,
+        }),
+      ]),
+    });
+
+    const replayMessages = await replayMessagesP;
+    expect(
+      replayMessages.some((message) => message.type === 'queue_state'),
+    ).toBe(false);
+    expect(
+      replayMessages.some((message) => message.type === 'match_started'),
+    ).toBe(true);
+    expect(
+      replayMessages.some((message) => message.type === 'game_started'),
+    ).toBe(true);
+
+    p1.ws.close();
+    p1r.ws.close();
+    p2.ws.close();
+    p3.ws.close();
+  });
+
   it('reconnect replays player_disconnected for peers in grace period', {
     timeout: 55_000,
   }, async () => {
