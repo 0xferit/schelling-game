@@ -73,9 +73,13 @@ function createDeterministicAiBinding() {
   return {
     async run(_model: string, inputs: Record<string, unknown>) {
       const promptText = typeof inputs.prompt === 'string' ? inputs.prompt : '';
+      const jsonString = '"((?:\\\\.|[^"\\\\])*)"';
       const matches = [
         ...promptText.matchAll(
-          /normalizedInputText="([^"]+)" \| rawAnswerText="([^"]*)" \| canonicalCandidate="([^"]*)" \| bucketLabelCandidate="([^"]*)"/g,
+          new RegExp(
+            `normalizedInputText=${jsonString} \\| rawAnswerText=${jsonString} \\| canonicalCandidate=${jsonString} \\| bucketLabelCandidate=${jsonString}`,
+            'g',
+          ),
         ),
       ];
 
@@ -85,8 +89,10 @@ function createDeterministicAiBinding() {
 
       return JSON.stringify({
         verdicts: matches.map((match) => ({
-          normalizedInputText: match[1],
-          bucketLabel: match[4] || match[3] || match[1],
+          normalizedInputText: JSON.parse(`"${match[1] || ''}"`),
+          bucketLabel: JSON.parse(
+            `"${match[4] || match[3] || match[1] || ''}"`,
+          ),
         })),
       });
     },

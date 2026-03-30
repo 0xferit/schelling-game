@@ -920,7 +920,11 @@ export class GameRoom {
   // Match lifecycle
   // -------------------------------------------------------------------------
 
-  _failMatchStart(playerIds: string[], message: string): void {
+  _failMatchStart(
+    playerIds: string[],
+    message: string,
+    options: { retryMatchmaking?: boolean } = {},
+  ): void {
     const returningHumans = playerIds.filter(
       (accountId) =>
         !this._isAiBot(accountId) && !this.waitingQueue.includes(accountId),
@@ -930,6 +934,7 @@ export class GameRoom {
     if (returningHumans.length > 0) {
       this.waitingQueue.unshift(...returningHumans);
     }
+    this._ensureAiBotBackfill();
 
     for (const accountId of playerIds) {
       if (this._isAiBot(accountId)) continue;
@@ -937,6 +942,9 @@ export class GameRoom {
         type: 'error',
         message,
       });
+    }
+    if (options.retryMatchmaking) {
+      this._tryFormMatch();
     }
     this._broadcastQueueState();
   }
@@ -954,6 +962,7 @@ export class GameRoom {
       this._failMatchStart(
         playerIds,
         'AI-assisted matches are unavailable with the current mixed prompt catalog',
+        { retryMatchmaking: true },
       );
       return;
     }
@@ -2021,7 +2030,7 @@ export class GameRoom {
       'Unique normalized player answers:',
       ...candidates.map(
         (candidate, index) =>
-          `${index + 1}. normalizedInputText="${candidate.normalizedInputText}" | rawAnswerText="${candidate.rawAnswerText}" | canonicalCandidate="${candidate.canonicalCandidate}" | bucketLabelCandidate="${candidate.bucketLabelCandidate}"`,
+          `${index + 1}. normalizedInputText=${JSON.stringify(candidate.normalizedInputText)} | rawAnswerText=${JSON.stringify(candidate.rawAnswerText)} | canonicalCandidate=${JSON.stringify(candidate.canonicalCandidate)} | bucketLabelCandidate=${JSON.stringify(candidate.bucketLabelCandidate)}`,
       ),
       '',
       'For each entry, choose a short human-readable bucketLabel.',

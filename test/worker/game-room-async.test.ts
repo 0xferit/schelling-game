@@ -432,6 +432,23 @@ describe('GameRoom async task tracking', () => {
     });
   });
 
+  it('escapes quoted normalization candidates before building the AI prompt', () => {
+    const { room } = createRoom();
+
+    const promptText = room._buildOpenTextNormalizationPrompt(CITY_PROMPT, [
+      {
+        normalizedInputText: 'he said "paris"',
+        rawAnswerText: 'He said "Paris"',
+        canonicalCandidate: 'he said "paris"',
+        bucketLabelCandidate: 'city\\label',
+      },
+    ]);
+
+    expect(promptText).toContain('normalizedInputText="he said \\"paris\\""');
+    expect(promptText).toContain('rawAnswerText="He said \\"Paris\\""');
+    expect(promptText).toContain('bucketLabelCandidate="city\\\\label"');
+  });
+
   it('retries Workers AI normalization with 2s, 5s, and 10s backoff before failing', async () => {
     const { room } = createRoom();
     const recordedDelays: number[] = [];
@@ -527,6 +544,9 @@ describe('GameRoom async task tracking', () => {
     expect(match.lastGameResult?.voidReason).toBe(
       'open_text_normalization_failed',
     );
+    expect(match.lastGameResult?.players[0]?.antePaid).toBe(0);
+    expect(match.lastGameResult?.players[0]?.gamePayout).toBe(0);
+    expect(match.lastGameResult?.players[0]?.netDelta).toBe(0);
     expect(match.lastGameResult?.players[0]?.newBalance).toBe(100);
     expect(batch).toHaveBeenCalledTimes(1);
 
@@ -854,7 +874,12 @@ describe('GameRoom async task tracking', () => {
     );
 
     expect(room.activeMatches.size).toBe(0);
-    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2', 'acct-queued']);
+    expect(room.waitingQueue).toEqual([]);
+    expect(room.formingMatch?.players).toEqual([
+      'acct-1',
+      'acct-2',
+      'acct-queued',
+    ]);
     expect(alice.ws.send).toHaveBeenCalledWith(
       JSON.stringify({
         type: 'error',
@@ -869,6 +894,8 @@ describe('GameRoom async task tracking', () => {
           'AI-assisted matches are unavailable with the current mixed prompt catalog',
       }),
     );
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
   it('starts the full reserved cohort when fill closes on 10 players', async () => {
@@ -2249,6 +2276,25 @@ describe('GameRoom async task tracking', () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     }
+  });
+
+  it('resumes the normalizing phase after restore', async () => {
+    const { room, waitUntil } = createRoom();
+    const normalizeAndFinalize = vi
+      .spyOn(room, '_normalizeAndFinalizeOpenTextGame')
+      .mockResolvedValue(undefined);
+
+    const match = createMatch();
+    match.prompts = [CITY_PROMPT];
+    match.phase = 'normalizing';
+    match.normalizingInFlight = false;
+
+    room._ensureMatchTimerRunning(match);
+
+    expect(match.normalizingInFlight).toBe(true);
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
+    expect(normalizeAndFinalize).toHaveBeenCalledWith(match);
   });
 
   it('tracks match end after results with state.waitUntil', async () => {

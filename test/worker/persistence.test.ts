@@ -325,6 +325,65 @@ describe('restoreMatchesFromStorage', () => {
     ).toBe('ending');
   });
 
+  it('restores in-flight normalizing checkpoints', () => {
+    const matchRows = [
+      {
+        match_id: 'match-normalizing',
+        phase: 'normalizing',
+        current_game: 4,
+        total_games: 10,
+        prompts_json: JSON.stringify([
+          {
+            id: 1009,
+            text: 'Pick a city.',
+            type: 'open_text',
+            category: 'culture',
+            maxLength: 64,
+            placeholder: 'e.g. New York',
+            answerSpec: { kind: 'free_text' },
+            aiNormalization: 'required',
+            canonicalExamples: ['New York', 'NYC'],
+          },
+        ]),
+        phase_entered_at: Date.now(),
+        last_settled_game: 3,
+      },
+    ];
+
+    const playerRows = [
+      {
+        match_id: 'match-normalizing',
+        account_id: '0xnormalizing',
+        display_name: 'Normalizing',
+        starting_balance: 1000,
+        current_balance: 1000,
+        committed: 1,
+        revealed: 1,
+        hash: 'a'.repeat(64),
+        option_index: null,
+        answer_text: 'NYC',
+        normalized_reveal_text: 'nyc',
+        salt: 'b'.repeat(32),
+        forfeited: 0,
+        disconnected_at: null,
+      },
+    ];
+
+    const restored = restoreMatchesFromStorage(
+      createMockSql(matchRows, playerRows),
+      STALE_THRESHOLD_MS,
+    );
+
+    const match = must(restored[0], 'Expected restored normalizing match');
+    expect(match.phase).toBe('normalizing');
+    const player = must(
+      match.players.get('0xnormalizing'),
+      'Expected restored normalizing player state',
+    );
+    expect(player.answerText).toBe('NYC');
+    expect(player.normalizedRevealText).toBe('nyc');
+  });
+
   it('restores open-text answer fields from player checkpoints', () => {
     const matchRows = [
       {

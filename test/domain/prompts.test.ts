@@ -146,6 +146,33 @@ describe('prompt pool quality heuristics', () => {
       issues.some((issue) => issue.includes('duplicate normalized options')),
     ).toBe(true);
   });
+
+  it('flags pools that break the 5 select / 5 open-text split', () => {
+    const pool = getCanonicalPromptPool();
+    const selectPrompt = pool.find(
+      (prompt): prompt is Extract<SchellingPrompt, { type: 'select' }> =>
+        prompt.type === 'select',
+    );
+    const openTextPrompt = pool.find(
+      (prompt): prompt is Extract<SchellingPrompt, { type: 'open_text' }> =>
+        prompt.type === 'open_text',
+    );
+    if (!selectPrompt || !openTextPrompt) {
+      throw new Error('Expected both select and open-text prompts');
+    }
+
+    const brokenPool = pool.map((prompt) =>
+      prompt.id === openTextPrompt.id ? cloneJson(selectPrompt) : prompt,
+    );
+    const issues = getPromptPoolQualityIssues(brokenPool);
+
+    expect(
+      issues.some((issue) => issue.includes('exactly 5 select prompts')),
+    ).toBe(true);
+    expect(
+      issues.some((issue) => issue.includes('exactly 5 open_text prompts')),
+    ).toBe(true);
+  });
 });
 
 describe('selectPromptsForMatch', () => {

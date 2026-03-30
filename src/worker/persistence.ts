@@ -235,6 +235,7 @@ function isMatchPhase(value: unknown): value is PersistedMatchFields['phase'] {
   return (
     value === 'commit' ||
     value === 'reveal' ||
+    value === 'normalizing' ||
     value === 'results' ||
     value === 'settling' ||
     value === 'ending'
@@ -306,7 +307,7 @@ function readMatchRow(row: SqlRow): {
   const phase = readString(row, 'phase');
   if (!isMatchPhase(phase)) {
     throw new Error(
-      `Invalid checkpoint data: phase must be commit, reveal, or results`,
+      `Invalid checkpoint data: phase must be commit, reveal, normalizing, results, settling, or ending`,
     );
   }
   const currentGame = readNumberField(row, 'current_game', 'current_round');
