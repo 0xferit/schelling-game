@@ -935,11 +935,12 @@ describe('GameRoom async task tracking', () => {
     ]);
   });
 
-  it('restores humans and rejects forced AI-assisted starts', async () => {
+  it('starts forced AI-assisted matches off the record', async () => {
     const { room } = createRoom({
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
-    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
 
     const alice = createConnectionState('Alice');
     const bob = createConnectionState('Bob');
@@ -952,21 +953,17 @@ describe('GameRoom async task tracking', () => {
       'match-ai-assisted',
     );
 
-    expect(room.activeMatches.size).toBe(0);
-    expect(room.waitingQueue).toEqual([]);
-    expect(room.formingMatch?.players).toEqual([
-      'acct-1',
-      'acct-2',
-      'acct-queued',
-    ]);
-    expect(alice.ws.send).toHaveBeenCalledWith(
+    expect(room.activeMatches.size).toBe(1);
+    expect(room.waitingQueue).toEqual(['acct-queued']);
+    expect(room.formingMatch).toBeNull();
+    expect(alice.ws.send).not.toHaveBeenCalledWith(
       JSON.stringify({
         type: 'error',
         message:
           'AI-assisted matches are unavailable with the current mixed prompt catalog',
       }),
     );
-    expect(bob.ws.send).toHaveBeenCalledWith(
+    expect(bob.ws.send).not.toHaveBeenCalledWith(
       JSON.stringify({
         type: 'error',
         message:
@@ -974,7 +971,18 @@ describe('GameRoom async task tracking', () => {
       }),
     );
 
-    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+    const match = must(
+      room.activeMatches.get('match-ai-assisted'),
+      'Expected AI-assisted match to start',
+    );
+    expect([...match.players.keys()]).toEqual([
+      'acct-1',
+      'ai-bot:0:test-bot',
+      'acct-2',
+    ]);
+    expect(match.aiAssisted).toBe(true);
+
+    if (match.commitTimer) clearTimeout(match.commitTimer);
   });
 
   it('does not reject match start for balances below the old queue floor', async () => {
@@ -1205,7 +1213,7 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('does not inject bots while waiting for the third human', async () => {
+  it('injects one bot once two humans are queued', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
@@ -1218,9 +1226,16 @@ describe('GameRoom async task tracking', () => {
     await room._handleJoinQueue('acct-1');
     await room._handleJoinQueue('acct-2');
 
-    expect(room.formingMatch).toBeNull();
-    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
-    expect(room.waitingQueue.some((id) => room._isAiBot(id))).toBe(false);
+    expect(room.waitingQueue).toEqual([]);
+    expect(room.formingMatch).not.toBeNull();
+    expect(
+      room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
+    ).toEqual(['acct-1', 'acct-2']);
+    expect(
+      room.formingMatch?.players.filter((id) => room._isAiBot(id)),
+    ).toHaveLength(1);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
   it('forms a pure-human match when the third human arrives', async () => {
@@ -1246,7 +1261,7 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('does not inject bots for a solo human even when AI_BOT_ENABLED is true', async () => {
+  it('injects two bots for a solo human when AI_BOT_ENABLED is true', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
@@ -1257,8 +1272,16 @@ describe('GameRoom async task tracking', () => {
 
     await room._handleJoinQueue('acct-1');
 
-    expect(room.formingMatch).toBeNull();
-    expect(room.waitingQueue).toEqual(['acct-1']);
+    expect(room.waitingQueue).toEqual([]);
+    expect(room.formingMatch).not.toBeNull();
+    expect(
+      room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
+    ).toEqual(['acct-1']);
+    expect(
+      room.formingMatch?.players.filter((id) => room._isAiBot(id)),
+    ).toHaveLength(2);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
   it('does not inject a bot for six humans', async () => {

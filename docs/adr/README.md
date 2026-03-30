@@ -22,3 +22,4 @@ Format:
 | [0008](./0008-remove-public-odd-match-requirement.md) | Remove public odd-match requirement | Accepted | 2026-03-29 |
 | [0009](./0009-hybrid-prompt-public-mode.md) | Hybrid prompt public mode | Superseded | 2026-03-29 |
 | [0010](./0010-ten-seed-ai-normalized-public-mode.md) | Ten-seed AI-normalized public mode | Accepted | 2026-03-30 |
+| [0011](./0011-restore-limited-ai-backfill.md) | Restore limited AI backfill for ten-seed public mode | Accepted | 2026-03-30 |
