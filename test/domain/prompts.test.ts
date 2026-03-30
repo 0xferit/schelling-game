@@ -33,30 +33,38 @@ describe('prompt pool', () => {
   const pool = getCanonicalPromptPool();
   const records = getCanonicalPromptRecords();
 
-  it('contains exactly 10 prompts', () => {
-    expect(pool).toHaveLength(10);
+  it('contains at least 10 prompts', () => {
+    expect(pool.length).toBeGreaterThanOrEqual(10);
   });
 
-  it('contains exactly 5 select prompts and 5 open-text prompts', () => {
-    expect(pool.filter((prompt) => prompt.type === 'select')).toHaveLength(5);
-    expect(pool.filter((prompt) => prompt.type === 'open_text')).toHaveLength(
-      5,
+  it('contains at least 5 select prompts and 5 open-text prompts', () => {
+    expect(
+      pool.filter((prompt) => prompt.type === 'select').length,
+    ).toBeGreaterThanOrEqual(5);
+    expect(
+      pool.filter((prompt) => prompt.type === 'open_text').length,
+    ).toBeGreaterThanOrEqual(5);
+  });
+
+  it('has unique positive ids and includes the original 10 seed prompts', () => {
+    const ids = records.map((record) => record.prompt.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id).toBeGreaterThan(0);
+    }
+    for (let id = 1001; id <= 1010; id++) {
+      expect(ids).toContain(id);
+    }
+  });
+
+  it('contains one prompt per root and at least one calibration prompt', () => {
+    expect(new Set(records.map((record) => record.root)).size).toBe(
+      records.length,
     );
-  });
-
-  it('uses ids 1001 through 1010 in seed order', () => {
-    expect(records.map((record) => record.prompt.id)).toEqual([
-      1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
-    ]);
-  });
-
-  it('contains exactly one prompt per root and one calibration prompt', () => {
-    expect(new Set(records.map((record) => record.root)).size).toBe(10);
-    const calibrationIds = records
-      .filter((record) => record.calibration)
-      .map((record) => record.prompt.id);
-
-    expect(calibrationIds).toEqual([1001]);
+    const calibrationCount = records.filter(
+      (record) => record.calibration,
+    ).length;
+    expect(calibrationCount).toBeGreaterThanOrEqual(1);
   });
 
   it('assigns structured metadata to every open-text prompt', () => {
@@ -147,7 +155,7 @@ describe('prompt pool quality heuristics', () => {
     ).toBe(true);
   });
 
-  it('flags pools that break the 5 select / 5 open-text split', () => {
+  it('flags pools that break the minimum select / open-text balance', () => {
     const pool = getCanonicalPromptPool();
     const selectPrompt = pool.find(
       (prompt): prompt is Extract<SchellingPrompt, { type: 'select' }> =>
@@ -167,22 +175,20 @@ describe('prompt pool quality heuristics', () => {
     const issues = getPromptPoolQualityIssues(brokenPool);
 
     expect(
-      issues.some((issue) => issue.includes('exactly 5 select prompts')),
-    ).toBe(true);
-    expect(
-      issues.some((issue) => issue.includes('exactly 5 open_text prompts')),
+      issues.some((issue) => issue.includes('at least 5 open_text prompts')),
     ).toBe(true);
   });
 });
 
 describe('selectPromptsForMatch', () => {
-  it('returns all 10 prompts without duplicates', () => {
-    const selected = selectPromptsForMatch(10);
+  it('returns a balanced match sample', () => {
+    const selected = selectPromptsForMatch();
     expect(selected).toHaveLength(10);
     expect(new Set(selected.map((prompt) => prompt.id)).size).toBe(10);
-    expect(new Set(selected.map((prompt) => prompt.id))).toEqual(
-      new Set([1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010]),
-    );
+    const selectCount = selected.filter((p) => p.type === 'select').length;
+    const openTextCount = selected.filter((p) => p.type === 'open_text').length;
+    expect(selectCount).toBe(5);
+    expect(openTextCount).toBe(5);
   });
 
   it('rejects select-only matches for the mixed prompt catalog', () => {
@@ -191,9 +197,29 @@ describe('selectPromptsForMatch', () => {
     );
   });
 
-  it('rejects partial prompt selections', () => {
-    expect(() => selectPromptsForMatch(5)).toThrow(
-      'Current prompt catalog requires selecting all 10 prompts per match',
+  it('rejects counts larger than the catalog', () => {
+    const records = getCanonicalPromptRecords();
+    expect(() => selectPromptsForMatch(records.length + 1)).toThrow(
+      'Cannot select',
     );
+  });
+
+  it('flags open_text prompts with invalid canonicalExamples', () => {
+    const record = getMutableRecord(1006);
+    const snapshot = cloneJson(record);
+
+    try {
+      (record.prompt as OpenTextPrompt).canonicalExamples = [
+        'not a valid card',
+      ];
+      const issues = getPromptPoolQualityIssues();
+      expect(
+        issues.some((issue) =>
+          issue.includes('canonicalExample "not a valid card" fails'),
+        ),
+      ).toBe(true);
+    } finally {
+      restoreRecord(record, snapshot);
+    }
   });
 });
