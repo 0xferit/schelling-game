@@ -19,7 +19,7 @@ binding = "AI"
 remote = true
 
 [vars]
-AI_BOT_ENABLED = "false"
+AI_BOT_ENABLED = "true"
 AI_BOT_MODELS = "@cf/nvidia/nemotron-3-120b-a12b,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "5000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
@@ -42,7 +42,7 @@ binding = "AI"
 remote = true
 
 [env.staging.vars]
-AI_BOT_ENABLED = "false"
+AI_BOT_ENABLED = "true"
 AI_BOT_MODELS = "@cf/nvidia/nemotron-3-120b-a12b,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "5000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
