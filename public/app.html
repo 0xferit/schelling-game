@@ -19,6 +19,7 @@
 }
 html{scrollbar-color:rgba(201,168,76,.25) transparent;scrollbar-width:thin}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;line-height:1.7;font-weight:300;-webkit-font-smoothing:antialiased}
+body{display:flex;flex-direction:column;min-height:100vh;min-height:100svh}
 button,.button-link{cursor:pointer;border:none;border-radius:var(--radius);padding:.5rem 1.1rem;font-size:.84rem;font-family:var(--sans);font-weight:600;text-transform:uppercase;letter-spacing:.1em;transition:all .2s}
 .button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 button:active,.button-link:active{transform:scale(.97)}
@@ -35,7 +36,7 @@ h2{font-family:var(--serif);font-weight:600}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.35rem;transition:border-color .3s}
 .hidden{display:none!important}
 /* ── Layout ─────────────────────────────────────────────────────── */
-#app{max-width:1280px;margin:0 auto;padding:clamp(1rem,2.2vw,1.75rem) clamp(1rem,3.4vw,2.75rem) 2.25rem;position:relative}
+#app{flex:1 0 auto;width:min(100%,1280px);max-width:1280px;margin:0 auto;padding:clamp(1rem,2.2vw,1.75rem) clamp(1rem,3.4vw,2.75rem) 2.25rem;position:relative}
 header{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:1rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.05);background:rgba(10,10,10,.82);backdrop-filter:blur(16px);position:sticky;top:0;z-index:100;padding:.85rem 0;margin:0 0 clamp(1.25rem,2.5vw,2rem)}
 .header-brand{display:flex;align-items:center;min-width:0}
 .header-brand-copy{display:flex;flex-direction:column;gap:.2rem;min-width:0}
@@ -355,7 +356,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   .forfeit-dialog-actions button{width:100%}
 }
 .mt1{margin-top:.5rem}.mt2{margin-top:1rem}
-#build-info{text-align:center;padding:2rem 1rem 1rem;font-size:.78rem;color:#555;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;display:flex;justify-content:center;align-items:center;gap:1rem}
+#build-info{margin-top:auto;text-align:center;padding:2rem 1rem 1rem;font-size:.78rem;color:#555;letter-spacing:.04em;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;display:flex;justify-content:center;align-items:center;gap:1rem}
 /* ── Atmosphere ────────────────────────────────────────────────── */
 #app::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 30%,rgba(201,168,76,.03) 0%,transparent 70%);pointer-events:none;z-index:-1}
 .view.active{animation:viewIn .4s ease forwards}
