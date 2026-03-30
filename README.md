@@ -107,8 +107,24 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `AI_BOT_MODELS` | Optional | `wrangler.toml` var | Comma-separated Workers AI model list for backfill bot selection. Models are deduplicated, each AI-assisted match may use each model at most once, and backfill is skipped if there are not enough distinct models to reach the current target size. |
 | `AI_BOT_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for Workers AI bot decisions. |
 | `OPEN_TEXT_PROMPTS_ENABLED` | Required for public play | `wrangler.toml` var | Enables the canonical mixed prompt catalog. If disabled, public matches will not start. |
+| `TURNSTILE_SITE_KEY` | Required for interactive landing-page demo voting | Worker var / local `.dev.vars` | Public site key exposed through `/api/game-config` so the landing page can run Turnstile before posting demo votes. |
+| `TURNSTILE_SECRET_KEY` | Required for interactive landing-page demo voting | Worker secret / local `.dev.vars` | Secret used by the Worker to validate Turnstile tokens server-side before inserting demo votes. |
 | `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for staging and production operations. |
 | `STAGING_BASE_URL` | Required only for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed staging Worker that the smoke script targets. |
+
+For local manual testing of the landing-page demo vote flow, Cloudflare provides dummy Turnstile keys that work on `localhost`. Put them in `.dev.vars` instead of source control:
+
+```sh
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+```
+
+For staging/production, set `TURNSTILE_SITE_KEY` as an environment variable and provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
+
+```sh
+npx wrangler secret put TURNSTILE_SECRET_KEY
+npx wrangler secret put TURNSTILE_SECRET_KEY --env staging
+```
 
 ## Deployment And CI
 

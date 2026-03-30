@@ -18,4 +18,13 @@ describe('asset CSP', () => {
     expect(contentSecurityPolicy).not.toContain('https://api.github.com');
     expect(contentSecurityPolicy).not.toContain('wss://schelling.games');
   });
+
+  it('allows Cloudflare Turnstile only in the script and frame directives', () => {
+    expect(contentSecurityPolicy).toContain(
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://challenges.cloudflare.com",
+    );
+    expect(contentSecurityPolicy).toContain(
+      'frame-src https://challenges.cloudflare.com',
+    );
+  });
 });

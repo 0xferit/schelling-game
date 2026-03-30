@@ -30,6 +30,9 @@ const RATE_LIMIT_SWEEP_INTERVAL_MS = 60 * 1000;
 const AUTH_CHALLENGE_LIMIT = { max: 12, windowMs: 60 * 1000 };
 const AUTH_VERIFY_LIMIT = { max: 24, windowMs: 60 * 1000 };
 const EXAMPLE_VOTE_LIMIT = { max: 40, windowMs: 60 * 1000 };
+const TURNSTILE_VERIFY_URL =
+  'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const EXAMPLE_VOTE_TURNSTILE_ACTION = 'landing_example_vote';
 
 interface CacheStorageWithDefault extends CacheStorage {
   default?: Cache;
@@ -47,6 +50,13 @@ interface AuthChallengeRow {
 interface RateLimitBucket {
   windowStartedAt: number;
   count: number;
+}
+
+interface TurnstileVerificationResult {
+  success: boolean;
+  action?: string;
+  hostname?: string;
+  'error-codes'?: string[];
 }
 
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
@@ -178,6 +188,77 @@ function getClientIdentifier(request: Request): string {
     if (first) return first.trim();
   }
   return 'unknown';
+}
+
+function getConfiguredTurnstileSiteKey(env: Env): string | null {
+  const siteKey = env.TURNSTILE_SITE_KEY?.trim();
+  return siteKey ? siteKey : null;
+}
+
+function getConfiguredTurnstileSecretKey(env: Env): string | null {
+  const secretKey = env.TURNSTILE_SECRET_KEY?.trim();
+  return secretKey ? secretKey : null;
+}
+
+async function verifyExampleVoteTurnstileToken(
+  request: Request,
+  env: Env,
+  token: string,
+): Promise<Response | null> {
+  const siteKey = getConfiguredTurnstileSiteKey(env);
+  const secretKey = getConfiguredTurnstileSecretKey(env);
+  if (!siteKey || !secretKey) {
+    return errorResponse('Demo voting is temporarily unavailable.', 503);
+  }
+
+  const body = new URLSearchParams();
+  body.set('secret', secretKey);
+  body.set('response', token);
+
+  const clientIdentifier = getClientIdentifier(request);
+  if (clientIdentifier !== 'unknown') {
+    body.set('remoteip', clientIdentifier);
+  }
+
+  let verificationResponse: Response;
+  try {
+    verificationResponse = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+  } catch (error) {
+    console.error('Turnstile siteverify request failed', error);
+    return errorResponse('Human verification is temporarily unavailable.', 503);
+  }
+
+  if (!verificationResponse.ok) {
+    console.error(
+      'Turnstile siteverify request returned non-OK status',
+      verificationResponse.status,
+    );
+    return errorResponse('Human verification is temporarily unavailable.', 503);
+  }
+
+  let verificationResult: TurnstileVerificationResult;
+  try {
+    verificationResult =
+      (await verificationResponse.json()) as TurnstileVerificationResult;
+  } catch (error) {
+    console.error('Turnstile siteverify response was not valid JSON', error);
+    return errorResponse('Human verification is temporarily unavailable.', 503);
+  }
+
+  const expectedHostname = new URL(request.url).hostname;
+  if (
+    !verificationResult.success ||
+    verificationResult.action !== EXAMPLE_VOTE_TURNSTILE_ACTION ||
+    verificationResult.hostname !== expectedHostname
+  ) {
+    return errorResponse('Human verification failed.', 403);
+  }
+
+  return null;
 }
 
 function sweepStaleBuckets(now: number): void {
@@ -770,6 +851,7 @@ export async function handleHttpRequest(
     return jsonResponse({
       commitDuration: COMMIT_DURATION,
       revealDuration: REVEAL_DURATION,
+      turnstileSiteKey: getConfiguredTurnstileSiteKey(env),
     });
   }
 
@@ -782,6 +864,7 @@ export async function handleHttpRequest(
     if (rawBody instanceof Response) return rawBody;
 
     const idx = rawBody.optionIndex;
+    const turnstileToken = getRequiredString(rawBody, 'turnstileToken');
     if (
       typeof idx !== 'number' ||
       !Number.isInteger(idx) ||
@@ -790,6 +873,17 @@ export async function handleHttpRequest(
     ) {
       return errorResponse('optionIndex must be an integer 0-17', 400);
     }
+    if (!turnstileToken) {
+      return errorResponse('turnstileToken is required', 400);
+    }
+
+    const verificationError = await verifyExampleVoteTurnstileToken(
+      request,
+      env,
+      turnstileToken,
+    );
+    if (verificationError) return verificationError;
+
     await env.DB.prepare('INSERT INTO example_votes (option_index) VALUES (?)')
       .bind(idx)
       .run();
