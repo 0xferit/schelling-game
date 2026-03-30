@@ -29,6 +29,14 @@ const CITY_PROMPT: SchellingPrompt = {
   canonicalExamples: ['New York', 'NYC'],
 };
 
+const TEST_SELECT_PROMPT: SchellingPrompt = {
+  id: 1,
+  text: 'Pick one',
+  type: 'select',
+  category: 'culture',
+  options: ['A', 'B'],
+};
+
 function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
   return {
     toArray: () => rows,
@@ -109,18 +117,10 @@ function createSocketWithListeners() {
 }
 
 function createMatch() {
-  const prompt: SchellingPrompt = {
-    id: 1,
-    text: 'Pick one',
-    type: 'select',
-    category: 'culture',
-    options: ['A', 'B'],
-  };
-
   return {
     matchId: 'match-1',
     players: new Map(),
-    prompts: [prompt],
+    prompts: [TEST_SELECT_PROMPT],
     currentGame: 1,
     totalGames: 1,
     phase: 'reveal',
@@ -132,6 +132,78 @@ function createMatch() {
     normalizingInFlight: false,
     lastGameResult: null,
     aiAssisted: false,
+  };
+}
+
+function createRestoredMatchRow(
+  matchId: string,
+  phase: string,
+  phaseEnteredAt: number,
+) {
+  return {
+    match_id: matchId,
+    phase,
+    current_game: 1,
+    total_games: 1,
+    prompts_json: JSON.stringify([TEST_SELECT_PROMPT]),
+    phase_entered_at: phaseEnteredAt,
+    last_settled_game: 0,
+    last_game_result_json: null,
+    ai_assisted: 0,
+    created_at: phaseEnteredAt,
+  };
+}
+
+function createRestoredPlayerRow(matchId: string, accountId: string) {
+  return {
+    match_id: matchId,
+    account_id: accountId,
+    display_name: accountId,
+    starting_balance: 100,
+    current_balance: 100,
+    committed: 0,
+    revealed: 0,
+    hash: null,
+    option_index: null,
+    answer_text: null,
+    normalized_reveal_text: null,
+    salt: null,
+    forfeited: 0,
+    forfeited_at_game: null,
+    disconnected_at: null,
+  };
+}
+
+function createRestoreSql(
+  matchRows: Array<Record<string, unknown>>,
+  playerRowsByMatchId: Record<string, Array<Record<string, unknown>>>,
+) {
+  return {
+    exec: vi.fn((query: string, ...params: unknown[]) => {
+      if (query.includes('PRAGMA table_info(match_checkpoints)')) {
+        return makeSqlResult([
+          { name: 'current_game' },
+          { name: 'total_games' },
+          { name: 'last_settled_game' },
+          { name: 'last_game_result_json' },
+          { name: 'ai_assisted' },
+        ]);
+      }
+      if (query.includes('PRAGMA table_info(player_checkpoints)')) {
+        return makeSqlResult([
+          { name: 'forfeited_at_game' },
+          { name: 'disconnected_at' },
+        ]);
+      }
+      if (query.includes('SELECT * FROM match_checkpoints')) {
+        return makeSqlResult(matchRows);
+      }
+      if (query.includes('SELECT * FROM player_checkpoints')) {
+        const matchId = params[0];
+        return makeSqlResult(playerRowsByMatchId[String(matchId)] ?? []);
+      }
+      return makeSqlResult();
+    }),
   };
 }
 
@@ -2736,6 +2808,101 @@ describe('GameRoom async task tracking', () => {
       expect(scheduleFinalizeRetry).toHaveBeenCalledWith(settlingMatch, 0);
       expect(scheduleEndMatchRetry).toHaveBeenCalledWith(endingMatch, 0);
     } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('resumes restored phase work during constructor restore', async () => {
+    vi.useFakeTimers();
+
+    const phaseEnteredAt = Date.now();
+    const matchRows = [
+      createRestoredMatchRow('match-commit', 'commit', phaseEnteredAt),
+      createRestoredMatchRow('match-reveal', 'reveal', phaseEnteredAt),
+      createRestoredMatchRow('match-results', 'results', phaseEnteredAt),
+      createRestoredMatchRow(
+        'match-normalizing',
+        'normalizing',
+        phaseEnteredAt,
+      ),
+      createRestoredMatchRow('match-settling', 'settling', phaseEnteredAt),
+      createRestoredMatchRow('match-ending', 'ending', phaseEnteredAt),
+    ];
+    const playerRowsByMatchId = Object.fromEntries(
+      matchRows.map((row, index) => [
+        String(row.match_id),
+        [createRestoredPlayerRow(String(row.match_id), `acct-${index + 1}`)],
+      ]),
+    );
+    const waitUntil = vi.fn((_task: Promise<unknown>) => undefined);
+    const normalizeAndFinalize = vi
+      .spyOn(GameRoom.prototype, '_normalizeAndFinalizeOpenTextGame')
+      .mockResolvedValue(undefined);
+    const state = {
+      waitUntil,
+      storage: {
+        transactionSync: vi.fn((fn: () => unknown) => fn()),
+        sql: createRestoreSql(matchRows, playerRowsByMatchId),
+      },
+    } as unknown as DurableObjectState;
+    const defaultDb = {
+      prepare: vi.fn(() => ({
+        bind: vi.fn(() => ({
+          first: vi.fn().mockResolvedValue({ token_balance: 0 }),
+          all: vi.fn().mockResolvedValue({ results: [] }),
+          run: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+      batch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as D1Database;
+
+    try {
+      const room = new GameRoom(state, {
+        DB: defaultDb,
+      } as Env);
+
+      expect(
+        must(
+          room.activeMatches.get('match-commit'),
+          'Expected restored commit match',
+        ).commitTimer,
+      ).not.toBeNull();
+      expect(
+        must(
+          room.activeMatches.get('match-reveal'),
+          'Expected restored reveal match',
+        ).revealTimer,
+      ).not.toBeNull();
+      expect(
+        must(
+          room.activeMatches.get('match-results'),
+          'Expected restored results match',
+        ).resultsTimer,
+      ).not.toBeNull();
+      const normalizingMatch = must(
+        room.activeMatches.get('match-normalizing'),
+        'Expected restored normalizing match',
+      );
+      expect(normalizingMatch.normalizingInFlight).toBe(true);
+      expect(
+        must(
+          room.activeMatches.get('match-settling'),
+          'Expected restored settling match',
+        ).resultsTimer,
+      ).not.toBeNull();
+      expect(
+        must(
+          room.activeMatches.get('match-ending'),
+          'Expected restored ending match',
+        ).resultsTimer,
+      ).not.toBeNull();
+
+      expect(waitUntil).toHaveBeenCalledTimes(1);
+      await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
+      expect(normalizeAndFinalize).toHaveBeenCalledWith(normalizingMatch);
+    } finally {
+      normalizeAndFinalize.mockRestore();
       vi.clearAllTimers();
       vi.useRealTimers();
     }
