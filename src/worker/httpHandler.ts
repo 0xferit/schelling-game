@@ -26,6 +26,7 @@ const LANDING_STATS_CACHE_TTL_SECONDS = 60;
 const LANDING_STATS_CACHE_CONTROL = `public, max-age=${LANDING_STATS_CACHE_TTL_SECONDS}, s-maxage=${LANDING_STATS_CACHE_TTL_SECONDS}`;
 const LANDING_STATS_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const AUTH_CHALLENGE_CLEANUP_INTERVAL_MS = 60 * 1000;
+const RATE_LIMIT_SWEEP_INTERVAL_MS = 60 * 1000;
 const AUTH_CHALLENGE_LIMIT = { max: 12, windowMs: 60 * 1000 };
 const AUTH_VERIFY_LIMIT = { max: 24, windowMs: 60 * 1000 };
 const EXAMPLE_VOTE_LIMIT = { max: 40, windowMs: 60 * 1000 };
@@ -49,6 +50,7 @@ interface RateLimitBucket {
 }
 
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
+let nextRateLimitSweepAt = 0;
 let nextAuthChallengeCleanupAt = 0;
 
 function jsonResponse(
@@ -178,13 +180,29 @@ function getClientIdentifier(request: Request): string {
   return 'unknown';
 }
 
+function sweepStaleBuckets(now: number): void {
+  if (now < nextRateLimitSweepAt) return;
+  nextRateLimitSweepAt = now + RATE_LIMIT_SWEEP_INTERVAL_MS;
+  const maxWindowMs = Math.max(
+    AUTH_CHALLENGE_LIMIT.windowMs,
+    AUTH_VERIFY_LIMIT.windowMs,
+    EXAMPLE_VOTE_LIMIT.windowMs,
+  );
+  for (const [key, bucket] of rateLimitBuckets) {
+    if (now - bucket.windowStartedAt >= maxWindowMs) {
+      rateLimitBuckets.delete(key);
+    }
+  }
+}
+
 function isRateLimited(
   scope: string,
   request: Request,
   limit: { max: number; windowMs: number },
 ): boolean {
-  const key = `${scope}:${getClientIdentifier(request)}`;
   const now = Date.now();
+  sweepStaleBuckets(now);
+  const key = `${scope}:${getClientIdentifier(request)}`;
   const existing = rateLimitBuckets.get(key);
   if (!existing || now - existing.windowStartedAt >= limit.windowMs) {
     rateLimitBuckets.set(key, { windowStartedAt: now, count: 1 });
