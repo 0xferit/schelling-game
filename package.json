@@ -9,6 +9,7 @@
     "dev": "npm run db:migrate:local && npx wrangler dev",
     "test": "vitest run",
     "test:worker": "vitest run --config vitest.config.worker.ts",
+    "test:worker:extended": "RUN_EXTENDED_WORKER_TESTS=1 vitest run --config vitest.config.worker.ts test/worker/game-room.test.ts -t \"runs a full 10-game lifecycle and emits match_over\"",
     "smoke:staging": "node scripts/smoke-staging.mjs",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",

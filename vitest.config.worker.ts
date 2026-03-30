@@ -11,8 +11,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig(async () => {
   const migrationsPath = path.join(__dirname, 'd1-migrations');
   const migrations = await readD1Migrations(migrationsPath);
+  const runExtendedWorkerTests =
+    process.env.RUN_EXTENDED_WORKER_TESTS === '1';
 
   return {
+    define: {
+      __RUN_EXTENDED_WORKER_TESTS__: JSON.stringify(runExtendedWorkerTests),
+    },
     plugins: [
       cloudflareTest({
         // Keep worker tests hermetic and CI-friendly. Staging validation runs
