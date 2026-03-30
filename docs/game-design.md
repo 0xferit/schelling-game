@@ -37,7 +37,8 @@ The intended skill is not specialist knowledge. It is identifying focal points t
   - `5` `open_text` prompts: number `1..10`, playing card, fair split keep amount, city, word
 - Every public human match uses all `10` prompts exactly once in shuffled order.
 - `open_text` prompts are a hard prerequisite for public play. If `OPEN_TEXT_PROMPTS_ENABLED` is off, public matches do not start and the reserved cohort is restored to the waiting queue.
-- AI-assisted public matches and select-only public matches are unavailable for this catalog.
+- Limited AI backfill may raise a `1`- or `2`-human public queue to the minimum match size of `3`.
+- AI-assisted public matches remain off the record for this catalog: balances, streaks, and leaderboard standing do not change.
 - Phase timings are fixed (source of truth: `src/domain/constants.ts`):
   - commit: `60` seconds
   - reveal: `15` seconds

@@ -707,6 +707,20 @@ export class GameRoom {
     for (const botId of this._getQueuedAiBotIds()) {
       this._removeFromQueue(botId);
     }
+
+    if (!this._aiBotEnabled() || !this._openTextPromptsEnabled()) {
+      return;
+    }
+
+    const queuedHumans = this._countQueuedHumans();
+    if (queuedHumans === 0 || queuedHumans >= MIN_MATCH_SIZE) {
+      return;
+    }
+
+    const neededBots = MIN_MATCH_SIZE - queuedHumans;
+    for (let i = 0; i < neededBots; i += 1) {
+      this.waitingQueue.push(this._createAiBotId(i));
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -955,14 +969,6 @@ export class GameRoom {
       this._failMatchStart(
         playerIds,
         'Public matches are unavailable until open-text prompts are enabled',
-      );
-      return;
-    }
-    if (aiAssisted) {
-      this._failMatchStart(
-        playerIds,
-        'AI-assisted matches are unavailable with the current mixed prompt catalog',
-        { retryMatchmaking: true },
       );
       return;
     }
