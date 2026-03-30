@@ -163,9 +163,11 @@ const DEFAULT_AI_BOT_MODELS = [
 ];
 const DEFAULT_AI_BOT_TIMEOUT_MS = 5_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
+const AI_BOT_TEMPERATURE = 0.05;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
+const OPEN_TEXT_NORMALIZER_TEMPERATURE = 0;
 const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const OPEN_TEXT_NORMALIZING_STATUS = 'Normalizing open-text answers...';
 const D1_RETRY_DELAY_MS = 2_000;
@@ -1895,7 +1897,7 @@ export class GameRoom {
             },
           },
           max_tokens: 16,
-          temperature: 0,
+          temperature: AI_BOT_TEMPERATURE,
         }),
         new Promise<never>((_, reject) => {
           setTimeout(
@@ -1952,7 +1954,7 @@ export class GameRoom {
             },
           },
           max_tokens: 32,
-          temperature: 0,
+          temperature: AI_BOT_TEMPERATURE,
         }),
         new Promise<never>((_, reject) => {
           setTimeout(
@@ -2462,7 +2464,7 @@ export class GameRoom {
         },
       },
       max_tokens: 512,
-      temperature: 0,
+      temperature: OPEN_TEXT_NORMALIZER_TEMPERATURE,
     };
     const runId = crypto.randomUUID();
     const attemptLog: Array<Record<string, unknown>> = [];
