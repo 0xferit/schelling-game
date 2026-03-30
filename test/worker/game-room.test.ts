@@ -1,5 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createCommitHash,
   createOpenTextCommitHash,
@@ -92,6 +92,14 @@ function createDeterministicAiBinding() {
     },
   };
 }
+
+const envWithAi = env as unknown as {
+  AI?: {
+    run: (model: string, inputs: Record<string, unknown>) => Promise<unknown>;
+  };
+};
+
+let originalAiBinding: typeof envWithAi.AI;
 
 /** Helper: collect WebSocket messages into an array for a short window. */
 function collectMessages(
@@ -255,6 +263,15 @@ async function formMatch(
 }
 
 describe('GameRoom Durable Object', () => {
+  beforeEach(() => {
+    originalAiBinding = envWithAi.AI;
+    envWithAi.AI = createDeterministicAiBinding();
+  });
+
+  afterEach(() => {
+    envWithAi.AI = originalAiBinding;
+  });
+
   it('rejects WebSocket without session cookie (401)', async () => {
     const resp = await exports.default.fetch(
       new Request(`${BASE}/ws`, {
@@ -977,100 +994,81 @@ describe('GameRoom Durable Object', () => {
   it('runs a full 10-game lifecycle and emits match_over', {
     timeout: 180_000,
   }, async () => {
-    const envWithAi = env as unknown as {
-      AI?: {
-        run: (
-          model: string,
-          inputs: Record<string, unknown>,
-        ) => Promise<unknown>;
-      };
-    };
-    const originalAi = envWithAi.AI;
-    envWithAi.AI = createDeterministicAiBinding();
+    const p1 = await connectPlayer(25, 'FullP1', 100_000);
+    const p2 = await connectPlayer(26, 'FullP2', 100_000);
+    const p3 = await connectPlayer(27, 'FullP3', 100_000);
+    const players = [p1, p2, p3];
 
-    try {
-      const p1 = await connectPlayer(25, 'FullP1', 100_000);
-      const p2 = await connectPlayer(26, 'FullP2', 100_000);
-      const p3 = await connectPlayer(27, 'FullP3', 100_000);
-      const players = [p1, p2, p3];
+    const matchStartedPromises = players.map((p) =>
+      waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
+    );
+    let gameStartedPromises = players.map((p) =>
+      waitForMessage(p.ws, 'game_started', GAME_START_TIMEOUT_MS),
+    );
 
-      const matchStartedPromises = players.map((p) =>
-        waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
-      );
-      let gameStartedPromises = players.map((p) =>
-        waitForMessage(p.ws, 'game_started', GAME_START_TIMEOUT_MS),
-      );
+    for (const player of players) {
+      player.ws.send(JSON.stringify({ type: 'join_queue' }));
+    }
 
-      for (const player of players) {
-        player.ws.send(JSON.stringify({ type: 'join_queue' }));
+    const started = await Promise.all(matchStartedPromises);
+    for (const message of started) {
+      expect(message.gameCount).toBe(10);
+      expect(message.matchId).toBe(started[0].matchId);
+    }
+
+    for (let gameNum = 1; gameNum <= 10; gameNum++) {
+      const gameStarted = await Promise.all(gameStartedPromises);
+      const prompt = gameStarted[0]?.prompt as SchellingPrompt;
+      for (const message of gameStarted) {
+        expect(message.game).toBe(gameNum);
+        expect(message.phase).toBe('commit');
+        expect(message.prompt).toEqual(prompt);
       }
 
-      const started = await Promise.all(matchStartedPromises);
-      for (const message of started) {
-        expect(message.gameCount).toBe(10);
-        expect(message.matchId).toBe(started[0].matchId);
-      }
-
-      for (let gameNum = 1; gameNum <= 10; gameNum++) {
-        const gameStarted = await Promise.all(gameStartedPromises);
-        const prompt = gameStarted[0]?.prompt as SchellingPrompt;
-        for (const message of gameStarted) {
-          expect(message.game).toBe(gameNum);
-          expect(message.phase).toBe('commit');
-          expect(message.prompt).toEqual(prompt);
-        }
-
-        const phaseChange = waitForMessage(
-          players[0].ws,
-          'phase_change',
-          5_000,
+      const phaseChange = waitForMessage(players[0].ws, 'phase_change', 5_000);
+      for (let i = 0; i < players.length; i++) {
+        const salt = makeSalt(gameNum, i + 1);
+        const action = buildPromptAction(prompt, salt, 0);
+        players[i].ws.send(
+          JSON.stringify({ type: 'commit', hash: action.hash }),
         );
-        for (let i = 0; i < players.length; i++) {
-          const salt = makeSalt(gameNum, i + 1);
-          const action = buildPromptAction(prompt, salt, 0);
-          players[i].ws.send(
-            JSON.stringify({ type: 'commit', hash: action.hash }),
-          );
-        }
-        const phase = await phaseChange;
-        expect(phase.phase).toBe('reveal');
-
-        const gameResult = waitForMessage(
-          players[0].ws,
-          'game_result',
-          getGameResultTimeoutMs(prompt),
-        );
-        for (let i = 0; i < players.length; i++) {
-          const salt = makeSalt(gameNum, i + 1);
-          const action = buildPromptAction(prompt, salt, 0);
-          players[i].ws.send(JSON.stringify(action.reveal));
-        }
-
-        const result = await gameResult;
-        expect(result.type).toBe('game_result');
-        expect(result.result.gameNum).toBe(gameNum);
-
-        if (gameNum < 10) {
-          gameStartedPromises = players.map((p) =>
-            waitForMessage(p.ws, 'game_started', 15_000),
-          );
-        }
       }
+      const phase = await phaseChange;
+      expect(phase.phase).toBe('reveal');
 
-      const matchOver = await waitForMessage(
+      const gameResult = waitForMessage(
         players[0].ws,
-        'match_over',
-        MATCH_OVER_TIMEOUT_MS,
+        'game_result',
+        getGameResultTimeoutMs(prompt),
       );
-      expect(matchOver.type).toBe('match_over');
-      expect(Array.isArray(matchOver.summary.players)).toBe(true);
-      expect(matchOver.summary.players).toHaveLength(3);
-
-      for (const player of players) {
-        player.ws.close();
+      for (let i = 0; i < players.length; i++) {
+        const salt = makeSalt(gameNum, i + 1);
+        const action = buildPromptAction(prompt, salt, 0);
+        players[i].ws.send(JSON.stringify(action.reveal));
       }
-    } finally {
-      envWithAi.AI = originalAi;
+
+      const result = await gameResult;
+      expect(result.type).toBe('game_result');
+      expect(result.result.gameNum).toBe(gameNum);
+
+      if (gameNum < 10) {
+        gameStartedPromises = players.map((p) =>
+          waitForMessage(p.ws, 'game_started', 15_000),
+        );
+      }
+    }
+
+    const matchOver = await waitForMessage(
+      players[0].ws,
+      'match_over',
+      MATCH_OVER_TIMEOUT_MS,
+    );
+    expect(matchOver.type).toBe('match_over');
+    expect(Array.isArray(matchOver.summary.players)).toBe(true);
+    expect(matchOver.summary.players).toHaveLength(3);
+
+    for (const player of players) {
+      player.ws.close();
     }
   });
 });
