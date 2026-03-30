@@ -1765,6 +1765,9 @@ describe('GameRoom async task tracking', () => {
 
     expect(prompt).toContain('most human players');
     expect(prompt).toContain(
+      'culturally prominent and familiar to a typical person',
+    );
+    expect(prompt).toContain(
       'Prefer the most common, boring, mainstream answer',
     );
     expect(prompt).not.toContain('Think step by step');
