@@ -3340,21 +3340,22 @@ describe('GameRoom async task tracking', () => {
       status: 'idle',
     });
   });
-});
-it('does not backfill when the AI binding is unavailable', async () => {
-  const { room } = createRoom({
-    AI_BOT_ENABLED: 'true',
-    AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
-    OPEN_TEXT_PROMPTS_ENABLED: 'true',
+
+  it('does not backfill when the AI binding is unavailable', async () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+
+    await room._handleJoinQueue('acct-1');
+    await room._handleJoinQueue('acct-2');
+
+    expect(room.formingMatch).toBeNull();
+    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
   });
-  vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
-
-  room.connections.set('acct-1', createConnectionState('Alice'));
-  room.connections.set('acct-2', createConnectionState('Bob'));
-
-  await room._handleJoinQueue('acct-1');
-  await room._handleJoinQueue('acct-2');
-
-  expect(room.formingMatch).toBeNull();
-  expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
 });
