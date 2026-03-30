@@ -3274,6 +3274,10 @@ export class GameRoom {
       for (const [id, rp] of rm.players) {
         players.set(id, {
           ...rp,
+          // A restored DO cannot prove how long a previously-connected player
+          // has been unreachable once their socket disappears with eviction, so
+          // treat them as newly disconnected and give them one fresh grace
+          // window rather than forfeiting them immediately on restore.
           disconnectedAt:
             !rp.forfeited && rm.phase !== 'ending' && rp.disconnectedAt === null
               ? restoredAt
