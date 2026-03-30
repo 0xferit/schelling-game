@@ -8,7 +8,6 @@ import type { Env } from '../types/worker-env';
 import {
   fetchAccountWithStats,
   fetchPlayerDOStatus,
-  type LeaderboardEntryInput,
   shapeLeaderboardEntry,
 } from './accountRepo';
 import {
@@ -20,9 +19,15 @@ import {
 } from './session';
 
 const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
+const WALLET_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const SIGNATURE_REGEX = /^0x[a-fA-F0-9]{130}$/;
 const LANDING_STATS_CACHE_TTL_SECONDS = 60;
 const LANDING_STATS_CACHE_CONTROL = `public, max-age=${LANDING_STATS_CACHE_TTL_SECONDS}, s-maxage=${LANDING_STATS_CACHE_TTL_SECONDS}`;
 const LANDING_STATS_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const AUTH_CHALLENGE_CLEANUP_INTERVAL_MS = 60 * 1000;
+const AUTH_CHALLENGE_LIMIT = { max: 12, windowMs: 60 * 1000 };
+const AUTH_VERIFY_LIMIT = { max: 24, windowMs: 60 * 1000 };
+const EXAMPLE_VOTE_LIMIT = { max: 40, windowMs: 60 * 1000 };
 
 interface CacheStorageWithDefault extends CacheStorage {
   default?: Cache;
@@ -37,6 +42,14 @@ interface AuthChallengeRow {
   issued_at?: number | null;
 }
 
+interface RateLimitBucket {
+  windowStartedAt: number;
+  count: number;
+}
+
+const rateLimitBuckets = new Map<string, RateLimitBucket>();
+let nextAuthChallengeCleanupAt = 0;
+
 function jsonResponse(
   data: unknown,
   status = 200,
@@ -50,6 +63,14 @@ function jsonResponse(
 
 function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
+}
+
+function rateLimitResponse(windowMs: number): Response {
+  return jsonResponse(
+    { error: 'Too many requests. Please try again later.' },
+    429,
+    { 'Retry-After': String(Math.ceil(windowMs / 1000)) },
+  );
 }
 
 function cookieAttrs(request: Request): string {
@@ -114,6 +135,128 @@ function parseIssuedAtFromChallengeMessage(message: string): number | null {
   const issuedAt = Number(match[1]);
   if (!Number.isSafeInteger(issuedAt)) return null;
   return issuedAt;
+}
+
+function getRequiredString(
+  body: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = body[key];
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function readJsonObjectBody(
+  request: Request,
+): Promise<Record<string, unknown> | Response> {
+  try {
+    const raw = await request.json();
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return errorResponse('Invalid JSON');
+    }
+    return raw as Record<string, unknown>;
+  } catch {
+    return errorResponse('Invalid JSON');
+  }
+}
+
+function normalizeWalletAddress(value: string): string | null {
+  if (!WALLET_ADDRESS_REGEX.test(value)) return null;
+  return value.toLowerCase();
+}
+
+function getClientIdentifier(request: Request): string {
+  const cfIp = request.headers.get('CF-Connecting-IP');
+  if (cfIp) return cfIp.trim();
+  const forwardedFor = request.headers.get('X-Forwarded-For');
+  if (forwardedFor) {
+    const first = forwardedFor.split(',')[0];
+    if (first) return first.trim();
+  }
+  return 'unknown';
+}
+
+function isRateLimited(
+  scope: string,
+  request: Request,
+  limit: { max: number; windowMs: number },
+): boolean {
+  const key = `${scope}:${getClientIdentifier(request)}`;
+  const now = Date.now();
+  const existing = rateLimitBuckets.get(key);
+  if (!existing || now - existing.windowStartedAt >= limit.windowMs) {
+    rateLimitBuckets.set(key, { windowStartedAt: now, count: 1 });
+    return false;
+  }
+
+  existing.count += 1;
+  if (existing.count > limit.max) {
+    return true;
+  }
+  return false;
+}
+
+async function maybeCleanupExpiredAuthChallenges(
+  db: D1Database,
+): Promise<void> {
+  const now = Date.now();
+  if (now < nextAuthChallengeCleanupAt) return;
+  nextAuthChallengeCleanupAt = now + AUTH_CHALLENGE_CLEANUP_INTERVAL_MS;
+
+  try {
+    await db
+      .prepare('DELETE FROM auth_challenges WHERE expires_at < ?')
+      .bind(new Date(now).toISOString())
+      .run();
+  } catch (error) {
+    console.error('D1: auth challenge cleanup failed', error);
+  }
+}
+
+function parseLeaderboardEntryRow(row: Record<string, unknown>): {
+  display_name: string | null;
+  token_balance: number;
+  leaderboard_eligible: number;
+  matches_played: number | null;
+  games_played: number | null;
+  coherent_games: number | null;
+  current_streak: number | null;
+  longest_streak: number | null;
+} | null {
+  const displayName = row.display_name;
+  if (!(displayName === null || typeof displayName === 'string')) return null;
+
+  const toNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string' && value.length > 0) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
+
+  const tokenBalance = toNumber(row.token_balance);
+  const leaderboardEligible = toNumber(row.leaderboard_eligible);
+  const matchesPlayed = toNumber(row.matches_played);
+  const gamesPlayed = toNumber(row.games_played);
+  const coherentGames = toNumber(row.coherent_games);
+  const currentStreak = toNumber(row.current_streak);
+  const longestStreak = toNumber(row.longest_streak);
+
+  if (tokenBalance === null || leaderboardEligible === null) return null;
+
+  return {
+    display_name: displayName,
+    token_balance: tokenBalance,
+    leaderboard_eligible: leaderboardEligible,
+    matches_played: matchesPlayed,
+    games_played: gamesPlayed,
+    coherent_games: coherentGames,
+    current_streak: currentStreak,
+    longest_streak: longestStreak,
+  };
 }
 
 async function ensureAccountWithStats(
@@ -183,17 +326,22 @@ export async function handleHttpRequest(
 
   // ---- POST /api/auth/challenge ----
   if (url.pathname === '/api/auth/challenge' && method === 'POST') {
-    let body: { walletAddress?: string };
-    try {
-      body = await request.json();
-    } catch {
-      return errorResponse('Invalid JSON');
+    if (isRateLimited('auth_challenge', request, AUTH_CHALLENGE_LIMIT)) {
+      return rateLimitResponse(AUTH_CHALLENGE_LIMIT.windowMs);
     }
-    const walletAddress = body.walletAddress;
-    if (!walletAddress || typeof walletAddress !== 'string') {
+    await maybeCleanupExpiredAuthChallenges(env.DB);
+
+    const rawBody = await readJsonObjectBody(request);
+    if (rawBody instanceof Response) return rawBody;
+
+    const walletAddress = getRequiredString(rawBody, 'walletAddress');
+    if (!walletAddress) {
       return errorResponse('walletAddress required');
     }
-    const normalized = walletAddress.toLowerCase();
+    const normalized = normalizeWalletAddress(walletAddress);
+    if (!normalized) {
+      return errorResponse('walletAddress must be a valid 0x-prefixed address');
+    }
     const challengeId = `ch_${crypto.randomUUID()}`;
     const nonce = crypto.randomUUID();
     const issuedAt = Date.now();
@@ -215,23 +363,32 @@ export async function handleHttpRequest(
 
   // ---- POST /api/auth/verify ----
   if (url.pathname === '/api/auth/verify' && method === 'POST') {
-    let body: {
-      challengeId?: string;
-      walletAddress?: string;
-      signature?: string;
-    };
-    try {
-      body = await request.json();
-    } catch {
-      return errorResponse('Invalid JSON');
+    if (isRateLimited('auth_verify', request, AUTH_VERIFY_LIMIT)) {
+      return rateLimitResponse(AUTH_VERIFY_LIMIT.windowMs);
     }
-    const { challengeId, walletAddress, signature } = body;
+    await maybeCleanupExpiredAuthChallenges(env.DB);
+
+    const rawBody = await readJsonObjectBody(request);
+    if (rawBody instanceof Response) return rawBody;
+
+    const challengeId = getRequiredString(rawBody, 'challengeId');
+    const walletAddress = getRequiredString(rawBody, 'walletAddress');
+    const signature = getRequiredString(rawBody, 'signature');
     if (!challengeId || !walletAddress || !signature) {
       return errorResponse(
         'challengeId, walletAddress, and signature required',
       );
     }
-    const normalized = walletAddress.toLowerCase();
+    if (!challengeId.startsWith('ch_')) {
+      return errorResponse('challengeId format is invalid');
+    }
+    const normalized = normalizeWalletAddress(walletAddress);
+    if (!normalized) {
+      return errorResponse('walletAddress must be a valid 0x-prefixed address');
+    }
+    if (!SIGNATURE_REGEX.test(signature)) {
+      return errorResponse('signature format is invalid');
+    }
 
     const challenge = (await env.DB.prepare(
       'SELECT * FROM auth_challenges WHERE challenge_id = ? AND wallet_address = ?',
@@ -330,13 +487,10 @@ export async function handleHttpRequest(
     const accountId = await getAuthenticatedAccountId(request);
     if (!accountId) return errorResponse('Unauthorized', 401);
 
-    let body: { displayName?: string };
-    try {
-      body = await request.json();
-    } catch {
-      return errorResponse('Invalid JSON');
-    }
-    const displayName = body.displayName;
+    const rawBody = await readJsonObjectBody(request);
+    if (rawBody instanceof Response) return rawBody;
+
+    const displayName = getRequiredString(rawBody, 'displayName');
     if (!displayName || !DISPLAY_NAME_REGEX.test(displayName)) {
       return errorResponse('displayName must be 1-20 characters: A-Za-z0-9_-');
     }
@@ -378,12 +532,23 @@ export async function handleHttpRequest(
         `LIMIT ${LEADERBOARD_LIMIT}`,
     ).all();
 
-    const leaderboard = (results || []).map(
-      (r: Record<string, unknown>, i: number) => ({
+    const leaderboard = (results || [])
+      .map((r: Record<string, unknown>, i: number) => ({
         rank: i + 1,
-        ...shapeLeaderboardEntry(r as unknown as LeaderboardEntryInput),
-      }),
-    );
+        row: parseLeaderboardEntryRow(r),
+      }))
+      .filter(
+        (
+          row,
+        ): row is {
+          rank: number;
+          row: NonNullable<ReturnType<typeof parseLeaderboardEntryRow>>;
+        } => row.row !== null,
+      )
+      .map(({ rank, row }) => ({
+        rank,
+        ...shapeLeaderboardEntry(row),
+      }));
 
     return jsonResponse(leaderboard);
   }
@@ -557,24 +722,26 @@ export async function handleHttpRequest(
   if (url.pathname === '/api/admin/leaderboard-eligible' && method === 'POST') {
     const denied = await requireAdmin();
     if (denied) return denied;
-    let body: { accountId?: string; eligible?: boolean };
-    try {
-      body = await request.json();
-    } catch {
-      return errorResponse('Invalid JSON');
-    }
-    const { accountId, eligible } = body;
+    const rawBody = await readJsonObjectBody(request);
+    if (rawBody instanceof Response) return rawBody;
+
+    const accountId = getRequiredString(rawBody, 'accountId');
+    const eligible = rawBody.eligible;
     if (!accountId || typeof eligible !== 'boolean') {
       return errorResponse('accountId and eligible (boolean) required');
+    }
+    const normalizedAccountId = normalizeWalletAddress(accountId);
+    if (!normalizedAccountId) {
+      return errorResponse('accountId must be a valid 0x-prefixed address');
     }
     await env.DB.prepare(
       'UPDATE accounts SET leaderboard_eligible = ? WHERE account_id = ?',
     )
-      .bind(eligible ? 1 : 0, accountId.toLowerCase())
+      .bind(eligible ? 1 : 0, normalizedAccountId)
       .run();
 
     return jsonResponse({
-      accountId: accountId.toLowerCase(),
+      accountId: normalizedAccountId,
       leaderboardEligible: eligible,
     });
   }
@@ -589,13 +756,13 @@ export async function handleHttpRequest(
 
   // ---- POST /api/example-vote ----
   if (url.pathname === '/api/example-vote' && method === 'POST') {
-    let body: { optionIndex?: number };
-    try {
-      body = await request.json();
-    } catch {
-      return errorResponse('Invalid JSON');
+    if (isRateLimited('example_vote', request, EXAMPLE_VOTE_LIMIT)) {
+      return rateLimitResponse(EXAMPLE_VOTE_LIMIT.windowMs);
     }
-    const idx = body.optionIndex;
+    const rawBody = await readJsonObjectBody(request);
+    if (rawBody instanceof Response) return rawBody;
+
+    const idx = rawBody.optionIndex;
     if (
       typeof idx !== 'number' ||
       !Number.isInteger(idx) ||

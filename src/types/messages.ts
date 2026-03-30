@@ -10,7 +10,8 @@ export type ClientMessage =
   | { type: 'commit'; hash: string }
   | { type: 'reveal'; optionIndex: number; salt: string }
   | { type: 'reveal'; answerText: string; salt: string }
-  | { type: 'prompt_rating'; rating: 'like' | 'dislike' };
+  | { type: 'prompt_rating'; rating: 'like' | 'dislike' }
+  | { type: 'ping'; sentAt?: number };
 
 // ── Server → Client ──────────────────────────────────────────────
 
@@ -134,6 +135,12 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface PongMessage {
+  type: 'pong';
+  sentAt?: number;
+  serverTime: number;
+}
+
 export type ServerMessage =
   | QueueStateMessage
   | MatchStartedMessage
@@ -147,4 +154,5 @@ export type ServerMessage =
   | PlayerForfeitedMessage
   | PlayerReconnectedMessage
   | PromptRatingTallyMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | PongMessage;

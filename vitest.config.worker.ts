@@ -27,6 +27,16 @@ export default defineConfig(async () => {
     test: {
       include: ['test/worker/**/*.test.ts'],
       setupFiles: ['./test/worker/apply-migrations.ts'],
+      coverage: {
+        provider: 'istanbul',
+        include: ['src/worker.ts', 'src/worker/**/*.ts'],
+        thresholds: {
+          branches: 65,
+          functions: 70,
+          lines: 70,
+          statements: 70,
+        },
+      },
     },
   };
 });

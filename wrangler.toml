@@ -1,7 +1,7 @@
 name = "schelling-game"
 account_id = "abfb18f38d5263b5da582e40ba6ae552"
 main = "src/worker.ts"
-compatibility_date = "2024-12-01"
+compatibility_date = "2026-03-29"
 compatibility_flags = ["nodejs_compat"]
 
 [[durable_objects.bindings]]

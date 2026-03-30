@@ -15,7 +15,7 @@
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "stamp-build": "sed -i.bak -e \"s/__BUILD_HASH__/$(git rev-parse --short HEAD)/\" -e \"s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/\" public/index.html public/app.html",
     "unstamp-build": "mv public/index.html.bak public/index.html && mv public/app.html.bak public/app.html",
-    "deploy": "npm run stamp-build && CLOUDFLARE_API_TOKEN=${CLOUDFLARE_FERIT_API_TOKEN:-$CLOUDFLARE_API_TOKEN} npx wrangler deploy && npm run unstamp-build"
+    "deploy": "sh -c 'set -e; cleanup(){ npm run unstamp-build >/dev/null 2>&1 || true; }; trap cleanup EXIT; npm run stamp-build; CLOUDFLARE_API_TOKEN=${CLOUDFLARE_FERIT_API_TOKEN:-$CLOUDFLARE_API_TOKEN} npx wrangler deploy; trap - EXIT; cleanup'"
   },
   "repository": {
     "type": "git",
@@ -37,6 +37,7 @@
     "@cloudflare/vitest-pool-workers": "^0.13.4",
     "@cloudflare/workers-types": "^4.20260317.1",
     "@types/node": "^25.5.0",
+    "@vitest/coverage-istanbul": "^4.1.2",
     "@vitest/coverage-v8": "^4.1.2",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2",

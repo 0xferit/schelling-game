@@ -4,7 +4,7 @@ import {
   createCommitHash,
   createOpenTextCommitHash,
 } from '../../src/domain/commitReveal';
-import { RESULTS_DURATION } from '../../src/domain/constants';
+import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
 import type { OpenTextPrompt, SchellingPrompt } from '../../src/types/domain';
 import {
   createTestSession,
@@ -16,6 +16,13 @@ import {
 const BASE = 'https://test.local';
 const MATCH_START_TIMEOUT_MS = 40_000;
 const GAME_START_TIMEOUT_MS = 45_000;
+const MATCH_OVER_TIMEOUT_MS = 20_000;
+
+function makeSalt(gameNum: number, playerIdx: number): string {
+  const nibbleA = (gameNum % 16).toString(16);
+  const nibbleB = (playerIdx % 16).toString(16);
+  return `${nibbleA}${nibbleB}`.repeat(32);
+}
 
 function getOpenTextTestAnswer(prompt: OpenTextPrompt, variant = 0): string {
   switch (prompt.answerSpec.kind) {
@@ -103,6 +110,29 @@ function waitForMessage(
   });
 }
 
+/** Wait for a message that satisfies a predicate. */
+function waitForMessageWhere(
+  ws: WebSocket,
+  predicate: (msg: Record<string, unknown>) => boolean,
+  timeoutMs = 3000,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const handler = (evt: MessageEvent) => {
+      const msg = JSON.parse(evt.data as string);
+      if (predicate(msg)) {
+        clearTimeout(timer);
+        ws.removeEventListener('message', handler);
+        resolve(msg);
+      }
+    };
+    const timer = setTimeout(() => {
+      ws.removeEventListener('message', handler);
+      reject(new Error('Timed out waiting for matching message'));
+    }, timeoutMs);
+    ws.addEventListener('message', handler);
+  });
+}
+
 /** Open a WebSocket for a wallet index, returning the client socket. */
 async function connectWs(
   walletIndex: number,
@@ -146,6 +176,29 @@ async function reconnectPlayer(
   walletIndex: number,
 ): Promise<{ ws: WebSocket; accountId: string }> {
   return connectWs(walletIndex);
+}
+
+/** Join queue and start immediately via unanimous start-now votes. */
+async function joinPlayersAndStartNow(
+  players: Array<{ ws: WebSocket }>,
+): Promise<void> {
+  const formingPromises = players.map((player) =>
+    waitForMessageWhere(
+      player.ws,
+      (msg) => msg.type === 'queue_state' && msg.status === 'forming',
+      3000,
+    ),
+  );
+
+  for (const player of players) {
+    player.ws.send(JSON.stringify({ type: 'join_queue' }));
+  }
+
+  await Promise.all(formingPromises);
+
+  for (const player of players) {
+    player.ws.send(JSON.stringify({ type: 'set_start_now', value: true }));
+  }
 }
 
 /** Connect N players, join queue, and await match_started for all. */
@@ -291,6 +344,24 @@ describe('GameRoom Durable Object', () => {
     ws.close();
   });
 
+  it('rejects join_queue when balance is below the allowed floor', async () => {
+    const minAllowedBalance = -10 * GAME_ANTE;
+    const { ws } = await connectPlayer(9, 'LowBalance', minAllowedBalance - 1);
+
+    // Drain initial queue_state
+    await collectMessages(ws, 200);
+
+    ws.send(JSON.stringify({ type: 'join_queue' }));
+    const msgs = await collectMessages(ws, 300);
+    const errorMsg = msgs.find((m) => m.type === 'error');
+    expect(errorMsg).toBeDefined();
+    expect(
+      must(errorMsg, 'Expected error for insufficient balance').message,
+    ).toContain('Balance too low to enter queue');
+
+    ws.close();
+  });
+
   // The fill timer is 30 seconds; the match starts after it expires.
   it('3 players joining queue triggers match formation', {
     timeout: 45_000,
@@ -344,9 +415,7 @@ describe('GameRoom Durable Object', () => {
       MATCH_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     // Listen for game_started before awaiting match_started to avoid missing
     // back-to-back messages from the server.
@@ -424,9 +493,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     await p1Round;
@@ -504,9 +571,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     const [roundStart] = await Promise.all([p1Round, p2Round, p3Round]);
@@ -611,9 +676,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     const [roundStart] = await Promise.all([p1Round, p2Round, p3Round]);
@@ -706,9 +769,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     const [roundStart] = await Promise.all([p1Round, p2Round, p3Round]);
@@ -814,9 +875,7 @@ describe('GameRoom Durable Object', () => {
       GAME_START_TIMEOUT_MS,
     );
 
-    p1.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p2.ws.send(JSON.stringify({ type: 'join_queue' }));
-    p3.ws.send(JSON.stringify({ type: 'join_queue' }));
+    await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
     const [game1Start] = await Promise.all([p1Game1, p2Game1, p3Game1]);
@@ -889,5 +948,80 @@ describe('GameRoom Durable Object', () => {
     p1r.ws.close();
     p2.ws.close();
     p3.ws.close();
+  });
+
+  it('runs a full 10-game lifecycle and emits match_over', {
+    timeout: 180_000,
+  }, async () => {
+    const p1 = await connectPlayer(25, 'FullP1', 100_000);
+    const p2 = await connectPlayer(26, 'FullP2', 100_000);
+    const p3 = await connectPlayer(27, 'FullP3', 100_000);
+    const players = [p1, p2, p3];
+
+    const matchStartedPromises = players.map((p) =>
+      waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
+    );
+    let gameStartedPromises = players.map((p) =>
+      waitForMessage(p.ws, 'game_started', GAME_START_TIMEOUT_MS),
+    );
+
+    for (const player of players) {
+      player.ws.send(JSON.stringify({ type: 'join_queue' }));
+    }
+
+    const started = await Promise.all(matchStartedPromises);
+    for (const message of started) {
+      expect(message.gameCount).toBe(10);
+      expect(message.matchId).toBe(started[0].matchId);
+    }
+
+    for (let gameNum = 1; gameNum <= 10; gameNum++) {
+      const gameStarted = await Promise.all(gameStartedPromises);
+      for (const message of gameStarted) {
+        expect(message.game).toBe(gameNum);
+        expect(message.phase).toBe('commit');
+      }
+
+      const phaseChange = waitForMessage(players[0].ws, 'phase_change', 5_000);
+      for (let i = 0; i < players.length; i++) {
+        const salt = makeSalt(gameNum, i + 1);
+        players[i].ws.send(
+          JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt) }),
+        );
+      }
+      const phase = await phaseChange;
+      expect(phase.phase).toBe('reveal');
+
+      const gameResult = waitForMessage(players[0].ws, 'game_result', 8_000);
+      for (let i = 0; i < players.length; i++) {
+        const salt = makeSalt(gameNum, i + 1);
+        players[i].ws.send(
+          JSON.stringify({ type: 'reveal', optionIndex: 0, salt }),
+        );
+      }
+
+      const result = await gameResult;
+      expect(result.type).toBe('game_result');
+      expect(result.result.gameNum).toBe(gameNum);
+
+      if (gameNum < 10) {
+        gameStartedPromises = players.map((p) =>
+          waitForMessage(p.ws, 'game_started', 15_000),
+        );
+      }
+    }
+
+    const matchOver = await waitForMessage(
+      players[0].ws,
+      'match_over',
+      MATCH_OVER_TIMEOUT_MS,
+    );
+    expect(matchOver.type).toBe('match_over');
+    expect(Array.isArray(matchOver.summary.players)).toBe(true);
+    expect(matchOver.summary.players).toHaveLength(3);
+
+    for (const player of players) {
+      player.ws.close();
+    }
   });
 });
