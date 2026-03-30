@@ -676,6 +676,102 @@ describe('GameRoom Durable Object', () => {
     p3.ws.close();
   });
 
+  it('persists vote logs and settlement side effects to D1 after a completed game', {
+    timeout: 55_000,
+  }, async () => {
+    const p1 = await connectPlayer(28, 'PersistP1', 1000);
+    const p2 = await connectPlayer(29, 'PersistP2', 1000);
+    const p3 = await connectPlayer(30, 'PersistP3', 1000);
+    const players = [p1, p2, p3];
+
+    try {
+      const startedPromises = players.map((player) =>
+        waitForMessage(player.ws, 'match_started', MATCH_START_TIMEOUT_MS),
+      );
+      const gameStartedPromises = players.map((player) =>
+        waitForMessage(player.ws, 'game_started', GAME_START_TIMEOUT_MS),
+      );
+
+      await joinPlayersAndStartNow(players);
+
+      const started = await Promise.all(startedPromises);
+      const matchId = must(
+        started[0]?.matchId as string | undefined,
+        'Expected match id from match_started',
+      );
+      await Promise.all(gameStartedPromises);
+
+      const beforeStats = await Promise.all(
+        players.map(({ accountId }) =>
+          env.DB.prepare(
+            'SELECT games_played FROM player_stats WHERE account_id = ?',
+          )
+            .bind(accountId)
+            .first<{ games_played: number | null }>(),
+        ),
+      );
+
+      const salt1 = 'a'.repeat(64);
+      const salt2 = 'b'.repeat(64);
+      const salt3 = 'c'.repeat(64);
+
+      const phaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
+      p1.ws.send(
+        JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt1) }),
+      );
+      p2.ws.send(
+        JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt2) }),
+      );
+      p3.ws.send(
+        JSON.stringify({ type: 'commit', hash: createCommitHash(1, salt3) }),
+      );
+
+      await phaseChange;
+
+      const gameResult = waitForMessage(p1.ws, 'game_result', 5000);
+      p1.ws.send(
+        JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt1 }),
+      );
+      p2.ws.send(
+        JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt2 }),
+      );
+      p3.ws.send(
+        JSON.stringify({ type: 'reveal', optionIndex: 1, salt: salt3 }),
+      );
+
+      const result = await gameResult;
+      expect(result.type).toBe('game_result');
+      expect(result.result.gameNum).toBe(1);
+
+      const voteLogRow = await env.DB.prepare(
+        'SELECT COUNT(*) AS count FROM vote_logs WHERE match_id = ? AND game_number = ?',
+      )
+        .bind(matchId, 1)
+        .first<{ count: number }>();
+      expect(voteLogRow?.count ?? 0).toBe(3);
+
+      const afterStats = await Promise.all(
+        players.map(({ accountId }) =>
+          env.DB.prepare(
+            'SELECT games_played FROM player_stats WHERE account_id = ?',
+          )
+            .bind(accountId)
+            .first<{ games_played: number | null }>(),
+        ),
+      );
+      expect(afterStats).toHaveLength(beforeStats.length);
+      for (let index = 0; index < afterStats.length; index += 1) {
+        expect(afterStats[index]?.games_played ?? 0).toBe(
+          (beforeStats[index]?.games_played ?? 0) + 1,
+        );
+      }
+    } finally {
+      for (const player of players) {
+        player.ws.close();
+      }
+    }
+  });
+
   it('results-phase reconnect sends remaining time, not full duration', {
     timeout: 65_000,
   }, async () => {
