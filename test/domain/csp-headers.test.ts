@@ -15,7 +15,7 @@ describe('asset CSP', () => {
     expect(contentSecurityPolicy).toContain("connect-src 'self' wss:");
     expect(contentSecurityPolicy).toContain('ws://localhost:*');
     expect(contentSecurityPolicy).toContain('ws://127.0.0.1:*');
-    expect(contentSecurityPolicy).toContain('https://api.github.com');
+    expect(contentSecurityPolicy).not.toContain('https://api.github.com');
     expect(contentSecurityPolicy).not.toContain('wss://schelling.games');
   });
 });
