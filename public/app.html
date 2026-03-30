@@ -362,7 +362,6 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 .view.active{animation:viewIn .4s ease forwards}
 @keyframes viewIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 </style>
-<link rel="stylesheet" href="/shared-deploy.css"/>
 </head>
 <body>
 <div id="app">
@@ -625,7 +624,6 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 
 <footer id="build-info">
   <span>__BUILD_HASH__ &middot; __BUILD_DATE__</span>
-  <span id="deploy-status"></span>
 </footer>
 
 <div id="notif"></div>
@@ -2189,7 +2187,7 @@ function renderPromptInput(prompt, disabled) {
   const answerHint = prompt.answerSpec.kind === 'integer_range'
     ? `Enter an integer from ${prompt.answerSpec.min} to ${prompt.answerSpec.max}.`
     : prompt.answerSpec.kind === 'playing_card'
-      ? 'Use a standard playing card like Ace of Spades or A♠.'
+      ? 'Enter one playing card only.'
       : prompt.answerSpec.kind === 'single_word'
         ? 'One word only.'
         : 'One short answer only.';
@@ -3205,6 +3203,5 @@ checkSession();
 })();
 
 </script>
-<script src="/shared-deploy.js"></script>
 </body>
 </html>
