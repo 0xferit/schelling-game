@@ -137,6 +137,7 @@ GitHub Actions workflows currently do the following:
 ## Background
 
 - [Schelling Coordination in LLMs: A Review](https://www.lesswrong.com/posts/tJKNXCxx7ZKD5mtG9/schelling-coordination-in-llms-a-review)
+- [Tacit Coordination of Large Language Models](https://arxiv.org/abs/2601.22184)
 - [Secret Collusion among AI Agents: Multi-Agent Deception via Steganography](https://arxiv.org/abs/2402.07510)
 - [Subversion via Focal Points: Investigating Collusion in LLM Monitoring](https://arxiv.org/abs/2507.03010)
 
