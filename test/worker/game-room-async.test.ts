@@ -1753,7 +1753,7 @@ describe('GameRoom async task tracking', () => {
     if (match.revealTimer) clearTimeout(match.revealTimer);
   });
 
-  it('uses a plain backfill prompt instead of coaching the model into stronger Schelling behavior', () => {
+  it('uses a plain backfill prompt that biases toward common answers without chain-of-thought coaching', () => {
     const { room } = createRoom();
     const prompt = room._buildAiBotPrompt({
       id: 1,
@@ -1764,6 +1764,12 @@ describe('GameRoom async task tracking', () => {
     });
 
     expect(prompt).toContain('most human players');
+    expect(prompt).toContain(
+      'culturally prominent and familiar to a typical person',
+    );
+    expect(prompt).toContain(
+      'Prefer the most common, boring, mainstream answer',
+    );
     expect(prompt).not.toContain('Think step by step');
     expect(prompt).not.toContain('Round numbers over odd ones');
   });
