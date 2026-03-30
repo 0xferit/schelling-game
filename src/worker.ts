@@ -155,6 +155,7 @@ const FILL_TIMER_MS = 30_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
+const AI_BOT_TARGET_MATCH_SIZE = 5;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
@@ -163,9 +164,11 @@ const DEFAULT_AI_BOT_MODELS = [
 ];
 const DEFAULT_AI_BOT_TIMEOUT_MS = 5_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
+const AI_BOT_TEMPERATURE = 0.05;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
+const OPEN_TEXT_NORMALIZER_TEMPERATURE = 0;
 const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const OPEN_TEXT_NORMALIZING_STATUS = 'Normalizing open-text answers...';
 const D1_RETRY_DELAY_MS = 2_000;
@@ -593,20 +596,34 @@ export class GameRoom {
   _getAiBotModels(): string[] {
     const raw = this.env.AI_BOT_MODELS?.trim();
     if (raw) {
-      const models = raw
-        .split(',')
-        .map((m) => m.trim())
-        .filter(Boolean);
-      if (models.length > 0) return models;
+      const uniqueModels = [
+        ...new Set(
+          raw
+            .split(',')
+            .map((m) => m.trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (uniqueModels.length > 0) return uniqueModels;
     }
-    return DEFAULT_AI_BOT_MODELS;
+    return [...new Set(DEFAULT_AI_BOT_MODELS)];
+  }
+
+  _getAiBotBackfillModelIndexes(neededBots: number): number[] {
+    const models = this._getAiBotModels();
+    if (neededBots > models.length) {
+      return [];
+    }
+    return Array.from({ length: neededBots }, (_, index) => index);
   }
 
   _getAiBotModel(accountId: string): string {
     const models = this._getAiBotModels();
     const index = this._getBotModelIndex(accountId);
-    // models is guaranteed non-empty by _getAiBotModels
-    return models[index % models.length] as string;
+    if (index >= 0 && index < models.length) {
+      return models[index] as string;
+    }
+    return models[0] as string;
   }
 
   _openTextPromptsEnabled(): boolean {
@@ -739,13 +756,18 @@ export class GameRoom {
     }
 
     const queuedHumans = this._countQueuedHumans();
-    if (queuedHumans === 0 || queuedHumans >= MIN_MATCH_SIZE) {
+    if (queuedHumans === 0 || queuedHumans >= AI_BOT_TARGET_MATCH_SIZE) {
       return;
     }
 
-    const neededBots = MIN_MATCH_SIZE - queuedHumans;
-    for (let i = 0; i < neededBots; i += 1) {
-      this.waitingQueue.push(this._createAiBotId(i));
+    const neededBots = AI_BOT_TARGET_MATCH_SIZE - queuedHumans;
+    const modelIndexes = this._getAiBotBackfillModelIndexes(neededBots);
+    if (modelIndexes.length < neededBots) {
+      return;
+    }
+
+    for (const modelIndex of modelIndexes) {
+      this.waitingQueue.push(this._createAiBotId(modelIndex));
     }
   }
 
@@ -1916,7 +1938,7 @@ export class GameRoom {
             },
           },
           max_tokens: 16,
-          temperature: 0,
+          temperature: AI_BOT_TEMPERATURE,
         }),
         new Promise<never>((_, reject) => {
           setTimeout(
@@ -1973,7 +1995,7 @@ export class GameRoom {
             },
           },
           max_tokens: 32,
-          temperature: 0,
+          temperature: AI_BOT_TEMPERATURE,
         }),
         new Promise<never>((_, reject) => {
           setTimeout(
@@ -2020,6 +2042,8 @@ export class GameRoom {
         'You are filling one seat in a multiplayer coordination game.',
         'Choose the answer you expect the most human players in this match to give.',
         "Base the choice on an ordinary player's first instinct, not your personal preference.",
+        'Prefer the answer that feels culturally prominent and familiar to a typical person, not one that is merely frequent in text.',
+        'Prefer the most common, boring, mainstream answer over a clever, surprising, or contrarian one.',
         'Do not explain your reasoning.',
         '',
         `Game prompt: ${prompt.text}`,
@@ -2038,6 +2062,8 @@ export class GameRoom {
       'You are filling one seat in a multiplayer coordination game.',
       'Choose the option you expect the most human players in this match to choose.',
       "Base the choice on an ordinary player's first instinct, not your personal preference.",
+      'Prefer the option that feels culturally prominent and familiar to a typical person, not one that is merely frequent in text.',
+      'Prefer the most common, boring, mainstream answer over a clever, surprising, or contrarian one.',
       'Do not explain your reasoning.',
       '',
       `Game prompt: ${prompt.text}`,
@@ -2483,7 +2509,7 @@ export class GameRoom {
         },
       },
       max_tokens: 512,
-      temperature: 0,
+      temperature: OPEN_TEXT_NORMALIZER_TEMPERATURE,
     };
     const runId = crypto.randomUUID();
     const attemptLog: Array<Record<string, unknown>> = [];

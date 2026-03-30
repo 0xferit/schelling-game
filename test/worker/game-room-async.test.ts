@@ -37,6 +37,13 @@ const TEST_SELECT_PROMPT: SchellingPrompt = {
   options: ['A', 'B'],
 };
 
+const FOUR_DISTINCT_AI_MODELS = [
+  '@cf/test/model-a',
+  '@cf/test/model-b',
+  '@cf/test/model-c',
+  '@cf/test/model-d',
+].join(',');
+
 function makeSqlResult(rows: Array<Record<string, unknown>> = []) {
   return {
     toArray: () => rows,
@@ -1460,9 +1467,10 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('injects one bot once two humans are queued', async () => {
+  it('injects three bots once two humans are queued', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
@@ -1480,14 +1488,22 @@ describe('GameRoom async task tracking', () => {
     ).toEqual(['acct-1', 'acct-2']);
     expect(
       room.formingMatch?.players.filter((id) => room._isAiBot(id)),
-    ).toHaveLength(1);
+    ).toHaveLength(3);
+    expect(
+      new Set(
+        (room.formingMatch?.players || [])
+          .filter((id) => room._isAiBot(id))
+          .map((id) => room._getAiBotModel(id)),
+      ).size,
+    ).toBe(3);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('forms a pure-human match when the third human arrives', async () => {
+  it('keeps backfilling until five seats are reserved when the third human arrives', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: ['@cf/test/model-a', '@cf/test/model-b'].join(','),
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
@@ -1500,17 +1516,20 @@ describe('GameRoom async task tracking', () => {
     await room._handleJoinQueue('acct-2');
     await room._handleJoinQueue('acct-3');
 
-    expect(room.formingMatch?.players).toEqual(['acct-1', 'acct-2', 'acct-3']);
-    expect(room.formingMatch?.players.some((id) => room._isAiBot(id))).toBe(
-      false,
-    );
+    expect(
+      room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
+    ).toEqual(['acct-1', 'acct-2', 'acct-3']);
+    expect(
+      room.formingMatch?.players.filter((id) => room._isAiBot(id)),
+    ).toHaveLength(2);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('injects two bots for a solo human when AI_BOT_ENABLED is true', async () => {
+  it('injects four bots for a solo human when AI_BOT_ENABLED is true', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: FOUR_DISTINCT_AI_MODELS,
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
     });
     vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
@@ -1526,12 +1545,66 @@ describe('GameRoom async task tracking', () => {
     ).toEqual(['acct-1']);
     expect(
       room.formingMatch?.players.filter((id) => room._isAiBot(id)),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
+    expect(
+      new Set(
+        (room.formingMatch?.players || [])
+          .filter((id) => room._isAiBot(id))
+          .map((id) => room._getAiBotModel(id)),
+      ).size,
+    ).toBe(4);
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
-  it('does not inject a bot for six humans', async () => {
+  it('injects one bot when four humans are queued', async () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: '@cf/test/model-a',
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    for (const [accountId, displayName] of [
+      ['acct-1', 'Alice'],
+      ['acct-2', 'Bob'],
+      ['acct-3', 'Carol'],
+      ['acct-4', 'Drew'],
+    ] as const) {
+      room.connections.set(accountId, createConnectionState(displayName));
+      await room._handleJoinQueue(accountId);
+    }
+
+    expect(room.formingMatch).not.toBeNull();
+    expect(
+      room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
+    ).toEqual(['acct-1', 'acct-2', 'acct-3', 'acct-4']);
+    expect(
+      room.formingMatch?.players.filter((id) => room._isAiBot(id)),
+    ).toHaveLength(1);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
+  it('does not backfill when there are not enough distinct models for the missing seats', async () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: ['@cf/test/model-a', '@cf/test/model-b'].join(','),
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+
+    await room._handleJoinQueue('acct-1');
+    await room._handleJoinQueue('acct-2');
+
+    expect(room.formingMatch).toBeNull();
+    expect(room.waitingQueue).toEqual(['acct-1', 'acct-2']);
+  });
+
+  it('forms a pure-human match once five humans are queued', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
       OPEN_TEXT_PROMPTS_ENABLED: 'true',
@@ -1544,7 +1617,6 @@ describe('GameRoom async task tracking', () => {
       ['acct-3', 'Carol'],
       ['acct-4', 'Drew'],
       ['acct-5', 'Eve'],
-      ['acct-6', 'Frank'],
     ] as const) {
       room.connections.set(accountId, createConnectionState(displayName));
       await room._handleJoinQueue(accountId);
@@ -1557,7 +1629,6 @@ describe('GameRoom async task tracking', () => {
       'acct-3',
       'acct-4',
       'acct-5',
-      'acct-6',
     ]);
     expect(room.formingMatch?.players.some((id) => room._isAiBot(id))).toBe(
       false,
@@ -1728,7 +1799,7 @@ describe('GameRoom async task tracking', () => {
     if (match.revealTimer) clearTimeout(match.revealTimer);
   });
 
-  it('uses a plain backfill prompt instead of coaching the model into stronger Schelling behavior', () => {
+  it('uses a plain backfill prompt that biases toward common answers without chain-of-thought coaching', () => {
     const { room } = createRoom();
     const prompt = room._buildAiBotPrompt({
       id: 1,
@@ -1739,6 +1810,12 @@ describe('GameRoom async task tracking', () => {
     });
 
     expect(prompt).toContain('most human players');
+    expect(prompt).toContain(
+      'culturally prominent and familiar to a typical person',
+    );
+    expect(prompt).toContain(
+      'Prefer the most common, boring, mainstream answer',
+    );
     expect(prompt).not.toContain('Think step by step');
     expect(prompt).not.toContain('Round numbers over odd ones');
   });
