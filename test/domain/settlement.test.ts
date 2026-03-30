@@ -29,6 +29,9 @@ const openTextPrompt: OpenTextPrompt = {
   category: 'culture',
   maxLength: 64,
   placeholder: 'e.g. London',
+  answerSpec: { kind: 'free_text' },
+  aiNormalization: 'required',
+  canonicalExamples: ['London'],
 };
 
 function makePlayer(

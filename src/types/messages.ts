@@ -51,18 +51,28 @@ export interface GameStartedMessage {
   commitDuration: number;
   gameAnte: number;
   aiAssisted: boolean;
-  phase: 'commit' | 'reveal' | 'results';
+  phase: 'commit' | 'reveal' | 'normalizing' | 'results';
   /** Sent on reconnect: whether this player already committed this game */
   yourCommitted?: boolean;
   /** Sent on reconnect: whether this player already revealed this game */
   yourRevealed?: boolean;
 }
 
-export interface PhaseChangeMessage {
+export interface RevealPhaseChangeMessage {
   type: 'phase_change';
   phase: 'reveal';
   revealDuration: number;
 }
+
+export interface NormalizingPhaseChangeMessage {
+  type: 'phase_change';
+  phase: 'normalizing';
+  status: string;
+}
+
+export type PhaseChangeMessage =
+  | RevealPhaseChangeMessage
+  | NormalizingPhaseChangeMessage;
 
 export interface CommitStatusMessage {
   type: 'commit_status';

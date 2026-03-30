@@ -1,8 +1,13 @@
 import crypto from 'node:crypto';
+import type { OpenTextPrompt } from '../types/domain';
+import {
+  canonicalizeOpenTextAnswer,
+  normalizeRevealText,
+  validateOpenTextAnswer,
+} from './openText';
 
 const MIN_SALT_LENGTH = 32;
 const MAX_SALT_LENGTH = 128;
-const TERMINAL_PUNCTUATION_RE = /[.!?,;:]+(?=(?:['"])?$)/;
 
 function buildCommitPreimage(value: string | number, salt: string): string {
   return `${value}:${salt}`;
@@ -23,31 +28,29 @@ export function verifyCommit(
   return createCommitHash(value, salt) === hash;
 }
 
-export function normalizeRevealText(answerText: string): string {
-  return answerText
-    .normalize('NFKC')
-    .replace(/[\u2018\u2019\u2032`]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase()
-    .replace(TERMINAL_PUNCTUATION_RE, '')
-    .trim();
-}
-
 export function createOpenTextCommitHash(
   answerText: string,
   salt: string,
+  prompt: OpenTextPrompt,
 ): string {
-  return createCommitHash(normalizeRevealText(answerText), salt);
+  const canonical = canonicalizeOpenTextAnswer(answerText, prompt);
+  if (!canonical) {
+    throw new RangeError(
+      'Open-text answer does not satisfy prompt constraints',
+    );
+  }
+  return createCommitHash(canonical.canonicalCommitText, salt);
 }
 
 export function verifyOpenTextCommit(
   answerText: string,
   salt: string,
   hash: string,
+  prompt: OpenTextPrompt,
 ): boolean {
-  return createOpenTextCommitHash(answerText, salt) === hash;
+  const canonical = canonicalizeOpenTextAnswer(answerText, prompt);
+  if (!canonical) return false;
+  return createCommitHash(canonical.canonicalCommitText, salt) === hash;
 }
 
 export function validateSalt(salt: unknown): salt is string {
@@ -74,10 +77,19 @@ export function validateOptionIndex(
 
 export function validateAnswerText(
   answerText: unknown,
-  maxLength: number,
+  maxLengthOrPrompt: number | OpenTextPrompt,
 ): answerText is string {
-  if (typeof answerText !== 'string') return false;
-  if (answerText.length === 0 || answerText.length > maxLength) return false;
-  if (/[\r\n]/.test(answerText)) return false;
-  return normalizeRevealText(answerText).length > 0;
+  if (typeof maxLengthOrPrompt === 'number') {
+    if (typeof answerText !== 'string') return false;
+    if (
+      answerText.length === 0 ||
+      answerText.length > maxLengthOrPrompt ||
+      /[\r\n]/.test(answerText)
+    ) {
+      return false;
+    }
+    return normalizeRevealText(answerText).length > 0;
+  }
+
+  return validateOpenTextAnswer(answerText, maxLengthOrPrompt);
 }

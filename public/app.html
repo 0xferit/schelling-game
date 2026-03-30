@@ -649,7 +649,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 
     <div>
       <p class="rules-section-label">Game Flow</p>
-      <p class="rules-text">Each game flows through Commit (60s), auto-reveal, and Settle (7s). Every attached player antes 2520 per game.</p>
+      <p class="rules-text">Each game flows through Commit (60s), Reveal (15s), Normalizing for open-text prompts, and Settle (7s). Every attached player antes 2520 per game.</p>
     </div>
 
     <div>
@@ -664,7 +664,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 
     <div>
       <p class="rules-section-label">Voided Games</p>
-      <p class="rules-text">If nobody reveals in time, the game is voided and all antes are refunded.</p>
+      <p class="rules-text">If nobody produces a valid reveal, or if open-text normalization fails after all retries, the game is voided and all antes are refunded.</p>
     </div>
 
     <div>
@@ -926,8 +926,9 @@ function updateNavigation() {
 function normalizeRevealText(answerText) {
   return answerText
     .normalize('NFKC')
-    .replace(/[‘’`´]/g, "'")
+    .replace(/[\u2018\u2019\u2032`]/g, "'")
     .replace(/[“”]/g, '"')
+    .replace(/[\u2010-\u2015]/g, '-')
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase()
@@ -935,18 +936,216 @@ function normalizeRevealText(answerText) {
     .trim();
 }
 
-function validateOpenTextAnswer(answerText, maxLength) {
-  if (typeof answerText !== 'string') return false;
-  if (!answerText.trim()) return false;
-  if (answerText.length > maxLength) return false;
-  if (/[\r\n]/.test(answerText)) return false;
-  return normalizeRevealText(answerText).length > 0;
+const WORD_NUMBER_MAP = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+};
+
+const TENS_NUMBER_MAP = {
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+};
+
+const CARD_RANK_LABELS = {
+  a: 'Ace',
+  ace: 'Ace',
+  2: '2',
+  two: '2',
+  3: '3',
+  three: '3',
+  4: '4',
+  four: '4',
+  5: '5',
+  five: '5',
+  6: '6',
+  six: '6',
+  7: '7',
+  seven: '7',
+  8: '8',
+  eight: '8',
+  9: '9',
+  nine: '9',
+  10: '10',
+  ten: '10',
+  j: 'Jack',
+  jack: 'Jack',
+  q: 'Queen',
+  queen: 'Queen',
+  k: 'King',
+  king: 'King',
+};
+
+const CARD_SUIT_LABELS = {
+  c: 'Clubs',
+  club: 'Clubs',
+  clubs: 'Clubs',
+  '♣': 'Clubs',
+  d: 'Diamonds',
+  diamond: 'Diamonds',
+  diamonds: 'Diamonds',
+  '♦': 'Diamonds',
+  h: 'Hearts',
+  heart: 'Hearts',
+  hearts: 'Hearts',
+  '♥': 'Hearts',
+  s: 'Spades',
+  spade: 'Spades',
+  spades: 'Spades',
+  '♠': 'Spades',
+};
+
+function normalizeNumberWords(value) {
+  return value
+    .replace(/-/g, ' ')
+    .replace(/\band\b/g, ' ')
+    .replace(/\bdollars?\b/g, ' ')
+    .replace(/\$/g, ' ')
+    .replace(/,/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseEnglishInteger(value) {
+  const normalized = normalizeNumberWords(value);
+  if (!normalized) return null;
+  if (WORD_NUMBER_MAP[normalized] !== undefined) return WORD_NUMBER_MAP[normalized];
+  if (TENS_NUMBER_MAP[normalized] !== undefined) return TENS_NUMBER_MAP[normalized];
+  if (normalized === 'one hundred') return 100;
+
+  const parts = normalized.split(' ').filter(Boolean);
+  if (parts.length === 2) {
+    const tens = TENS_NUMBER_MAP[parts[0]];
+    const ones = WORD_NUMBER_MAP[parts[1]];
+    if (tens !== undefined && ones !== undefined && ones < 10) {
+      return tens + ones;
+    }
+  }
+  return null;
+}
+
+function parseIntegerRangeAnswer(normalizedRevealText, spec) {
+  const trimmed = normalizeNumberWords(normalizedRevealText);
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) {
+    const parsed = parseInt(trimmed, 10);
+    return parsed >= spec.min && parsed <= spec.max ? parsed : null;
+  }
+  if (!spec.allowWords) return null;
+  const parsed = parseEnglishInteger(trimmed);
+  if (parsed === null) return null;
+  return parsed >= spec.min && parsed <= spec.max ? parsed : null;
+}
+
+function parsePlayingCardAnswer(normalizedRevealText) {
+  const compact = normalizedRevealText.replace(/\s+/g, '');
+  const compactMatch = compact.match(/^(10|[2-9]|[ajqk])([cdhs♣♦♥♠])$/i);
+  if (compactMatch) {
+    const rank = CARD_RANK_LABELS[(compactMatch[1] || '').toLowerCase()];
+    const suit = CARD_SUIT_LABELS[(compactMatch[2] || '').toLowerCase()];
+    if (rank && suit) {
+      return `${rank} of ${suit}`;
+    }
+  }
+
+  const tokens = normalizedRevealText
+    .replace(/10/g, '10 ')
+    .replace(/[♣♦♥♠]/g, ' $& ')
+    .replace(/\bof\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+  if (tokens.length !== 2) return null;
+
+  const rank = CARD_RANK_LABELS[(tokens[0] || '').toLowerCase()];
+  const suit = CARD_SUIT_LABELS[(tokens[1] || '').toLowerCase()];
+  if (!rank || !suit) return null;
+  return `${rank} of ${suit}`;
+}
+
+function canonicalizeOpenTextAnswer(answerText, prompt) {
+  if (!prompt || prompt.type !== 'open_text') return null;
+  if (typeof answerText !== 'string') return null;
+  if (answerText.length === 0 || answerText.length > prompt.maxLength) return null;
+  if (/[\r\n]/.test(answerText)) return null;
+
+  const normalizedRevealText = normalizeRevealText(answerText);
+  if (!normalizedRevealText) return null;
+
+  switch (prompt.answerSpec.kind) {
+    case 'integer_range': {
+      const parsed = parseIntegerRangeAnswer(normalizedRevealText, prompt.answerSpec);
+      if (parsed === null) return null;
+      const canonical = String(parsed);
+      return {
+        normalizedRevealText,
+        canonicalCommitText: canonical,
+        canonicalCandidate: canonical,
+        bucketLabelCandidate: prompt.answerSpec.allowCurrency ? `$${canonical}` : canonical,
+      };
+    }
+    case 'playing_card': {
+      const parsed = parsePlayingCardAnswer(normalizedRevealText);
+      if (!parsed) return null;
+      return {
+        normalizedRevealText,
+        canonicalCommitText: parsed,
+        canonicalCandidate: parsed,
+        bucketLabelCandidate: parsed,
+      };
+    }
+    case 'single_word':
+      if (normalizedRevealText.includes(' ')) return null;
+      return {
+        normalizedRevealText,
+        canonicalCommitText: normalizedRevealText,
+        canonicalCandidate: normalizedRevealText,
+        bucketLabelCandidate: normalizedRevealText,
+      };
+    case 'free_text':
+      return {
+        normalizedRevealText,
+        canonicalCommitText: normalizedRevealText,
+        canonicalCandidate: normalizedRevealText,
+        bucketLabelCandidate: normalizedRevealText,
+      };
+    default:
+      return null;
+  }
+}
+
+function validateOpenTextAnswer(answerText, prompt) {
+  return canonicalizeOpenTextAnswer(answerText, prompt) !== null;
 }
 
 function hasRevealPreimageForPrompt(prompt = S.prompt) {
   if (!prompt || !S.salt) return false;
   if (prompt.type === 'select') return S.selectedOption !== null;
-  return validateOpenTextAnswer(S.selectedAnswerText, prompt.maxLength);
+  return validateOpenTextAnswer(S.selectedAnswerText, prompt);
 }
 
 function getCurrentRevealPayload() {
@@ -966,10 +1165,7 @@ function updateCommitButtonState() {
     $('#commit-btn').disabled = S.selectedOption === null;
     return;
   }
-  $('#commit-btn').disabled = !validateOpenTextAnswer(
-    S.selectedAnswerText,
-    S.prompt.maxLength,
-  );
+  $('#commit-btn').disabled = !validateOpenTextAnswer(S.selectedAnswerText, S.prompt);
 }
 
 function getRevealLabel(player) {
@@ -1878,9 +2074,11 @@ function onGameStarted(msg) {
 
   // UI: use server-provided phase for labels
   const phaseLabel = msg.phase === 'reveal' ? 'Auto-Reveal'
+    : msg.phase === 'normalizing' ? 'Normalizing'
     : msg.phase === 'results' ? 'Settle' : 'Commit';
   $('#phase-label').textContent = `Game ${msg.game} / ${S.totalGames} : ${phaseLabel}`;
   const phaseTimerLabel = msg.phase === 'reveal' ? 'Auto-Reveal'
+    : msg.phase === 'normalizing' ? 'Normalizing'
     : msg.phase === 'results' ? 'Settle'
     : msg.phase === 'commit' ? 'Commit' : '';
   $('#phase-timer-label').textContent = phaseTimerLabel;
@@ -1907,11 +2105,14 @@ function onGameStarted(msg) {
     }
     $('#reveal-area').classList.add('hidden');
   } else {
-    // Reconnect during reveal/results: hide both; phase_change handles UI
+    // Reconnect during reveal/normalizing/results: hide both; phase_change handles UI
     $('#commit-area').classList.add('hidden');
     $('#reveal-area').classList.add('hidden');
-    // For reconnect during reveal when already committed+revealed, show status
-    if (msg.yourRevealed) {
+    if (msg.phase === 'normalizing') {
+      $('#commit-area').classList.remove('hidden');
+      $('#commit-status').textContent = 'Normalizing open-text answers...';
+    } else if (msg.yourRevealed) {
+      // For reconnect during reveal when already committed+revealed, show status
       $('#commit-area').classList.remove('hidden');
       $('#commit-status').textContent = 'Revealed. Waiting for others...';
     } else if (alreadyCommitted) {
@@ -1930,8 +2131,10 @@ function onGameStarted(msg) {
   } else {
     // Clear any stale timer from a previous phase
     clearInterval(S.timerInterval);
-    $('#timer-bar').style.width = '0%';
-    $('#timer-num').textContent = '';
+    $('#timer-bar').style.width = msg.phase === 'normalizing' ? '100%' : '0%';
+    $('#timer-bar').style.background =
+      msg.phase === 'normalizing' ? 'rgba(201,168,76,.45)' : 'var(--accent)';
+    $('#timer-num').textContent = msg.phase === 'normalizing' ? '--' : '';
     $('#timer-num').classList.remove('urgent');
   }
 
@@ -1983,7 +2186,14 @@ function renderPromptInput(prompt, disabled) {
 
   const hint = document.createElement('div');
   hint.className = 'text-answer-hint';
-  hint.textContent = `One short answer only. Max ${prompt.maxLength} characters.`;
+  const answerHint = prompt.answerSpec.kind === 'integer_range'
+    ? `Enter an integer from ${prompt.answerSpec.min} to ${prompt.answerSpec.max}.`
+    : prompt.answerSpec.kind === 'playing_card'
+      ? 'Use a standard playing card like Ace of Spades or A♠.'
+      : prompt.answerSpec.kind === 'single_word'
+        ? 'One word only.'
+        : 'One short answer only.';
+  hint.textContent = `${answerHint} Max ${prompt.maxLength} characters.`;
 
   wrap.appendChild(input);
   wrap.appendChild(hint);
@@ -2004,7 +2214,7 @@ $('#commit-btn').addEventListener('click', async () => {
   if (S.prompt.type === 'select' && S.selectedOption === null) return;
   if (
     S.prompt.type === 'open_text' &&
-    !validateOpenTextAnswer(S.selectedAnswerText, S.prompt.maxLength)
+    !validateOpenTextAnswer(S.selectedAnswerText, S.prompt)
   ) {
     return;
   }
@@ -2016,7 +2226,8 @@ $('#commit-btn').addEventListener('click', async () => {
   // Create hash
   const commitValue = S.prompt.type === 'select'
     ? String(S.selectedOption)
-    : normalizeRevealText(S.selectedAnswerText);
+    : canonicalizeOpenTextAnswer(S.selectedAnswerText, S.prompt)?.canonicalCommitText;
+  if (commitValue === null || commitValue === undefined) return;
   const preimage = `${commitValue}:${S.salt}`;
   const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(preimage));
   S.commitHash = Array.from(new Uint8Array(hashBuf))
@@ -2066,6 +2277,22 @@ function onPhaseChange(msg) {
     }
 
     startTimer(msg.revealDuration);
+    renderLiveReadout();
+    return;
+  }
+
+  if (msg.phase === 'normalizing') {
+    S.phase = 'normalizing';
+    $('#phase-label').textContent = `Game ${S.game} / ${S.totalGames} : Normalizing`;
+    $('#phase-timer-label').textContent = 'Normalizing';
+    $('#commit-area').classList.remove('hidden');
+    $('#reveal-area').classList.add('hidden');
+    $('#commit-status').textContent = msg.status || 'Normalizing open-text answers...';
+    clearInterval(S.timerInterval);
+    $('#timer-bar').style.width = '100%';
+    $('#timer-bar').style.background = 'rgba(201,168,76,.45)';
+    $('#timer-num').textContent = '--';
+    $('#timer-num').classList.remove('urgent');
     renderLiveReadout();
   }
 }

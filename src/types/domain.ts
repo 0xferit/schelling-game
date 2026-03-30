@@ -13,6 +13,32 @@ interface BasePrompt {
   category: PromptCategory;
 }
 
+export interface IntegerRangeAnswerSpec {
+  kind: 'integer_range';
+  min: number;
+  max: number;
+  allowWords: boolean;
+  allowCurrency?: boolean;
+}
+
+export interface PlayingCardAnswerSpec {
+  kind: 'playing_card';
+}
+
+export interface FreeTextAnswerSpec {
+  kind: 'free_text';
+}
+
+export interface SingleWordAnswerSpec {
+  kind: 'single_word';
+}
+
+export type OpenTextAnswerSpec =
+  | IntegerRangeAnswerSpec
+  | PlayingCardAnswerSpec
+  | FreeTextAnswerSpec
+  | SingleWordAnswerSpec;
+
 export interface SelectPrompt extends BasePrompt {
   type: 'select';
   options: string[];
@@ -22,12 +48,15 @@ export interface OpenTextPrompt extends BasePrompt {
   type: 'open_text';
   maxLength: number;
   placeholder: string;
+  answerSpec: OpenTextAnswerSpec;
+  aiNormalization: 'required';
+  canonicalExamples?: string[];
 }
 
 export type SchellingPrompt = SelectPrompt | OpenTextPrompt;
 
-export type GamePhase = 'commit' | 'reveal' | 'results';
-export type NormalizationMode = 'llm' | 'fallback_exact' | null;
+export type GamePhase = 'commit' | 'reveal' | 'normalizing' | 'results';
+export type NormalizationMode = 'llm' | null;
 
 export interface PlayerSettlementInput {
   accountId: string;

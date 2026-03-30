@@ -1,9 +1,9 @@
 # ADR 0009: Hybrid prompt public mode
 
-Status: Accepted
+Status: Superseded by ADR 0010
 Date: 2026-03-29
 
-Supersession note: This ADR supersedes the `select`-only portion of ADR [0001](0001-select-only-plurality-public-mode.md). Exact-match plurality and the fixed 10-game public format remain canonical.
+Supersession note: This ADR superseded the `select`-only portion of ADR [0001](0001-select-only-plurality-public-mode.md). It is now superseded by ADR [0010](0010-ten-seed-ai-normalized-public-mode.md), which replaces the 100-prompt hybrid pool with a fixed 10-seed catalog and removes exact-match fallback for open-text settlement.
 
 ## Context
 

@@ -1,6 +1,5 @@
 import {
   createCommitHash,
-  normalizeRevealText,
   validateAnswerText,
   validateHash,
   validateOptionIndex,
@@ -14,11 +13,16 @@ import {
   RESULTS_DURATION,
   REVEAL_DURATION,
 } from './domain/constants';
+import {
+  canonicalizeOpenTextAnswer,
+  normalizeRevealText,
+} from './domain/openText';
 import { selectPromptsForMatch } from './domain/prompts';
-import { settleGame } from './domain/settlement';
+import { settleGame, voidGame } from './domain/settlement';
 import type {
   GameResult,
   NormalizationMode,
+  OpenTextPrompt,
   PlayerResultWithBalance,
   PlayerSettlementInput,
   SchellingPrompt,
@@ -29,7 +33,7 @@ import type {
   QueueStateMessage,
   ServerMessage,
 } from './types/messages';
-import type { Env } from './types/worker-env';
+import type { AiBinding, Env } from './types/worker-env';
 import { handleHttpRequest } from './worker/httpHandler';
 import type {
   PersistedMatchFields,
@@ -68,6 +72,7 @@ interface WorkerMatchState extends PersistedMatchFields {
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
+  normalizingInFlight: boolean;
 }
 
 interface FormingMatchState {
@@ -82,14 +87,22 @@ interface NormalizationVerdict {
   bucketLabel: string;
 }
 
+interface NormalizationCandidate {
+  normalizedInputText: string;
+  rawAnswerText: string;
+  canonicalCandidate: string;
+  bucketLabelCandidate: string;
+}
+
 interface NormalizationRun {
   runId: string | null;
-  mode: NormalizationMode;
+  mode: 'llm' | 'llm_failed' | null;
   verdicts: Map<string, NormalizationVerdict>;
   model: string | null;
   normalizerPrompt: string | null;
   requestJson: string | null;
   responseJson: string | null;
+  failureReason: string | null;
 }
 
 interface PersistedVoteLogRow {
@@ -151,6 +164,8 @@ const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
+const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
+const OPEN_TEXT_NORMALIZING_STATUS = 'Normalizing open-text answers...';
 const D1_RETRY_DELAY_MS = 2_000;
 const WS_LIVENESS_CHECK_INTERVAL_MS = 10_000;
 const WS_IDLE_TIMEOUT_MS = 35_000;
@@ -581,6 +596,15 @@ export class GameRoom {
     return parsed;
   }
 
+  _getAiBinding(): AiBinding | null {
+    try {
+      return this.env.AI ?? null;
+    } catch (error) {
+      console.error('Workers AI binding access failed', error);
+      return null;
+    }
+  }
+
   _getDisplayName(accountId: string): string {
     if (this._isAiBot(accountId)) {
       const model = this._getAiBotModel(accountId);
@@ -680,43 +704,7 @@ export class GameRoom {
   // both waitingQueue and formingMatch to count humans, so the caller
   // must not move players between those structures between the two calls.
   _ensureAiBotBackfill(): void {
-    const queuedBotIds = this._getQueuedAiBotIds();
-
-    if (!this._aiBotEnabled()) {
-      for (const botId of queuedBotIds) {
-        this._removeFromQueue(botId);
-      }
-      return;
-    }
-
-    const humanCount = this._countQueuedHumans();
-    const botsNeeded =
-      humanCount >= 1 && humanCount < MIN_MATCH_SIZE
-        ? MIN_MATCH_SIZE - humanCount
-        : 0;
-
-    if (botsNeeded > 0) {
-      // Remove excess bots
-      while (queuedBotIds.length > botsNeeded) {
-        const excess = queuedBotIds.pop();
-        if (excess) this._removeFromQueue(excess);
-      }
-      // Add missing bots, each with a distinct model index
-      const usedIndices = new Set(
-        queuedBotIds.map((id) => this._getBotModelIndex(id)),
-      );
-      let nextIndex = 0;
-      while (queuedBotIds.length < botsNeeded) {
-        while (usedIndices.has(nextIndex)) nextIndex++;
-        this.waitingQueue.push(this._createAiBotId(nextIndex));
-        usedIndices.add(nextIndex);
-        queuedBotIds.push(''); // track count
-        nextIndex++;
-      }
-      return;
-    }
-
-    for (const botId of queuedBotIds) {
+    for (const botId of this._getQueuedAiBotIds()) {
       this._removeFromQueue(botId);
     }
   }
@@ -728,6 +716,14 @@ export class GameRoom {
   async _handleJoinQueue(accountId: string): Promise<void> {
     const conn = this.connections.get(accountId);
     if (!conn) return;
+
+    if (!this._openTextPromptsEnabled()) {
+      return this._sendTo(accountId, {
+        type: 'error',
+        message:
+          'Public matches are unavailable until open-text prompts are enabled',
+      });
+    }
 
     // Cannot join if already in a match
     if (this.playerMatchIndex.has(accountId)) {
@@ -924,11 +920,63 @@ export class GameRoom {
   // Match lifecycle
   // -------------------------------------------------------------------------
 
+  _failMatchStart(
+    playerIds: string[],
+    message: string,
+    options: { retryMatchmaking?: boolean } = {},
+  ): void {
+    const returningHumans = playerIds.filter(
+      (accountId) =>
+        !this._isAiBot(accountId) && !this.waitingQueue.includes(accountId),
+    );
+
+    this._clearStartNowFlags(playerIds);
+    if (returningHumans.length > 0) {
+      this.waitingQueue.unshift(...returningHumans);
+    }
+    this._ensureAiBotBackfill();
+
+    for (const accountId of playerIds) {
+      if (this._isAiBot(accountId)) continue;
+      this._sendTo(accountId, {
+        type: 'error',
+        message,
+      });
+    }
+    if (options.retryMatchmaking) {
+      this._tryFormMatch();
+    }
+    this._broadcastQueueState();
+  }
+
   async _startMatch(playerIds: string[], matchId: string): Promise<void> {
     const aiAssisted = playerIds.some((id) => this._isAiBot(id));
-    const includeOpenText =
-      !aiAssisted && this._openTextPromptsEnabled() && !!this.env.AI;
-    const prompts = selectPromptsForMatch(TOTAL_GAMES, { includeOpenText });
+    if (!this._openTextPromptsEnabled()) {
+      this._failMatchStart(
+        playerIds,
+        'Public matches are unavailable until open-text prompts are enabled',
+      );
+      return;
+    }
+    if (aiAssisted) {
+      this._failMatchStart(
+        playerIds,
+        'AI-assisted matches are unavailable with the current mixed prompt catalog',
+        { retryMatchmaking: true },
+      );
+      return;
+    }
+
+    let prompts: SchellingPrompt[];
+    try {
+      prompts = selectPromptsForMatch(TOTAL_GAMES, { includeOpenText: true });
+    } catch (error) {
+      this._failMatchStart(
+        playerIds,
+        (error as Error).message || 'Unable to start a public match',
+      );
+      return;
+    }
 
     const playersMap = new Map<string, WorkerPlayerState>();
     for (const accountId of playerIds) {
@@ -1014,6 +1062,7 @@ export class GameRoom {
       commitTimer: null,
       revealTimer: null,
       resultsTimer: null,
+      normalizingInFlight: false,
       lastGameResult: null,
       aiAssisted,
     };
@@ -1072,6 +1121,7 @@ export class GameRoom {
     match.currentGame = nextGame;
     match.phaseEnteredAt = Date.now();
     match.lastGameResult = null;
+    match.normalizingInFlight = false;
 
     // Reset per-game player state
     for (const p of match.players.values()) {
@@ -1123,20 +1173,60 @@ export class GameRoom {
 
     match.revealTimer = setTimeout(() => {
       match.revealTimer = null;
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
     }, REVEAL_DURATION * 1000);
 
     this._autoRevealAiBots(match);
   }
 
-  async _finalizeGame(match: WorkerMatchState): Promise<void> {
+  _completeRevealPhase(match: WorkerMatchState): void {
+    const prompt = this._getPromptForGame(match, match.currentGame);
+    if (prompt.type === 'open_text') {
+      this._startNormalizingPhase(match);
+      return;
+    }
+
+    this._waitUntil(
+      this._finalizeGame(match),
+      `finalize game ${match.currentGame} for ${match.matchId}`,
+    );
+  }
+
+  _startNormalizingPhase(match: WorkerMatchState): void {
     if (match.revealTimer) {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
+    if (match.normalizingInFlight) {
+      return;
+    }
+
+    match.phase = 'normalizing';
+    match.phaseEnteredAt = Date.now();
+    match.normalizingInFlight = true;
+
+    this._checkpointMatch(match);
+    this._broadcastToMatch(match, {
+      type: 'phase_change',
+      phase: 'normalizing',
+      status: OPEN_TEXT_NORMALIZING_STATUS,
+    });
+
+    this._waitUntil(
+      this._normalizeAndFinalizeOpenTextGame(match),
+      `normalize game ${match.currentGame} for ${match.matchId}`,
+    );
+  }
+
+  async _finalizeGame(
+    match: WorkerMatchState,
+    normalizationRun: NormalizationRun | null = null,
+  ): Promise<void> {
+    if (match.revealTimer) {
+      clearTimeout(match.revealTimer);
+      match.revealTimer = null;
+    }
+    match.normalizingInFlight = false;
     if (match.resultsTimer) {
       clearTimeout(match.resultsTimer);
       match.resultsTimer = null;
@@ -1186,7 +1276,6 @@ export class GameRoom {
       }
       match.lastSettledGame = match.currentGame;
     } else {
-      // Build player array for settlement
       const settlementPlayers: PlayerSettlementInput[] = [
         ...match.players.values(),
       ].map((p) => {
@@ -1223,60 +1312,50 @@ export class GameRoom {
         };
       });
 
-      let normalizationRun: NormalizationRun = {
-        runId: null,
-        mode: null,
-        verdicts: new Map(),
-        model: null,
-        normalizerPrompt: null,
-        requestJson: null,
-        responseJson: null,
-      };
+      let effectiveNormalizationRun =
+        normalizationRun ?? this._buildEmptyNormalizationRun();
 
-      if (prompt.type === 'open_text') {
-        const normalizedInputs = [
-          ...new Set(
-            settlementPlayers
-              .filter((player) => player.validReveal)
-              .map((player) => player.normalizedRevealText)
-              .filter((value): value is string => !!value),
-          ),
-        ].sort();
-
-        normalizationRun = await this._normalizeOpenTextReveals(
+      if (prompt.type === 'open_text' && normalizationRun === null) {
+        effectiveNormalizationRun = await this._normalizeOpenTextReveals(
           prompt,
-          normalizedInputs,
+          this._collectOpenTextNormalizationCandidates(match, prompt),
         );
-
-        for (const player of settlementPlayers) {
-          if (!player.validReveal || !player.normalizedRevealText) continue;
-          const verdict =
-            normalizationRun.verdicts.get(player.normalizedRevealText) || null;
-          if (verdict) {
-            player.bucketKey = verdict.bucketKey;
-            player.bucketLabel = verdict.bucketLabel;
-          } else {
-            player.bucketKey = player.normalizedRevealText;
-            player.bucketLabel = player.normalizedRevealText;
-          }
-        }
       }
 
-      const settledResult = settleGame(
-        settlementPlayers,
-        prompt,
-        prompt.type === 'open_text' ? normalizationRun.mode : null,
-      );
-      result = match.aiAssisted
-        ? neutralizeAiAssistedResult(settledResult)
-        : settledResult;
+      if (prompt.type === 'open_text') {
+        if (effectiveNormalizationRun.mode === 'llm_failed') {
+          result = voidGame(
+            settlementPlayers,
+            'open_text_normalization_failed',
+          );
+        } else {
+          for (const player of settlementPlayers) {
+            if (!player.validReveal || !player.normalizedRevealText) continue;
+            const verdict =
+              effectiveNormalizationRun.verdicts.get(
+                player.normalizedRevealText,
+              ) || null;
+            if (verdict) {
+              player.bucketKey = verdict.bucketKey;
+              player.bucketLabel = verdict.bucketLabel;
+            }
+          }
+          result = settleGame(
+            settlementPlayers,
+            prompt,
+            effectiveNormalizationRun.mode === 'llm' ? 'llm' : null,
+          );
+        }
+      } else {
+        result = settleGame(settlementPlayers, prompt, null);
+      }
+
+      result = match.aiAssisted ? neutralizeAiAssistedResult(result) : result;
 
       const projectedBalances = new Map<string, number>();
       const shouldProjectSettledBalances =
         !alreadySettled || recoveringSettlingWrite;
 
-      // Compute post-settlement balances without mutating in-memory player
-      // state until D1 persistence is confirmed (or explicitly recovered).
       for (const pr of result.players) {
         const playerState = match.players.get(pr.accountId);
         if (!playerState) continue;
@@ -1290,8 +1369,6 @@ export class GameRoom {
         (pr as PlayerResultWithBalance).newBalance = projectedBalance;
       }
 
-      // Write to D1 only if this game hasn't been settled before
-      // (prevents duplicates after restore).
       if (!alreadySettled) {
         let shouldWriteGame = true;
         if (recoveringSettlingWrite) {
@@ -1308,8 +1385,6 @@ export class GameRoom {
         }
 
         if (shouldWriteGame) {
-          // Mark this game as in-flight before issuing D1 writes so restore
-          // can retry.
           match.phase = 'settling';
           match.phaseEnteredAt = Date.now();
           this._checkpointMatch(match);
@@ -1317,30 +1392,30 @@ export class GameRoom {
           const stmts: D1PreparedStatement[] = [];
           const now = new Date().toISOString();
 
-          if (prompt.type === 'open_text' && normalizationRun.runId) {
+          if (prompt.type === 'open_text' && effectiveNormalizationRun.runId) {
             stmts.push(
               this.env.DB.prepare(
                 'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
               ).bind(
-                normalizationRun.runId,
+                effectiveNormalizationRun.runId,
                 match.matchId,
                 match.currentGame,
                 prompt.id,
-                normalizationRun.mode,
-                normalizationRun.model,
-                normalizationRun.normalizerPrompt,
-                normalizationRun.requestJson,
-                normalizationRun.responseJson,
+                effectiveNormalizationRun.mode,
+                effectiveNormalizationRun.model,
+                effectiveNormalizationRun.normalizerPrompt,
+                effectiveNormalizationRun.requestJson,
+                effectiveNormalizationRun.responseJson,
                 now,
               ),
             );
 
-            for (const verdict of normalizationRun.verdicts.values()) {
+            for (const verdict of effectiveNormalizationRun.verdicts.values()) {
               stmts.push(
                 this.env.DB.prepare(
                   'INSERT INTO normalization_verdicts (run_id, match_id, game_number, prompt_id, normalized_input_text, bucket_key, bucket_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                 ).bind(
-                  normalizationRun.runId,
+                  effectiveNormalizationRun.runId,
                   match.matchId,
                   match.currentGame,
                   prompt.id,
@@ -1414,7 +1489,7 @@ export class GameRoom {
                   pr.revealedBucketKey,
                   pr.revealedBucketLabel,
                   result.normalizationMode,
-                  normalizationRun.runId,
+                  effectiveNormalizationRun.runId,
                   pr.wonGame ? 1 : 0,
                   pr.earnsCoordinationCredit ? 1 : 0,
                   pr.antePaid,
@@ -1458,11 +1533,6 @@ export class GameRoom {
     match.phase = 'results';
     match.phaseEnteredAt = Date.now();
 
-    // Build game result payload for broadcast and reconnect replay.
-    // Read newBalance from live player state rather than the snapshot
-    // captured before the D1 await: a grace-timer forfeit could have
-    // burned future-game antes during the batch, making the snapshot
-    // stale.
     let gameResultPayload: GameResultMessage['result'];
     if (recoveredGameResult) {
       gameResultPayload = recoveredGameResult;
@@ -1508,17 +1578,14 @@ export class GameRoom {
     }
     match.lastGameResult = gameResultPayload;
 
-    // Checkpoint after setting lastGameResult so it survives DO eviction
     this._checkpointMatch(match);
 
-    // Broadcast game_result
     this._broadcastToMatch(match, {
       type: 'game_result',
       resultsDuration: RESULTS_DURATION,
       result: gameResultPayload,
     });
 
-    // Check early termination: no non-forfeited players remain
     if (!this._hasNonForfeitedPlayers(match)) {
       match.resultsTimer = setTimeout(() => {
         match.resultsTimer = null;
@@ -1527,7 +1594,6 @@ export class GameRoom {
       return;
     }
 
-    // After results display, advance
     match.resultsTimer = setTimeout(() => {
       match.resultsTimer = null;
       this._advanceAfterResults(match);
@@ -1758,7 +1824,8 @@ export class GameRoom {
       throw new Error('AI bot selection requires a select prompt');
     }
 
-    if (!this.env.AI) {
+    const ai = this._getAiBinding();
+    if (!ai) {
       return this._pickAiBotFallbackOption(prompt);
     }
 
@@ -1773,7 +1840,7 @@ export class GameRoom {
 
     try {
       const output = await Promise.race([
-        this.env.AI.run(this._getAiBotModel(accountId), {
+        ai.run(this._getAiBotModel(accountId), {
           prompt: this._buildAiBotPrompt(prompt),
           guided_json: {
             type: 'object',
@@ -1919,43 +1986,56 @@ export class GameRoom {
     return null;
   }
 
-  _buildFallbackNormalizationRun(normalizedInputs: string[]): NormalizationRun {
+  _buildEmptyNormalizationRun(): NormalizationRun {
     return {
       runId: null,
-      mode: 'fallback_exact',
-      verdicts: new Map(
-        normalizedInputs.map((normalizedInputText) => [
-          normalizedInputText,
-          {
-            normalizedInputText,
-            bucketKey: normalizedInputText,
-            bucketLabel: normalizedInputText,
-          },
-        ]),
-      ),
+      mode: null,
+      verdicts: new Map(),
       model: null,
       normalizerPrompt: null,
       requestJson: null,
       responseJson: null,
+      failureReason: null,
     };
   }
 
   _buildOpenTextNormalizationPrompt(
-    prompt: SchellingPrompt,
-    normalizedInputs: string[],
+    prompt: OpenTextPrompt,
+    candidates: NormalizationCandidate[],
   ): string {
+    const answerSpecKind = prompt.answerSpec?.kind || 'free_text';
+    const exampleLines =
+      prompt.canonicalExamples && prompt.canonicalExamples.length > 0
+        ? [
+            '',
+            'Canonical examples for this prompt:',
+            ...prompt.canonicalExamples.map(
+              (example, index) => `${index + 1}. ${example}`,
+            ),
+          ]
+        : [];
+
     return [
       'You are normalizing open-text answers for a Schelling coordination game.',
-      'Merge only clearly identical referents or spelling, casing, punctuation, and whitespace variants.',
-      'Do not merge nearby but distinct landmarks, concepts, or categories.',
-      'Return one verdict for each input string exactly once.',
+      'Your job is to decide when players are signaling the same underlying answer.',
+      'Merge only when the intended answer is genuinely the same.',
+      'You may merge spelling variants, abbreviations, suit symbols, numeral-vs-word forms, and standard aliases.',
+      'Do not merge nearby-but-different places, categories, concepts, or objects.',
+      'Return one verdict for each normalizedInputText exactly once.',
       '',
       `Game prompt: ${prompt.text}`,
-      'Unique normalized player answers:',
-      ...normalizedInputs.map((input, index) => `${index + 1}. ${input}`),
+      `Answer spec: ${answerSpecKind}`,
+      ...exampleLines,
       '',
-      'For each input, choose a short canonical bucketLabel that humans can read in results.',
-      'If two inputs are not clearly the same referent, keep them in separate buckets.',
+      'Unique normalized player answers:',
+      ...candidates.map(
+        (candidate, index) =>
+          `${index + 1}. normalizedInputText=${JSON.stringify(candidate.normalizedInputText)} | rawAnswerText=${JSON.stringify(candidate.rawAnswerText)} | canonicalCandidate=${JSON.stringify(candidate.canonicalCandidate)} | bucketLabelCandidate=${JSON.stringify(candidate.bucketLabelCandidate)}`,
+      ),
+      '',
+      'For each entry, choose a short human-readable bucketLabel.',
+      'If canonicalCandidate or bucketLabelCandidate already captures the intended answer, prefer it.',
+      'If two inputs are not clearly the same intended answer, keep them in separate buckets.',
     ].join('\n');
   }
 
@@ -1966,7 +2046,7 @@ export class GameRoom {
 
   _parseNormalizationVerdicts(
     output: unknown,
-    normalizedInputs: string[],
+    candidates: NormalizationCandidate[],
   ): Map<string, NormalizationVerdict> | null {
     const responseText = this._extractAiResponseText(output);
     if (!responseText) {
@@ -1984,7 +2064,9 @@ export class GameRoom {
         return null;
       }
 
-      const expectedInputs = new Set(normalizedInputs);
+      const expectedInputs = new Set(
+        candidates.map((candidate) => candidate.normalizedInputText),
+      );
       const verdicts = new Map<string, NormalizationVerdict>();
 
       for (const verdict of parsed.verdicts) {
@@ -2033,29 +2115,74 @@ export class GameRoom {
     }
   }
 
-  async _normalizeOpenTextReveals(
-    prompt: SchellingPrompt,
-    normalizedInputs: string[],
-  ): Promise<NormalizationRun> {
-    if (normalizedInputs.length === 0) {
-      return {
-        runId: null,
-        mode: null,
-        verdicts: new Map(),
-        model: null,
-        normalizerPrompt: null,
-        requestJson: null,
-        responseJson: null,
-      };
+  _buildFailedNormalizationRun(
+    runId: string,
+    model: string,
+    normalizerPrompt: string,
+    requestPayload: Record<string, unknown>,
+    attemptLog: unknown[],
+    failureReason: string,
+  ): NormalizationRun {
+    return {
+      runId,
+      mode: 'llm_failed',
+      verdicts: new Map(),
+      model,
+      normalizerPrompt,
+      requestJson: JSON.stringify({
+        request: requestPayload,
+        attempts: attemptLog,
+      }),
+      responseJson: JSON.stringify({
+        attempts: attemptLog,
+        failureReason,
+      }),
+      failureReason,
+    };
+  }
+
+  _collectOpenTextNormalizationCandidates(
+    match: WorkerMatchState,
+    prompt: OpenTextPrompt,
+  ): NormalizationCandidate[] {
+    const candidatesByNormalizedInput = new Map<
+      string,
+      NormalizationCandidate
+    >();
+
+    for (const player of match.players.values()) {
+      const validReveal =
+        player.committed && player.revealed && !player.forfeited;
+      if (!validReveal || player.answerText === null) continue;
+      const canonical = canonicalizeOpenTextAnswer(player.answerText, prompt);
+      if (!canonical) continue;
+      if (candidatesByNormalizedInput.has(canonical.normalizedRevealText)) {
+        continue;
+      }
+      candidatesByNormalizedInput.set(canonical.normalizedRevealText, {
+        normalizedInputText: canonical.normalizedRevealText,
+        rawAnswerText: player.answerText,
+        canonicalCandidate: canonical.canonicalCandidate,
+        bucketLabelCandidate: canonical.bucketLabelCandidate,
+      });
     }
 
-    if (!this.env.AI) {
-      return this._buildFallbackNormalizationRun(normalizedInputs);
+    return [...candidatesByNormalizedInput.values()].sort((left, right) =>
+      left.normalizedInputText.localeCompare(right.normalizedInputText),
+    );
+  }
+
+  async _normalizeOpenTextReveals(
+    prompt: OpenTextPrompt,
+    candidates: NormalizationCandidate[],
+  ): Promise<NormalizationRun> {
+    if (candidates.length === 0) {
+      return this._buildEmptyNormalizationRun();
     }
 
     const normalizerPrompt = this._buildOpenTextNormalizationPrompt(
       prompt,
-      normalizedInputs,
+      candidates,
     );
     const model = this._getOpenTextNormalizerModel();
     const requestPayload = {
@@ -2067,8 +2194,8 @@ export class GameRoom {
         properties: {
           verdicts: {
             type: 'array',
-            minItems: normalizedInputs.length,
-            maxItems: normalizedInputs.length,
+            minItems: candidates.length,
+            maxItems: candidates.length,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -2084,39 +2211,109 @@ export class GameRoom {
       max_tokens: 512,
       temperature: 0,
     };
+    const runId = crypto.randomUUID();
+    const attemptLog: Array<Record<string, unknown>> = [];
 
-    try {
-      const output = await Promise.race([
-        this.env.AI.run(model, requestPayload),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error('Open-text normalization timed out')),
-            this._getOpenTextNormalizerTimeoutMs(),
-          );
-        }),
-      ]);
+    for (
+      let attemptIndex = 0;
+      attemptIndex <= OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS.length;
+      attemptIndex += 1
+    ) {
+      const attemptNumber = attemptIndex + 1;
 
-      const verdicts = this._parseNormalizationVerdicts(
-        output,
-        normalizedInputs,
-      );
-      if (!verdicts) {
-        return this._buildFallbackNormalizationRun(normalizedInputs);
+      try {
+        const ai = this._getAiBinding();
+        if (!ai) {
+          throw new Error('Workers AI binding unavailable');
+        }
+
+        const output = await Promise.race([
+          ai.run(model, requestPayload),
+          new Promise<never>((_, reject) => {
+            setTimeout(
+              () => reject(new Error('Open-text normalization timed out')),
+              this._getOpenTextNormalizerTimeoutMs(),
+            );
+          }),
+        ]);
+
+        const responseText =
+          this._extractAiResponseText(output) ?? JSON.stringify(output);
+        const verdicts = this._parseNormalizationVerdicts(output, candidates);
+        if (verdicts) {
+          attemptLog.push({
+            attempt: attemptNumber,
+            status: 'success',
+            responseText,
+          });
+          return {
+            runId,
+            mode: 'llm',
+            verdicts,
+            model,
+            normalizerPrompt,
+            requestJson: JSON.stringify({
+              request: requestPayload,
+              attempts: attemptLog,
+            }),
+            responseJson: JSON.stringify({
+              attempts: attemptLog,
+              finalResponseText: responseText,
+            }),
+            failureReason: null,
+          };
+        }
+
+        attemptLog.push({
+          attempt: attemptNumber,
+          status: 'invalid_schema',
+          responseText,
+        });
+      } catch (error) {
+        console.error('Workers AI open-text normalization failed', error);
+        attemptLog.push({
+          attempt: attemptNumber,
+          status: 'error',
+          error: (error as Error).message,
+        });
       }
 
-      return {
-        runId: crypto.randomUUID(),
-        mode: 'llm',
-        verdicts,
-        model,
-        normalizerPrompt,
-        requestJson: JSON.stringify(requestPayload),
-        responseJson:
-          this._extractAiResponseText(output) ?? JSON.stringify(output),
-      };
-    } catch (error) {
-      console.error('Workers AI open-text normalization failed', error);
-      return this._buildFallbackNormalizationRun(normalizedInputs);
+      const delayMs =
+        OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS[attemptIndex] ?? null;
+      if (delayMs !== null) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, delayMs);
+        });
+      }
+    }
+
+    return this._buildFailedNormalizationRun(
+      runId,
+      model,
+      normalizerPrompt,
+      requestPayload,
+      attemptLog,
+      'open_text_normalization_failed',
+    );
+  }
+
+  async _normalizeAndFinalizeOpenTextGame(
+    match: WorkerMatchState,
+  ): Promise<void> {
+    const prompt = this._getPromptForGame(match, match.currentGame);
+    if (prompt.type !== 'open_text') {
+      match.normalizingInFlight = false;
+      return;
+    }
+
+    try {
+      const normalizationRun = await this._normalizeOpenTextReveals(
+        prompt,
+        this._collectOpenTextNormalizationCandidates(match, prompt),
+      );
+      await this._finalizeGame(match, normalizationRun);
+    } finally {
+      match.normalizingInFlight = false;
     }
   }
 
@@ -2150,10 +2347,7 @@ export class GameRoom {
     this._broadcastRevealStatus(match);
 
     if (this._allCommittedNonForfeitedRevealed(match)) {
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
       return true;
     }
 
@@ -2315,14 +2509,15 @@ export class GameRoom {
         salt,
       });
     } else {
-      if (!validateAnswerText(answerText, prompt.maxLength)) {
+      const canonicalAnswer = canonicalizeOpenTextAnswer(answerText, prompt);
+      if (!canonicalAnswer || !validateAnswerText(answerText, prompt)) {
         return this._sendTo(accountId, {
           type: 'error',
-          message: `Answer must be a single line between 1 and ${prompt.maxLength} characters`,
+          message: `Answer must match the prompt format and stay within ${prompt.maxLength} characters`,
         });
       }
 
-      const valid = verifyOpenTextCommit(answerText, salt, player.hash);
+      const valid = verifyOpenTextCommit(answerText, salt, player.hash, prompt);
       if (!valid) {
         return this._sendTo(accountId, {
           type: 'error',
@@ -2333,7 +2528,7 @@ export class GameRoom {
       player.revealed = true;
       player.optionIndex = null;
       player.answerText = answerText;
-      player.normalizedRevealText = normalizeRevealText(answerText);
+      player.normalizedRevealText = canonicalAnswer.normalizedRevealText;
       player.salt = salt;
       this._checkpointPlayerAction(match.matchId, accountId, {
         revealed: true,
@@ -2349,10 +2544,7 @@ export class GameRoom {
 
     // Auto-advance if all committed non-forfeited players revealed
     if (this._allCommittedNonForfeitedRevealed(match)) {
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
     }
   }
 
@@ -2574,10 +2766,7 @@ export class GameRoom {
       match.phase === 'reveal' &&
       this._allCommittedNonForfeitedRevealed(match)
     ) {
-      this._waitUntil(
-        this._finalizeGame(match),
-        `finalize game ${match.currentGame} for ${match.matchId}`,
-      );
+      this._completeRevealPhase(match);
     }
   }
 
@@ -2808,6 +2997,7 @@ export class GameRoom {
         commitTimer: null,
         revealTimer: null,
         resultsTimer: null,
+        normalizingInFlight: false,
         lastGameResult: rm.lastGameResult,
       });
     }
@@ -2877,20 +3067,20 @@ export class GameRoom {
         if (this._autoRevealAiBots(match)) {
           return;
         }
-        this._waitUntil(
-          this._finalizeGame(match),
-          `finalize game ${match.currentGame} for ${match.matchId}`,
-        );
+        this._completeRevealPhase(match);
       } else {
         match.revealTimer = setTimeout(() => {
           match.revealTimer = null;
-          this._waitUntil(
-            this._finalizeGame(match),
-            `finalize game ${match.currentGame} for ${match.matchId}`,
-          );
+          this._completeRevealPhase(match);
         }, remaining);
         this._autoRevealAiBots(match);
       }
+    } else if (match.phase === 'normalizing' && !match.normalizingInFlight) {
+      match.normalizingInFlight = true;
+      this._waitUntil(
+        this._normalizeAndFinalizeOpenTextGame(match),
+        `resume normalization for game ${match.currentGame} in ${match.matchId}`,
+      );
     } else if (match.phase === 'settling' && !match.resultsTimer) {
       this._scheduleFinalizeRetry(match, 0);
     } else if (match.phase === 'ending' && !match.resultsTimer) {
@@ -3191,6 +3381,7 @@ export class GameRoom {
     if (
       match.phase === 'commit' ||
       match.phase === 'reveal' ||
+      match.phase === 'normalizing' ||
       match.phase === 'results'
     ) {
       const prompt = this._getPromptForGame(match, match.currentGame);
@@ -3227,6 +3418,12 @@ export class GameRoom {
           phase: 'reveal',
           revealDuration: revealRemaining,
         });
+      } else if (match.phase === 'normalizing') {
+        this._sendTo(accountId, {
+          type: 'phase_change',
+          phase: 'normalizing',
+          status: OPEN_TEXT_NORMALIZING_STATUS,
+        });
       }
 
       // Send commit status
@@ -3239,7 +3436,11 @@ export class GameRoom {
       });
 
       // Send reveal status if in reveal or results
-      if (match.phase === 'reveal' || match.phase === 'results') {
+      if (
+        match.phase === 'reveal' ||
+        match.phase === 'normalizing' ||
+        match.phase === 'results'
+      ) {
         this._sendTo(accountId, {
           type: 'reveal_status',
           revealed: [...match.players.values()].map((p) => ({

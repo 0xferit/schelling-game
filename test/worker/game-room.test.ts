@@ -1,7 +1,11 @@
 import { env, exports } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
-import { createCommitHash } from '../../src/domain/commitReveal';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  createCommitHash,
+  createOpenTextCommitHash,
+} from '../../src/domain/commitReveal';
 import { GAME_ANTE, RESULTS_DURATION } from '../../src/domain/constants';
+import type { OpenTextPrompt, SchellingPrompt } from '../../src/types/domain';
 import {
   createTestSession,
   createTestWallet,
@@ -19,6 +23,89 @@ function makeSalt(gameNum: number, playerIdx: number): string {
   const nibbleB = (playerIdx % 16).toString(16);
   return `${nibbleA}${nibbleB}`.repeat(32);
 }
+
+function getOpenTextTestAnswer(prompt: OpenTextPrompt, variant = 0): string {
+  switch (prompt.answerSpec.kind) {
+    case 'integer_range':
+      return prompt.answerSpec.max <= 10
+        ? variant === 0
+          ? '7'
+          : '8'
+        : variant === 0
+          ? '50'
+          : '60';
+    case 'playing_card':
+      return variant === 0 ? 'Ace of Spades' : 'King of Hearts';
+    case 'single_word':
+      return variant === 0 ? 'love' : 'peace';
+    case 'free_text':
+      return variant === 0 ? 'New York' : 'London';
+  }
+}
+
+function buildPromptAction(
+  prompt: SchellingPrompt,
+  salt: string,
+  variant = 0,
+): {
+  hash: string;
+  reveal: Record<string, string | number>;
+} {
+  if (prompt.type === 'select') {
+    return {
+      hash: createCommitHash(variant, salt),
+      reveal: { type: 'reveal', optionIndex: variant, salt },
+    };
+  }
+
+  const answerText = getOpenTextTestAnswer(prompt, variant);
+  return {
+    hash: createOpenTextCommitHash(answerText, salt, prompt),
+    reveal: { type: 'reveal', answerText, salt },
+  };
+}
+
+function getGameResultTimeoutMs(prompt: SchellingPrompt): number {
+  return prompt.type === 'open_text' ? 25_000 : 5_000;
+}
+
+function createDeterministicAiBinding() {
+  return {
+    async run(_model: string, inputs: Record<string, unknown>) {
+      const promptText = typeof inputs.prompt === 'string' ? inputs.prompt : '';
+      const jsonString = '"((?:\\\\.|[^"\\\\])*)"';
+      const matches = [
+        ...promptText.matchAll(
+          new RegExp(
+            `normalizedInputText=${jsonString} \\| rawAnswerText=${jsonString} \\| canonicalCandidate=${jsonString} \\| bucketLabelCandidate=${jsonString}`,
+            'g',
+          ),
+        ),
+      ];
+
+      if (matches.length === 0) {
+        return JSON.stringify({ optionIndex: 0 });
+      }
+
+      return JSON.stringify({
+        verdicts: matches.map((match) => ({
+          normalizedInputText: JSON.parse(`"${match[1] || ''}"`),
+          bucketLabel: JSON.parse(
+            `"${match[4] || match[3] || match[1] || ''}"`,
+          ),
+        })),
+      });
+    },
+  };
+}
+
+const envWithAi = env as unknown as {
+  AI?: {
+    run: (model: string, inputs: Record<string, unknown>) => Promise<unknown>;
+  };
+};
+
+let originalAiBinding: typeof envWithAi.AI;
 
 /** Helper: collect WebSocket messages into an array for a short window. */
 function collectMessages(
@@ -182,6 +269,15 @@ async function formMatch(
 }
 
 describe('GameRoom Durable Object', () => {
+  beforeEach(() => {
+    originalAiBinding = envWithAi.AI;
+    envWithAi.AI = createDeterministicAiBinding();
+  });
+
+  afterEach(() => {
+    envWithAi.AI = originalAiBinding;
+  });
+
   it('rejects WebSocket without session cookie (401)', async () => {
     const resp = await exports.default.fetch(
       new Request(`${BASE}/ws`, {
@@ -525,35 +621,39 @@ describe('GameRoom Durable Object', () => {
     await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
-    await Promise.all([p1Round, p2Round, p3Round]);
+    const [roundStart] = await Promise.all([p1Round, p2Round, p3Round]);
+    const prompt = roundStart.prompt as SchellingPrompt;
 
-    // All players commit with option index 0 and distinct salts
+    // All players commit to the same answer with distinct salts.
     const salt1 = 'a'.repeat(64);
     const salt2 = 'b'.repeat(64);
     const salt3 = 'c'.repeat(64);
-    const optionIndex = 0;
-    const hash1 = createCommitHash(optionIndex, salt1);
-    const hash2 = createCommitHash(optionIndex, salt2);
-    const hash3 = createCommitHash(optionIndex, salt3);
+    const action1 = buildPromptAction(prompt, salt1, 0);
+    const action2 = buildPromptAction(prompt, salt2, 0);
+    const action3 = buildPromptAction(prompt, salt3, 0);
 
     // Listen for phase_change (to reveal) before committing.
     // All non-forfeited players committing triggers auto-advance.
     const p1PhaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
 
-    p1.ws.send(JSON.stringify({ type: 'commit', hash: hash1 }));
-    p2.ws.send(JSON.stringify({ type: 'commit', hash: hash2 }));
-    p3.ws.send(JSON.stringify({ type: 'commit', hash: hash3 }));
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: action1.hash }));
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: action2.hash }));
+    p3.ws.send(JSON.stringify({ type: 'commit', hash: action3.hash }));
 
     const phaseChange = await p1PhaseChange;
     expect(phaseChange.phase).toBe('reveal');
 
     // All players reveal. When all committed players reveal, auto-advance
     // triggers _finalizeGame which enters results phase.
-    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
+    const p1Result = waitForMessage(
+      p1.ws,
+      'game_result',
+      getGameResultTimeoutMs(prompt),
+    );
 
-    p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
-    p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
-    p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt3 }));
+    p1.ws.send(JSON.stringify(action1.reveal));
+    p2.ws.send(JSON.stringify(action2.reveal));
+    p3.ws.send(JSON.stringify(action3.reveal));
 
     // Wait for game_result to confirm we are in results phase
     const originalResult = await p1Result;
@@ -563,7 +663,11 @@ describe('GameRoom Durable Object', () => {
     p1.ws.close();
 
     const p1r = await reconnectPlayer(10);
-    const reconnectResult = waitForMessage(p1r.ws, 'game_result', 5000);
+    const reconnectResult = waitForMessage(
+      p1r.ws,
+      'game_result',
+      getGameResultTimeoutMs(prompt),
+    );
 
     const replayedResult = await reconnectResult;
     expect(replayedResult.type).toBe('game_result');
@@ -718,31 +822,35 @@ describe('GameRoom Durable Object', () => {
     await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
-    await Promise.all([p1Round, p2Round, p3Round]);
+    const [roundStart] = await Promise.all([p1Round, p2Round, p3Round]);
+    const prompt = roundStart.prompt as SchellingPrompt;
 
-    // All players commit with option index 0
+    // All players commit to the same answer.
     const salt1 = 'a'.repeat(64);
     const salt2 = 'b'.repeat(64);
     const salt3 = 'c'.repeat(64);
-    const optionIndex = 0;
-    const hash1 = createCommitHash(optionIndex, salt1);
-    const hash2 = createCommitHash(optionIndex, salt2);
-    const hash3 = createCommitHash(optionIndex, salt3);
+    const action1 = buildPromptAction(prompt, salt1, 0);
+    const action2 = buildPromptAction(prompt, salt2, 0);
+    const action3 = buildPromptAction(prompt, salt3, 0);
 
     const p1PhaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
 
-    p1.ws.send(JSON.stringify({ type: 'commit', hash: hash1 }));
-    p2.ws.send(JSON.stringify({ type: 'commit', hash: hash2 }));
-    p3.ws.send(JSON.stringify({ type: 'commit', hash: hash3 }));
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: action1.hash }));
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: action2.hash }));
+    p3.ws.send(JSON.stringify({ type: 'commit', hash: action3.hash }));
 
     await p1PhaseChange;
 
     // All players reveal to enter results phase
-    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
+    const p1Result = waitForMessage(
+      p1.ws,
+      'game_result',
+      getGameResultTimeoutMs(prompt),
+    );
 
-    p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
-    p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
-    p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt3 }));
+    p1.ws.send(JSON.stringify(action1.reveal));
+    p2.ws.send(JSON.stringify(action2.reveal));
+    p3.ws.send(JSON.stringify(action3.reveal));
 
     await p1Result;
 
@@ -807,31 +915,35 @@ describe('GameRoom Durable Object', () => {
     await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
-    await Promise.all([p1Round, p2Round, p3Round]);
+    const [roundStart] = await Promise.all([p1Round, p2Round, p3Round]);
+    const prompt = roundStart.prompt as SchellingPrompt;
 
-    // All players commit with option index 0 and distinct salts
+    // All players commit to the same answer with distinct salts.
     const salt1 = 'a'.repeat(64);
     const salt2 = 'b'.repeat(64);
     const salt3 = 'c'.repeat(64);
-    const optionIndex = 0;
-    const hash1 = createCommitHash(optionIndex, salt1);
-    const hash2 = createCommitHash(optionIndex, salt2);
-    const hash3 = createCommitHash(optionIndex, salt3);
+    const action1 = buildPromptAction(prompt, salt1, 0);
+    const action2 = buildPromptAction(prompt, salt2, 0);
+    const action3 = buildPromptAction(prompt, salt3, 0);
 
     const p1PhaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
 
-    p1.ws.send(JSON.stringify({ type: 'commit', hash: hash1 }));
-    p2.ws.send(JSON.stringify({ type: 'commit', hash: hash2 }));
-    p3.ws.send(JSON.stringify({ type: 'commit', hash: hash3 }));
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: action1.hash }));
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: action2.hash }));
+    p3.ws.send(JSON.stringify({ type: 'commit', hash: action3.hash }));
 
     await p1PhaseChange;
 
     // All players reveal to reach results phase
-    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
+    const p1Result = waitForMessage(
+      p1.ws,
+      'game_result',
+      getGameResultTimeoutMs(prompt),
+    );
 
-    p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt1 }));
-    p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt2 }));
-    p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex, salt: salt3 }));
+    p1.ws.send(JSON.stringify(action1.reveal));
+    p2.ws.send(JSON.stringify(action2.reveal));
+    p3.ws.send(JSON.stringify(action3.reveal));
 
     await p1Result;
 
@@ -909,31 +1021,36 @@ describe('GameRoom Durable Object', () => {
     await joinPlayersAndStartNow([p1, p2, p3]);
 
     await Promise.all([p1Started, p2Started, p3Started]);
-    await Promise.all([p1Game1, p2Game1, p3Game1]);
+    const [game1Start] = await Promise.all([p1Game1, p2Game1, p3Game1]);
+    const prompt = game1Start.prompt as SchellingPrompt;
 
-    // Game 1: p1 and p2 pick option 0, p3 picks option 1.
+    // Game 1: p1 and p2 pick the same answer, p3 picks a different one.
     // This creates winners (p1, p2) and a loser (p3) so balances change.
     const salt1 = 'a'.repeat(64);
     const salt2 = 'b'.repeat(64);
     const salt3 = 'c'.repeat(64);
-    const hash1 = createCommitHash(0, salt1);
-    const hash2 = createCommitHash(0, salt2);
-    const hash3 = createCommitHash(1, salt3);
+    const action1 = buildPromptAction(prompt, salt1, 0);
+    const action2 = buildPromptAction(prompt, salt2, 0);
+    const action3 = buildPromptAction(prompt, salt3, 1);
 
     const p1PhaseChange = waitForMessage(p1.ws, 'phase_change', 5000);
 
-    p1.ws.send(JSON.stringify({ type: 'commit', hash: hash1 }));
-    p2.ws.send(JSON.stringify({ type: 'commit', hash: hash2 }));
-    p3.ws.send(JSON.stringify({ type: 'commit', hash: hash3 }));
+    p1.ws.send(JSON.stringify({ type: 'commit', hash: action1.hash }));
+    p2.ws.send(JSON.stringify({ type: 'commit', hash: action2.hash }));
+    p3.ws.send(JSON.stringify({ type: 'commit', hash: action3.hash }));
 
     await p1PhaseChange;
 
     // All reveal
-    const p1Result = waitForMessage(p1.ws, 'game_result', 5000);
+    const p1Result = waitForMessage(
+      p1.ws,
+      'game_result',
+      getGameResultTimeoutMs(prompt),
+    );
 
-    p1.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt1 }));
-    p2.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 0, salt: salt2 }));
-    p3.ws.send(JSON.stringify({ type: 'reveal', optionIndex: 1, salt: salt3 }));
+    p1.ws.send(JSON.stringify(action1.reveal));
+    p2.ws.send(JSON.stringify(action2.reveal));
+    p3.ws.send(JSON.stringify(action3.reveal));
 
     const roundResult = await p1Result;
     expect(roundResult.type).toBe('game_result');
@@ -1003,27 +1120,33 @@ describe('GameRoom Durable Object', () => {
 
     for (let gameNum = 1; gameNum <= 10; gameNum++) {
       const gameStarted = await Promise.all(gameStartedPromises);
+      const prompt = gameStarted[0]?.prompt as SchellingPrompt;
       for (const message of gameStarted) {
         expect(message.game).toBe(gameNum);
         expect(message.phase).toBe('commit');
+        expect(message.prompt).toEqual(prompt);
       }
 
       const phaseChange = waitForMessage(players[0].ws, 'phase_change', 5_000);
       for (let i = 0; i < players.length; i++) {
         const salt = makeSalt(gameNum, i + 1);
+        const action = buildPromptAction(prompt, salt, 0);
         players[i].ws.send(
-          JSON.stringify({ type: 'commit', hash: createCommitHash(0, salt) }),
+          JSON.stringify({ type: 'commit', hash: action.hash }),
         );
       }
       const phase = await phaseChange;
       expect(phase.phase).toBe('reveal');
 
-      const gameResult = waitForMessage(players[0].ws, 'game_result', 8_000);
+      const gameResult = waitForMessage(
+        players[0].ws,
+        'game_result',
+        getGameResultTimeoutMs(prompt),
+      );
       for (let i = 0; i < players.length; i++) {
         const salt = makeSalt(gameNum, i + 1);
-        players[i].ws.send(
-          JSON.stringify({ type: 'reveal', optionIndex: 0, salt }),
-        );
+        const action = buildPromptAction(prompt, salt, 0);
+        players[i].ws.send(JSON.stringify(action.reveal));
       }
 
       const result = await gameResult;
