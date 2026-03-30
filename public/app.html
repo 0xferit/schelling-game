@@ -677,7 +677,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 </div>
 
 <footer id="build-info">
-  <span>__BUILD_HASH__ &middot; __BUILD_DATE__</span>
+  <span class="build-stamp" data-build-hash="__BUILD_HASH__" data-build-date="__BUILD_DATE__">__BUILD_HASH__ &middot; __BUILD_DATE__</span>
 </footer>
 
 <div id="notif"></div>
@@ -3251,7 +3251,33 @@ function esc(str) {
   return d.innerHTML;
 }
 
+function formatBuildStamp() {
+  const stamp = document.querySelector('.build-stamp');
+  if (!stamp) return;
+
+  const hash = stamp.getAttribute('data-build-hash');
+  const rawDate = stamp.getAttribute('data-build-date');
+  if (!hash || !rawDate) return;
+
+  const parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) return;
+
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZoneName: 'short',
+  });
+
+  stamp.textContent = `${hash} · ${formatter.format(parsed)}`;
+  stamp.title = `${rawDate} UTC`;
+}
+
 // ── Boot ─────────────────────────────────────────────────────────
+formatBuildStamp();
 checkSession();
 
 })();

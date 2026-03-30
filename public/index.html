@@ -1211,7 +1211,7 @@ footer{
       <a href="https://github.com/0xferit/schelling-game/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
     </div>
     <div class="footer-meta">
-      <span>__BUILD_HASH__ &middot; __BUILD_DATE__</span>
+      <span class="build-stamp" data-build-hash="__BUILD_HASH__" data-build-date="__BUILD_DATE__">__BUILD_HASH__ &middot; __BUILD_DATE__</span>
     </div>
   </div>
 </footer>
@@ -1411,6 +1411,32 @@ fetch('/api/game-config').then(function(r) { return r.json(); }).then(function(c
     document.getElementById('stat-completed-matches').textContent = formatInt(stats.completedMatches || 0);
     document.getElementById('stat-longest-streak').textContent = formatInt(stats.longestStreak || 0);
   }).catch(function() {});
+})();
+
+/* ── Build stamp formatting ───────────────── */
+(function() {
+  var stamp = document.querySelector('.build-stamp');
+  if (!stamp) return;
+
+  var hash = stamp.getAttribute('data-build-hash');
+  var rawDate = stamp.getAttribute('data-build-date');
+  if (!hash || !rawDate) return;
+
+  var parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) return;
+
+  var formatter = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZoneName: 'short'
+  });
+
+  stamp.textContent = hash + ' · ' + formatter.format(parsed);
+  stamp.title = rawDate + ' UTC';
 })();
 </script>
 </body>
