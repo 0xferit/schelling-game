@@ -21,6 +21,7 @@ import { selectPromptsForMatch } from './domain/prompts';
 import { settleGame, voidGame } from './domain/settlement';
 import type {
   GameResult,
+  NormalizationMode,
   OpenTextPrompt,
   PlayerResultWithBalance,
   PlayerSettlementInput,
@@ -104,6 +105,30 @@ interface NormalizationRun {
   failureReason: string | null;
 }
 
+interface PersistedVoteLogRow {
+  account_id: string;
+  display_name_snapshot: string | null;
+  revealed_option_index: number | null;
+  revealed_option_label: string | null;
+  revealed_input_text: string | null;
+  revealed_bucket_key: string | null;
+  revealed_bucket_label: string | null;
+  won_game: number;
+  earns_coordination_credit: number;
+  ante_amount: number;
+  game_payout: number;
+  net_delta: number;
+  player_count: number;
+  valid_reveal_count: number;
+  top_count: number;
+  winner_count: number;
+  winning_option_indexes_json: string | null;
+  winning_bucket_keys_json: string | null;
+  voided: number;
+  void_reason: string | null;
+  normalization_mode: NormalizationMode;
+}
+
 function neutralizeAiAssistedResult(result: GameResult): GameResult {
   return {
     ...result,
@@ -141,6 +166,7 @@ const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
 const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const OPEN_TEXT_NORMALIZING_STATUS = 'Normalizing open-text answers...';
+const D1_RETRY_DELAY_MS = 2_000;
 const WS_LIVENESS_CHECK_INTERVAL_MS = 10_000;
 const WS_IDLE_TIMEOUT_MS = 35_000;
 
@@ -1183,281 +1209,364 @@ export class GameRoom {
       match.revealTimer = null;
     }
     match.normalizingInFlight = false;
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
     const prompt = this._getPromptForGame(match, match.currentGame);
+    const recoveringSettlingWrite =
+      match.phase === 'settling' && match.currentGame > match.lastSettledGame;
+    const alreadySettled =
+      match.currentGame <= match.lastSettledGame && !recoveringSettlingWrite;
 
-    match.phase = 'results';
-    match.phaseEnteredAt = Date.now();
-    const alreadySettled = match.currentGame <= match.lastSettledGame;
+    let recoveredGameResult: GameResultMessage['result'] | null = null;
+    let persistedVoteLogs: boolean | null = null;
 
-    // Build player array for settlement
-    const settlementPlayers: PlayerSettlementInput[] = [
-      ...match.players.values(),
-    ].map((p) => {
-      const validReveal = p.committed && p.revealed && !p.forfeited;
-      const revealedOptionLabel =
-        validReveal &&
-        prompt.type === 'select' &&
-        p.optionIndex !== null &&
-        p.optionIndex >= 0 &&
-        p.optionIndex < prompt.options.length
-          ? (prompt.options[p.optionIndex] ?? null)
-          : null;
+    if (recoveringSettlingWrite) {
+      if (!match.aiAssisted) {
+        try {
+          recoveredGameResult = await this._loadPersistedGameResult(match);
+          persistedVoteLogs = recoveredGameResult !== null;
+        } catch (error) {
+          console.error(
+            'D1: failed to load persisted game result for',
+            match.matchId,
+            error,
+          );
+          this._checkpointMatch(match);
+          this._scheduleFinalizeRetry(match);
+          return;
+        }
+      } else {
+        persistedVoteLogs =
+          await this._hasPersistedVoteLogsForCurrentGame(match);
+        if (persistedVoteLogs === null) {
+          this._checkpointMatch(match);
+          this._scheduleFinalizeRetry(match);
+          return;
+        }
+      }
+    }
 
-      return {
-        accountId: p.accountId,
-        displayName: p.displayName,
-        optionIndex: validReveal ? p.optionIndex : null,
-        inputText: validReveal ? p.answerText : null,
-        normalizedRevealText: validReveal ? p.normalizedRevealText : null,
-        bucketKey:
+    let result: GameResult | null = null;
+
+    if (recoveredGameResult) {
+      for (const recoveredPlayer of recoveredGameResult.players) {
+        const playerState = match.players.get(recoveredPlayer.accountId);
+        if (!playerState) continue;
+        playerState.currentBalance = recoveredPlayer.newBalance;
+      }
+      match.lastSettledGame = match.currentGame;
+    } else {
+      const settlementPlayers: PlayerSettlementInput[] = [
+        ...match.players.values(),
+      ].map((p) => {
+        const validReveal = p.committed && p.revealed && !p.forfeited;
+        const revealedOptionLabel =
           validReveal &&
           prompt.type === 'select' &&
           p.optionIndex !== null &&
-          revealedOptionLabel
-            ? `option:${p.optionIndex}`
-            : null,
-        bucketLabel:
-          validReveal && prompt.type === 'select' ? revealedOptionLabel : null,
-        validReveal,
-        forfeited: p.forfeited,
-        attached: !p.forfeited || p.forfeitedAtGame === match.currentGame,
-      };
-    });
+          p.optionIndex >= 0 &&
+          p.optionIndex < prompt.options.length
+            ? (prompt.options[p.optionIndex] ?? null)
+            : null;
 
-    let result: GameResult;
-    if (prompt.type === 'open_text') {
-      if (!normalizationRun) {
-        throw new Error('Open-text settlement requires a normalization run');
-      }
+        return {
+          accountId: p.accountId,
+          displayName: p.displayName,
+          optionIndex: validReveal ? p.optionIndex : null,
+          inputText: validReveal ? p.answerText : null,
+          normalizedRevealText: validReveal ? p.normalizedRevealText : null,
+          bucketKey:
+            validReveal &&
+            prompt.type === 'select' &&
+            p.optionIndex !== null &&
+            revealedOptionLabel
+              ? `option:${p.optionIndex}`
+              : null,
+          bucketLabel:
+            validReveal && prompt.type === 'select'
+              ? revealedOptionLabel
+              : null,
+          validReveal,
+          forfeited: p.forfeited,
+          attached: !p.forfeited || p.forfeitedAtGame === match.currentGame,
+        };
+      });
 
-      if (normalizationRun.mode === 'llm_failed') {
-        result = voidGame(settlementPlayers, 'open_text_normalization_failed');
-      } else {
-        for (const player of settlementPlayers) {
-          if (!player.validReveal || !player.normalizedRevealText) continue;
-          const verdict =
-            normalizationRun.verdicts.get(player.normalizedRevealText) || null;
-          if (verdict) {
-            player.bucketKey = verdict.bucketKey;
-            player.bucketLabel = verdict.bucketLabel;
-          }
-        }
-        result = settleGame(
-          settlementPlayers,
+      let effectiveNormalizationRun =
+        normalizationRun ?? this._buildEmptyNormalizationRun();
+
+      if (prompt.type === 'open_text' && normalizationRun === null) {
+        effectiveNormalizationRun = await this._normalizeOpenTextReveals(
           prompt,
-          normalizationRun.mode === 'llm' ? 'llm' : null,
+          this._collectOpenTextNormalizationCandidates(match, prompt),
         );
       }
-    } else {
-      result = settleGame(settlementPlayers, prompt, null);
-    }
 
-    if (match.aiAssisted) {
-      result = neutralizeAiAssistedResult(result);
-    }
-
-    // Apply balance changes to in-memory state (always needed for correct broadcast)
-    for (const pr of result.players) {
-      const playerState = match.players.get(pr.accountId);
-      if (!playerState) continue;
-      if (!alreadySettled) {
-        playerState.currentBalance += pr.netDelta;
-        if (
-          !match.aiAssisted &&
-          playerState.currentBalance < MIN_ALLOWED_BALANCE
-        ) {
-          playerState.currentBalance = MIN_ALLOWED_BALANCE;
-        }
-      }
-      (pr as PlayerResultWithBalance).newBalance = playerState.currentBalance;
-    }
-
-    // Write to D1 only if this game hasn't been settled before (prevents duplicates after restore)
-    if (!alreadySettled) {
-      match.lastSettledGame = match.currentGame;
-      // Checkpoint before D1 batch so lastSettledGame survives eviction between
-      // the D1 writes and the post-settlement checkpoint below
-      this._checkpointMatch(match);
-
-      const stmts: D1PreparedStatement[] = [];
-      const now = new Date().toISOString();
-
-      if (prompt.type === 'open_text' && normalizationRun?.runId) {
-        stmts.push(
-          this.env.DB.prepare(
-            'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          ).bind(
-            normalizationRun.runId,
-            match.matchId,
-            match.currentGame,
-            prompt.id,
-            normalizationRun.mode,
-            normalizationRun.model,
-            normalizationRun.normalizerPrompt,
-            normalizationRun.requestJson,
-            normalizationRun.responseJson,
-            now,
-          ),
-        );
-
-        for (const verdict of normalizationRun.verdicts.values()) {
-          stmts.push(
-            this.env.DB.prepare(
-              'INSERT INTO normalization_verdicts (run_id, match_id, game_number, prompt_id, normalized_input_text, bucket_key, bucket_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            ).bind(
-              normalizationRun.runId,
-              match.matchId,
-              match.currentGame,
-              prompt.id,
-              verdict.normalizedInputText,
-              verdict.bucketKey,
-              verdict.bucketLabel,
-              now,
-            ),
+      if (prompt.type === 'open_text') {
+        if (effectiveNormalizationRun.mode === 'llm_failed') {
+          result = voidGame(settlementPlayers, 'open_text_normalization_failed');
+        } else {
+          for (const player of settlementPlayers) {
+            if (!player.validReveal || !player.normalizedRevealText) continue;
+            const verdict =
+              effectiveNormalizationRun.verdicts.get(
+                player.normalizedRevealText,
+              ) || null;
+            if (verdict) {
+              player.bucketKey = verdict.bucketKey;
+              player.bucketLabel = verdict.bucketLabel;
+            }
+          }
+          result = settleGame(
+            settlementPlayers,
+            prompt,
+            effectiveNormalizationRun.mode === 'llm' ? 'llm' : null,
           );
         }
+      } else {
+        result = settleGame(settlementPlayers, prompt, null);
       }
+
+      result = match.aiAssisted
+        ? neutralizeAiAssistedResult(result)
+        : result;
+
+      const projectedBalances = new Map<string, number>();
+      const shouldProjectSettledBalances =
+        !alreadySettled || recoveringSettlingWrite;
 
       for (const pr of result.players) {
         const playerState = match.players.get(pr.accountId);
         if (!playerState) continue;
+        let projectedBalance =
+          playerState.currentBalance +
+          (shouldProjectSettledBalances ? pr.netDelta : 0);
+        if (!match.aiAssisted && projectedBalance < MIN_ALLOWED_BALANCE) {
+          projectedBalance = MIN_ALLOWED_BALANCE;
+        }
+        projectedBalances.set(pr.accountId, projectedBalance);
+        (pr as PlayerResultWithBalance).newBalance = projectedBalance;
+      }
 
-        if (!this._isAiBot(pr.accountId)) {
-          if (!match.aiAssisted) {
+      if (!alreadySettled) {
+        let shouldWriteGame = true;
+        if (recoveringSettlingWrite) {
+          if (persistedVoteLogs === null) {
+            persistedVoteLogs =
+              await this._hasPersistedVoteLogsForCurrentGame(match);
+          }
+          if (persistedVoteLogs === null) {
+            this._checkpointMatch(match);
+            this._scheduleFinalizeRetry(match);
+            return;
+          }
+          shouldWriteGame = !persistedVoteLogs;
+        }
+
+        if (shouldWriteGame) {
+          match.phase = 'settling';
+          match.phaseEnteredAt = Date.now();
+          this._checkpointMatch(match);
+
+          const stmts: D1PreparedStatement[] = [];
+          const now = new Date().toISOString();
+
+          if (prompt.type === 'open_text' && effectiveNormalizationRun.runId) {
             stmts.push(
               this.env.DB.prepare(
-                'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-              ).bind(playerState.currentBalance, pr.accountId),
+                'INSERT INTO normalization_runs (run_id, match_id, game_number, prompt_id, mode, model, normalizer_prompt, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              ).bind(
+                effectiveNormalizationRun.runId,
+                match.matchId,
+                match.currentGame,
+                prompt.id,
+                effectiveNormalizationRun.mode,
+                effectiveNormalizationRun.model,
+                effectiveNormalizationRun.normalizerPrompt,
+                effectiveNormalizationRun.requestJson,
+                effectiveNormalizationRun.responseJson,
+                now,
+              ),
             );
+
+            for (const verdict of effectiveNormalizationRun.verdicts.values()) {
+              stmts.push(
+                this.env.DB.prepare(
+                  'INSERT INTO normalization_verdicts (run_id, match_id, game_number, prompt_id, normalized_input_text, bucket_key, bucket_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                ).bind(
+                  effectiveNormalizationRun.runId,
+                  match.matchId,
+                  match.currentGame,
+                  prompt.id,
+                  verdict.normalizedInputText,
+                  verdict.bucketKey,
+                  verdict.bucketLabel,
+                  now,
+                ),
+              );
+            }
           }
 
-          if (!result.voided && !match.aiAssisted) {
-            stmts.push(
-              this.env.DB.prepare(
-                'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
-              ).bind(pr.accountId),
-            );
-            if (pr.earnsCoordinationCredit) {
+          for (const pr of result.players) {
+            const projectedBalance = projectedBalances.get(pr.accountId);
+            if (projectedBalance === undefined) continue;
+
+            if (!this._isAiBot(pr.accountId)) {
+              if (!match.aiAssisted) {
+                stmts.push(
+                  this.env.DB.prepare(
+                    'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+                  ).bind(projectedBalance, pr.accountId),
+                );
+              }
+
+              if (!result.voided && !match.aiAssisted) {
+                stmts.push(
+                  this.env.DB.prepare(
+                    'UPDATE player_stats SET games_played = games_played + 1 WHERE account_id = ?',
+                  ).bind(pr.accountId),
+                );
+                if (pr.earnsCoordinationCredit) {
+                  stmts.push(
+                    this.env.DB.prepare(
+                      'UPDATE player_stats SET coherent_games = coherent_games + 1, ' +
+                        'current_streak = current_streak + 1, ' +
+                        'longest_streak = MAX(longest_streak, current_streak + 1) ' +
+                        'WHERE account_id = ?',
+                    ).bind(pr.accountId),
+                  );
+                } else {
+                  stmts.push(
+                    this.env.DB.prepare(
+                      'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
+                    ).bind(pr.accountId),
+                  );
+                }
+              }
+            }
+
+            if (!this._isAiBot(pr.accountId)) {
               stmts.push(
                 this.env.DB.prepare(
-                  'UPDATE player_stats SET coherent_games = coherent_games + 1, ' +
-                    'current_streak = current_streak + 1, ' +
-                    'longest_streak = MAX(longest_streak, current_streak + 1) ' +
-                    'WHERE account_id = ?',
-                ).bind(pr.accountId),
+                  'INSERT INTO vote_logs (match_id, game_number, prompt_id, account_id, display_name_snapshot, ' +
+                    'prompt_type, revealed_option_index, revealed_option_label, revealed_input_text, ' +
+                    'revealed_bucket_key, revealed_bucket_label, normalization_mode, normalization_run_id, ' +
+                    'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
+                    'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
+                    'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                ).bind(
+                  match.matchId,
+                  match.currentGame,
+                  prompt.id,
+                  pr.accountId,
+                  pr.displayName,
+                  prompt.type,
+                  pr.revealedOptionIndex,
+                  pr.revealedOptionLabel,
+                  pr.revealedInputText,
+                  pr.revealedBucketKey,
+                  pr.revealedBucketLabel,
+                  result.normalizationMode,
+                  effectiveNormalizationRun.runId,
+                  pr.wonGame ? 1 : 0,
+                  pr.earnsCoordinationCredit ? 1 : 0,
+                  pr.antePaid,
+                  pr.gamePayout,
+                  pr.netDelta,
+                  result.playerCount,
+                  result.validRevealCount,
+                  result.topCount,
+                  result.winnerCount,
+                  JSON.stringify(result.winningOptionIndexes),
+                  JSON.stringify(result.winningBucketKeys),
+                  result.voided ? 1 : 0,
+                  result.voidReason,
+                  now,
+                ),
               );
-            } else {
-              stmts.push(
-                this.env.DB.prepare(
-                  'UPDATE player_stats SET current_streak = 0 WHERE account_id = ?',
-                ).bind(pr.accountId),
-              );
+            }
+          }
+
+          if (stmts.length > 0) {
+            try {
+              await this.env.DB.batch(stmts);
+            } catch (error) {
+              console.error('D1: batch finalizeGame for', match.matchId, error);
+              this._checkpointMatch(match);
+              this._scheduleFinalizeRetry(match);
+              return;
             }
           }
         }
 
-        if (!this._isAiBot(pr.accountId)) {
-          stmts.push(
-            this.env.DB.prepare(
-              'INSERT INTO vote_logs (match_id, game_number, prompt_id, account_id, display_name_snapshot, ' +
-                'prompt_type, revealed_option_index, revealed_option_label, revealed_input_text, ' +
-                'revealed_bucket_key, revealed_bucket_label, normalization_mode, normalization_run_id, ' +
-                'won_game, earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
-                'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
-                'winning_bucket_keys_json, voided, void_reason, timestamp) ' +
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            ).bind(
-              match.matchId,
-              match.currentGame,
-              prompt.id,
-              pr.accountId,
-              pr.displayName,
-              prompt.type,
-              pr.revealedOptionIndex,
-              pr.revealedOptionLabel,
-              pr.revealedInputText,
-              pr.revealedBucketKey,
-              pr.revealedBucketLabel,
-              result.normalizationMode,
-              normalizationRun?.runId ?? null,
-              pr.wonGame ? 1 : 0,
-              pr.earnsCoordinationCredit ? 1 : 0,
-              pr.antePaid,
-              pr.gamePayout,
-              pr.netDelta,
-              result.playerCount,
-              result.validRevealCount,
-              result.topCount,
-              result.winnerCount,
-              JSON.stringify(result.winningOptionIndexes),
-              JSON.stringify(result.winningBucketKeys),
-              result.voided ? 1 : 0,
-              result.voidReason,
-              now,
-            ),
-          );
+        for (const [accountId, projectedBalance] of projectedBalances) {
+          const playerState = match.players.get(accountId);
+          if (!playerState) continue;
+          playerState.currentBalance = projectedBalance;
         }
-      }
-
-      if (stmts.length > 0) {
-        try {
-          await this.env.DB.batch(stmts);
-        } catch (e) {
-          console.error('D1: batch finalizeGame for', match.matchId, e);
-        }
+        match.lastSettledGame = match.currentGame;
       }
     }
 
-    // Build game result payload for broadcast and reconnect replay.
-    // Read newBalance from live player state rather than the snapshot
-    // captured before the D1 await: a grace-timer forfeit could have
-    // burned future-game antes during the batch, making the snapshot
-    // stale.
-    const gameResultPayload: GameResultMessage['result'] = {
-      gameNum: match.currentGame,
-      voided: result.voided,
-      voidReason: result.voidReason,
-      playerCount: result.playerCount,
-      pot: result.pot,
-      dustBurned: result.dustBurned,
-      validRevealCount: result.validRevealCount,
-      topCount: result.topCount,
-      winningOptionIndexes: result.winningOptionIndexes,
-      winningBucketKeys: result.winningBucketKeys,
-      winnerCount: result.winnerCount,
-      payoutPerWinner: result.payoutPerWinner,
-      normalizationMode: result.normalizationMode,
-      players: result.players.map((pr) => ({
-        accountId: pr.accountId,
-        displayName: pr.displayName,
-        revealedOptionIndex: pr.revealedOptionIndex,
-        revealedOptionLabel: pr.revealedOptionLabel,
-        revealedInputText: pr.revealedInputText,
-        revealedBucketKey: pr.revealedBucketKey,
-        revealedBucketLabel: pr.revealedBucketLabel,
-        wonGame: pr.wonGame,
-        earnsCoordinationCredit: pr.earnsCoordinationCredit,
-        antePaid: pr.antePaid,
-        gamePayout: pr.gamePayout,
-        netDelta: pr.netDelta,
-        newBalance:
-          match.players.get(pr.accountId)?.currentBalance ??
-          (pr as PlayerResultWithBalance).newBalance,
-      })),
-    };
+    match.phase = 'results';
+    match.phaseEnteredAt = Date.now();
+
+    let gameResultPayload: GameResultMessage['result'];
+    if (recoveredGameResult) {
+      gameResultPayload = recoveredGameResult;
+    } else {
+      const computedResult = result;
+      if (!computedResult) {
+        throw new Error(
+          `Missing game result for ${match.matchId}:${match.currentGame}`,
+        );
+      }
+      gameResultPayload = {
+        gameNum: match.currentGame,
+        voided: computedResult.voided,
+        voidReason: computedResult.voidReason,
+        playerCount: computedResult.playerCount,
+        pot: computedResult.pot,
+        dustBurned: computedResult.dustBurned,
+        validRevealCount: computedResult.validRevealCount,
+        topCount: computedResult.topCount,
+        winningOptionIndexes: computedResult.winningOptionIndexes,
+        winningBucketKeys: computedResult.winningBucketKeys,
+        winnerCount: computedResult.winnerCount,
+        payoutPerWinner: computedResult.payoutPerWinner,
+        normalizationMode: computedResult.normalizationMode,
+        players: computedResult.players.map((pr) => ({
+          accountId: pr.accountId,
+          displayName: pr.displayName,
+          revealedOptionIndex: pr.revealedOptionIndex,
+          revealedOptionLabel: pr.revealedOptionLabel,
+          revealedInputText: pr.revealedInputText,
+          revealedBucketKey: pr.revealedBucketKey,
+          revealedBucketLabel: pr.revealedBucketLabel,
+          wonGame: pr.wonGame,
+          earnsCoordinationCredit: pr.earnsCoordinationCredit,
+          antePaid: pr.antePaid,
+          gamePayout: pr.gamePayout,
+          netDelta: pr.netDelta,
+          newBalance:
+            match.players.get(pr.accountId)?.currentBalance ??
+            (pr as PlayerResultWithBalance).newBalance,
+        })),
+      };
+    }
     match.lastGameResult = gameResultPayload;
 
-    // Checkpoint after setting lastGameResult so it survives DO eviction
     this._checkpointMatch(match);
 
-    // Broadcast game_result
     this._broadcastToMatch(match, {
       type: 'game_result',
       resultsDuration: RESULTS_DURATION,
       result: gameResultPayload,
     });
 
-    // Check early termination: no non-forfeited players remain
     if (!this._hasNonForfeitedPlayers(match)) {
       match.resultsTimer = setTimeout(() => {
         match.resultsTimer = null;
@@ -1466,7 +1575,6 @@ export class GameRoom {
       return;
     }
 
-    // After results display, advance
     match.resultsTimer = setTimeout(() => {
       match.resultsTimer = null;
       this._advanceAfterResults(match);
@@ -1487,9 +1595,9 @@ export class GameRoom {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
-    match.phase = 'ended';
-    // Delete checkpoint immediately so a mid-_endMatch eviction won't resurrect this match
-    this._deleteMatchCheckpoint(match.matchId);
+    match.phase = 'ending';
+    match.phaseEnteredAt = Date.now();
+    this._checkpointMatch(match);
 
     const summary = {
       players: [...match.players.values()].map((p) => ({
@@ -1501,56 +1609,72 @@ export class GameRoom {
       })),
     };
 
+    const alreadyCompletedInD1 = await this._isMatchAlreadyCompleted(
+      match.matchId,
+    );
+    if (alreadyCompletedInD1 === null) {
+      this._checkpointMatch(match);
+      this._scheduleEndMatchRetry(match);
+      return;
+    }
+
+    if (!alreadyCompletedInD1) {
+      // Batch all endMatch D1 writes
+      try {
+        const endStmts: D1PreparedStatement[] = [
+          this.env.DB.prepare(
+            'UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?',
+          ).bind(new Date().toISOString(), 'completed', match.matchId),
+        ];
+
+        for (const p of match.players.values()) {
+          if (this._isAiBot(p.accountId)) continue;
+
+          if (!match.aiAssisted) {
+            endStmts.push(
+              this.env.DB.prepare(
+                'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
+              ).bind(p.currentBalance, p.accountId),
+            );
+          }
+
+          endStmts.push(
+            this.env.DB.prepare(
+              'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?',
+            ).bind(
+              p.currentBalance,
+              p.currentBalance - p.startingBalance,
+              p.forfeited ? 'forfeited' : 'completed',
+              match.matchId,
+              p.accountId,
+            ),
+          );
+
+          if (!match.aiAssisted) {
+            endStmts.push(
+              this.env.DB.prepare(
+                'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
+              ).bind(p.accountId),
+            );
+          }
+        }
+
+        await this.env.DB.batch(endStmts);
+      } catch (error) {
+        console.error('D1: endMatch writes for', match.matchId, error);
+        this._checkpointMatch(match);
+        this._scheduleEndMatchRetry(match);
+        return;
+      }
+    }
+
+    match.phase = 'ended';
+
     this._broadcastToMatch(match, {
       type: 'match_over',
       aiAssisted: match.aiAssisted,
       summary,
     });
-
-    // Batch all endMatch D1 writes
-    try {
-      const endStmts: D1PreparedStatement[] = [
-        this.env.DB.prepare(
-          'UPDATE matches SET ended_at = ?, status = ? WHERE match_id = ?',
-        ).bind(new Date().toISOString(), 'completed', match.matchId),
-      ];
-
-      for (const p of match.players.values()) {
-        if (this._isAiBot(p.accountId)) continue;
-
-        if (!match.aiAssisted) {
-          endStmts.push(
-            this.env.DB.prepare(
-              'UPDATE accounts SET token_balance = ? WHERE account_id = ?',
-            ).bind(p.currentBalance, p.accountId),
-          );
-        }
-
-        endStmts.push(
-          this.env.DB.prepare(
-            'UPDATE match_players SET ending_balance = ?, net_delta = ?, result = ? WHERE match_id = ? AND account_id = ?',
-          ).bind(
-            p.currentBalance,
-            p.currentBalance - p.startingBalance,
-            p.forfeited ? 'forfeited' : 'completed',
-            match.matchId,
-            p.accountId,
-          ),
-        );
-
-        if (!match.aiAssisted) {
-          endStmts.push(
-            this.env.DB.prepare(
-              'UPDATE player_stats SET matches_played = matches_played + 1 WHERE account_id = ?',
-            ).bind(p.accountId),
-          );
-        }
-      }
-
-      await this.env.DB.batch(endStmts);
-    } catch (e) {
-      console.error('D1: endMatch writes for', match.matchId, e);
-    }
 
     // Track opponents for anti-repeat
     const matchPlayerIds = [...match.players.keys()];
@@ -1563,13 +1687,14 @@ export class GameRoom {
       }
     }
 
-    // Clean up match (checkpoint already deleted at top of _endMatch)
+    // Clean up match after persistence is confirmed.
     this.activeMatches.delete(match.matchId);
     for (const accountId of matchPlayerIds) {
       if (this.playerMatchIndex.get(accountId) === match.matchId) {
         this.playerMatchIndex.delete(accountId);
       }
     }
+    this._deleteMatchCheckpoint(match.matchId);
 
     this._ensureAiBotBackfill();
     this._tryFormMatch();
@@ -2865,6 +2990,42 @@ export class GameRoom {
     );
   }
 
+  _scheduleFinalizeRetry(
+    match: WorkerMatchState,
+    delayMs = D1_RETRY_DELAY_MS,
+  ): void {
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
+    match.resultsTimer = setTimeout(() => {
+      match.resultsTimer = null;
+      if (!this.activeMatches.has(match.matchId)) return;
+      this._waitUntil(
+        this._finalizeGame(match),
+        `retry finalize game ${match.currentGame} for ${match.matchId}`,
+      );
+    }, delayMs);
+  }
+
+  _scheduleEndMatchRetry(
+    match: WorkerMatchState,
+    delayMs = D1_RETRY_DELAY_MS,
+  ): void {
+    if (match.resultsTimer) {
+      clearTimeout(match.resultsTimer);
+      match.resultsTimer = null;
+    }
+    match.resultsTimer = setTimeout(() => {
+      match.resultsTimer = null;
+      if (!this.activeMatches.has(match.matchId)) return;
+      this._waitUntil(
+        this._endMatch(match),
+        `retry end match ${match.matchId}`,
+      );
+    }, delayMs);
+  }
+
   _ensureMatchTimerRunning(match: WorkerMatchState): void {
     const elapsed = Date.now() - match.phaseEnteredAt;
 
@@ -2899,6 +3060,10 @@ export class GameRoom {
         this._normalizeAndFinalizeOpenTextGame(match),
         `resume normalization for game ${match.currentGame} in ${match.matchId}`,
       );
+    } else if (match.phase === 'settling' && !match.resultsTimer) {
+      this._scheduleFinalizeRetry(match, 0);
+    } else if (match.phase === 'ending' && !match.resultsTimer) {
+      this._scheduleEndMatchRetry(match, 0);
     } else if (match.phase === 'results' && !match.resultsTimer) {
       const remaining = Math.max(0, RESULTS_DURATION * 1000 - elapsed);
       if (remaining <= 0) {
@@ -2925,6 +3090,194 @@ export class GameRoom {
           }, remainingGrace);
         }
       }
+    }
+  }
+
+  _parsePersistedNumberArray(value: string | null, field: string): number[] {
+    if (!value) return [];
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.some((entry) => typeof entry !== 'number')
+    ) {
+      throw new Error(`Persisted ${field} is not a number array`);
+    }
+    return parsed;
+  }
+
+  _parsePersistedStringArray(value: string | null, field: string): string[] {
+    if (!value) return [];
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.some((entry) => typeof entry !== 'string')
+    ) {
+      throw new Error(`Persisted ${field} is not a string array`);
+    }
+    return parsed;
+  }
+
+  async _loadPersistedGameResult(
+    match: WorkerMatchState,
+  ): Promise<GameResultMessage['result'] | null> {
+    const rows = await this.env.DB.prepare(
+      'SELECT account_id, display_name_snapshot, revealed_option_index, revealed_option_label, ' +
+        'revealed_input_text, revealed_bucket_key, revealed_bucket_label, won_game, ' +
+        'earns_coordination_credit, ante_amount, game_payout, net_delta, player_count, ' +
+        'valid_reveal_count, top_count, winner_count, winning_option_indexes_json, ' +
+        'winning_bucket_keys_json, voided, void_reason, normalization_mode ' +
+        'FROM vote_logs WHERE match_id = ? AND game_number = ? ORDER BY id ASC',
+    )
+      .bind(match.matchId, match.currentGame)
+      .all();
+
+    const voteLogs = rows.results as unknown as PersistedVoteLogRow[];
+    if (voteLogs.length === 0) {
+      return null;
+    }
+
+    const attachedHumanPlayers = [...match.players.values()].filter(
+      (player) =>
+        !this._isAiBot(player.accountId) &&
+        (!player.forfeited || player.forfeitedAtGame === match.currentGame),
+    );
+    if (voteLogs.length !== attachedHumanPlayers.length) {
+      throw new Error(
+        `Persisted vote log count mismatch for ${match.matchId}:${match.currentGame}`,
+      );
+    }
+
+    const voteLogsByAccountId = new Map(
+      voteLogs.map((voteLog) => [voteLog.account_id, voteLog]),
+    );
+    if (voteLogsByAccountId.size !== voteLogs.length) {
+      throw new Error(
+        `Duplicate persisted vote logs detected for ${match.matchId}:${match.currentGame}`,
+      );
+    }
+
+    const summary = voteLogs[0];
+    if (!summary) {
+      return null;
+    }
+
+    for (const voteLog of voteLogs) {
+      if (
+        voteLog.player_count !== summary.player_count ||
+        voteLog.valid_reveal_count !== summary.valid_reveal_count ||
+        voteLog.top_count !== summary.top_count ||
+        voteLog.winner_count !== summary.winner_count ||
+        voteLog.voided !== summary.voided ||
+        voteLog.void_reason !== summary.void_reason ||
+        voteLog.normalization_mode !== summary.normalization_mode ||
+        voteLog.winning_option_indexes_json !==
+          summary.winning_option_indexes_json ||
+        voteLog.winning_bucket_keys_json !== summary.winning_bucket_keys_json
+      ) {
+        throw new Error(
+          `Persisted vote log summary mismatch for ${match.matchId}:${match.currentGame}`,
+        );
+      }
+    }
+
+    const winningOptionIndexes = this._parsePersistedNumberArray(
+      summary.winning_option_indexes_json,
+      'winning_option_indexes_json',
+    );
+    const winningBucketKeys = this._parsePersistedStringArray(
+      summary.winning_bucket_keys_json,
+      'winning_bucket_keys_json',
+    );
+
+    const players = attachedHumanPlayers.map((playerState) => {
+      const voteLog = voteLogsByAccountId.get(playerState.accountId);
+      if (!voteLog) {
+        throw new Error(
+          `Missing persisted vote log for ${playerState.accountId} in ${match.matchId}:${match.currentGame}`,
+        );
+      }
+
+      let newBalance = playerState.currentBalance + voteLog.net_delta;
+      if (newBalance < MIN_ALLOWED_BALANCE) {
+        newBalance = MIN_ALLOWED_BALANCE;
+      }
+
+      return {
+        accountId: voteLog.account_id,
+        displayName: voteLog.display_name_snapshot ?? playerState.displayName,
+        revealedOptionIndex: voteLog.revealed_option_index,
+        revealedOptionLabel: voteLog.revealed_option_label,
+        revealedInputText: voteLog.revealed_input_text,
+        revealedBucketKey: voteLog.revealed_bucket_key,
+        revealedBucketLabel: voteLog.revealed_bucket_label,
+        wonGame: voteLog.won_game === 1,
+        earnsCoordinationCredit: voteLog.earns_coordination_credit === 1,
+        antePaid: voteLog.ante_amount,
+        gamePayout: voteLog.game_payout,
+        netDelta: voteLog.net_delta,
+        newBalance,
+      };
+    });
+
+    const pot = voteLogs.reduce((sum, voteLog) => sum + voteLog.ante_amount, 0);
+    const totalPayout = voteLogs.reduce(
+      (sum, voteLog) => sum + voteLog.game_payout,
+      0,
+    );
+    const payoutPerWinner =
+      summary.winner_count > 0
+        ? Math.max(...players.map((player) => player.gamePayout))
+        : 0;
+
+    return {
+      gameNum: match.currentGame,
+      voided: summary.voided === 1,
+      voidReason: summary.void_reason,
+      playerCount: summary.player_count,
+      pot,
+      dustBurned: pot - totalPayout,
+      validRevealCount: summary.valid_reveal_count,
+      topCount: summary.top_count,
+      winningOptionIndexes,
+      winningBucketKeys,
+      winnerCount: summary.winner_count,
+      payoutPerWinner,
+      normalizationMode: summary.normalization_mode,
+      players,
+    };
+  }
+
+  async _hasPersistedVoteLogsForCurrentGame(
+    match: WorkerMatchState,
+  ): Promise<boolean | null> {
+    try {
+      const row = await this.env.DB.prepare(
+        'SELECT 1 AS found FROM vote_logs WHERE match_id = ? AND game_number = ? LIMIT 1',
+      )
+        .bind(match.matchId, match.currentGame)
+        .first<{ found: number }>();
+      return row?.found === 1;
+    } catch (error) {
+      console.error(
+        'D1: failed to check vote log persistence for',
+        match.matchId,
+        error,
+      );
+      return null;
+    }
+  }
+
+  async _isMatchAlreadyCompleted(matchId: string): Promise<boolean | null> {
+    try {
+      const row = await this.env.DB.prepare(
+        'SELECT status FROM matches WHERE match_id = ?',
+      )
+        .bind(matchId)
+        .first<{ status: string | null }>();
+      return row?.status === 'completed';
+    } catch (error) {
+      console.error('D1: failed to check match completion for', matchId, error);
+      return null;
     }
   }
 
