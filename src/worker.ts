@@ -1603,6 +1603,12 @@ export class GameRoom {
       clearTimeout(match.revealTimer);
       match.revealTimer = null;
     }
+    for (const player of match.players.values()) {
+      if (player.graceTimer) {
+        clearTimeout(player.graceTimer);
+        player.graceTimer = null;
+      }
+    }
     match.phase = 'ending';
     match.phaseEnteredAt = Date.now();
     this._checkpointMatch(match);
@@ -3258,6 +3264,7 @@ export class GameRoom {
   }
 
   _restoreMatchesFromStorage(): void {
+    const restoredAt = Date.now();
     const restored = restoreMatchesFromStorage(
       this.state.storage.sql,
       STALE_MATCH_THRESHOLD_MS,
@@ -3267,6 +3274,10 @@ export class GameRoom {
       for (const [id, rp] of rm.players) {
         players.set(id, {
           ...rp,
+          disconnectedAt:
+            !rp.forfeited && rm.phase !== 'ending' && rp.disconnectedAt === null
+              ? restoredAt
+              : rp.disconnectedAt,
           ws: null,
           graceTimer: null,
           pendingAiCommit: false,
@@ -3379,6 +3390,10 @@ export class GameRoom {
           this._advanceAfterResults(match);
         }, remaining);
       }
+    }
+
+    if (match.phase === 'ending' || match.phase === 'ended') {
+      return;
     }
 
     // Start grace timers for still-disconnected, non-forfeited players

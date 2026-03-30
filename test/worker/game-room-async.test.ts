@@ -2908,6 +2908,125 @@ describe('GameRoom async task tracking', () => {
     }
   });
 
+  it('reconciles ws-less restored players into grace timers on constructor restore', () => {
+    vi.useFakeTimers();
+
+    try {
+      const restoreTime = new Date('2026-03-30T12:00:00.000Z');
+      const restoreMs = restoreTime.getTime();
+      vi.setSystemTime(restoreTime);
+
+      const prompt = {
+        id: 1,
+        text: 'Pick one',
+        type: 'select',
+        category: 'culture',
+        options: ['A', 'B'],
+      };
+      const matchRows = [
+        {
+          match_id: 'restored-match',
+          phase: 'commit',
+          current_game: 1,
+          total_games: 10,
+          prompts_json: JSON.stringify([prompt]),
+          phase_entered_at: restoreMs,
+          last_settled_game: 0,
+          ai_assisted: 0,
+        },
+      ];
+      const playerRows = [
+        {
+          match_id: 'restored-match',
+          account_id: 'acct-1',
+          display_name: 'Alice',
+          starting_balance: 1000,
+          current_balance: 1000,
+          committed: 0,
+          revealed: 0,
+          hash: null,
+          option_index: null,
+          answer_text: null,
+          normalized_reveal_text: null,
+          salt: null,
+          forfeited: 0,
+          disconnected_at: null,
+        },
+        {
+          match_id: 'restored-match',
+          account_id: 'acct-2',
+          display_name: 'Bob',
+          starting_balance: 1000,
+          current_balance: 1000,
+          committed: 0,
+          revealed: 0,
+          hash: null,
+          option_index: null,
+          answer_text: null,
+          normalized_reveal_text: null,
+          salt: null,
+          forfeited: 0,
+          disconnected_at: restoreMs - 3_000,
+        },
+      ];
+
+      const forfeitPlayer = vi
+        .spyOn(GameRoom.prototype, '_forfeitPlayer')
+        .mockImplementation(() => {});
+      const state = {
+        waitUntil: vi.fn((_task: Promise<unknown>) => undefined),
+        storage: {
+          transactionSync: vi.fn((fn: () => unknown) => fn()),
+          sql: createRestoreSql(matchRows, {
+            'restored-match': playerRows,
+          }),
+        },
+      } as unknown as DurableObjectState;
+      const defaultDb = {
+        prepare: vi.fn(() => ({
+          bind: vi.fn(() => ({
+            first: vi.fn().mockResolvedValue({ token_balance: 0 }),
+            all: vi.fn().mockResolvedValue({ results: [] }),
+            run: vi.fn().mockResolvedValue(undefined),
+          })),
+        })),
+        batch: vi.fn().mockResolvedValue(undefined),
+      } as unknown as D1Database;
+
+      const room = new GameRoom(state, {
+        DB: defaultDb,
+      } as Env);
+
+      const match = must(
+        room.activeMatches.get('restored-match'),
+        'Expected restored match',
+      );
+      const alice = must(match.players.get('acct-1'), 'Expected Alice state');
+      const bob = must(match.players.get('acct-2'), 'Expected Bob state');
+
+      expect(alice.ws).toBeNull();
+      expect(alice.disconnectedAt).toBe(restoreMs);
+      expect(alice.graceTimer).not.toBeNull();
+
+      expect(bob.ws).toBeNull();
+      expect(bob.disconnectedAt).toBe(restoreMs - 3_000);
+      expect(bob.graceTimer).not.toBeNull();
+
+      vi.advanceTimersByTime(11_999);
+      expect(forfeitPlayer).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      expect(forfeitPlayer).toHaveBeenCalledWith(match, 'acct-2');
+
+      vi.advanceTimersByTime(3_000);
+      expect(forfeitPlayer).toHaveBeenCalledWith(match, 'acct-1');
+    } finally {
+      vi.restoreAllMocks();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it('resumes the normalizing phase after restore', async () => {
     const { room, waitUntil } = createRoom();
     const normalizeAndFinalize = vi
