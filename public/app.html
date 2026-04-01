@@ -966,16 +966,33 @@ window.addEventListener('unhandledrejection', (event) => {
 // ── Header profile ──────────────────────────────────────────────
 function updateHeaderProfile() {
   if (S.accountId) {
+    const manageNameBtn = $('#manage-name-btn');
+    const displayNameBlockMessage = getDisplayNameEditBlockMessage();
     $('#header-profile').classList.remove('hidden');
     $('#header-name').textContent = S.displayName || S.accountId.slice(0, 6) + '…';
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
-    $('#manage-name-btn').textContent = S.hasClaimedDisplayName ? 'Change Name' : 'Claim Name';
+    manageNameBtn.textContent = S.hasClaimedDisplayName ? 'Change Name' : 'Claim Name';
+    manageNameBtn.disabled = !!displayNameBlockMessage;
+    manageNameBtn.title = displayNameBlockMessage || 'Claim or change display name';
     $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
   }
 }
 
 function hasActiveMatch() {
   return S.matchId !== null;
+}
+
+function getDisplayNameEditBlockMessage() {
+  if (hasActiveMatch()) {
+    return "You can't update your display name during an active match.";
+  }
+  if (S.formingMatch) {
+    return "You can't update your display name while a match is forming.";
+  }
+  if (S.inQueue) {
+    return "You can't update your display name while in the matchmaking queue.";
+  }
+  return null;
 }
 
 function updateNavigation() {
@@ -1307,7 +1324,7 @@ function showView(name) {
 }
 
 // ── Display-name editor ─────────────────────────────────────────
-function showNameClaim(statusText, tone = 'success') {
+function showDisplayNameEditor(statusText, tone = 'success') {
   updateHeaderProfile();
   setAuthStatus(statusText, tone);
   $('#name-section').classList.remove('hidden');
@@ -1324,17 +1341,18 @@ function showNameClaim(statusText, tone = 'success') {
   requestAnimationFrame(() => $('#name-input').focus());
 }
 
-function openNameEditor(statusText) {
-  if (S.inQueue || S.formingMatch || hasActiveMatch()) {
-    notify('Leave the queue before changing your display name.', 'error');
+function openDisplayNameEditor(statusText) {
+  const displayNameBlockMessage = getDisplayNameEditBlockMessage();
+  if (displayNameBlockMessage) {
+    notify(displayNameBlockMessage, 'error');
     return;
   }
   S.nameEditorReturnView = S.view === 'auth' ? 'queue' : S.view;
   showView('auth');
-  showNameClaim(statusText, 'hint');
+  showDisplayNameEditor(statusText, 'hint');
 }
 
-function closeNameEditor() {
+function closeDisplayNameEditor() {
   $('#name-section').classList.add('hidden');
   if (S.accountId) {
     showView(S.nameEditorReturnView || 'queue');
@@ -1483,7 +1501,7 @@ $('#claim-name-btn').addEventListener('click', async () => {
 });
 
 $('#manage-name-btn').addEventListener('click', () => {
-  openNameEditor(
+  openDisplayNameEditor(
     S.hasClaimedDisplayName
       ? 'Choose a new display name.'
       : 'Claim a human-readable display name.',
@@ -1491,7 +1509,7 @@ $('#manage-name-btn').addEventListener('click', () => {
 });
 
 $('#cancel-name-btn').addEventListener('click', () => {
-  closeNameEditor();
+  closeDisplayNameEditor();
 });
 
 $('#show-import-btn').setAttribute('aria-controls', 'import-section');
@@ -2131,6 +2149,7 @@ function renderQueue() {
   const selfForfeited = hasSelfForfeited();
   const activeMatchBanner = $('#active-match-banner');
   const queueCount = S.queuedPlayers.length;
+  updateHeaderProfile();
   $('#queue-count').textContent = queueCount;
   $('#queue-inline-count').textContent =
     queueCount === 1 ? '1 visible' : queueCount + ' visible';
