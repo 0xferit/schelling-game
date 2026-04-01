@@ -195,9 +195,9 @@ describe('GameRoom Durable Object', () => {
     ws.close();
   });
 
-  // The fill timer is 30 seconds; the match starts after it expires.
+  // The fill timer is 45 seconds; the match starts after it expires.
   it('3 players joining queue triggers match formation', {
-    timeout: 45_000,
+    timeout: 60_000,
   }, async () => {
     const players = await formMatch([
       [0, 'Player1'],

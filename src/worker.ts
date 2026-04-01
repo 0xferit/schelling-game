@@ -69,7 +69,7 @@ interface FormingMatchState {
 // Constants
 // ---------------------------------------------------------------------------
 const TOTAL_GAMES = 10;
-const FILL_TIMER_MS = 30_000;
+const FILL_TIMER_MS = 45_000;
 const GRACE_DURATION_MS = 15_000;
 const MAX_MATCH_SIZE = 21;
 const MIN_MATCH_SIZE = 3;
@@ -552,7 +552,7 @@ export class GameRoom {
       return;
     }
 
-    // Start 20s fill timer
+    // Start 45s fill timer
     const fillDeadlineMs = Date.now() + FILL_TIMER_MS;
     const timer = setTimeout(() => this._onFillTimerExpired(), FILL_TIMER_MS);
     this.formingMatch = { players: reserved, timer, fillDeadlineMs };
@@ -829,6 +829,9 @@ export class GameRoom {
 
       const stmts: D1PreparedStatement[] = [];
       const now = new Date().toISOString();
+      const includesAiBot = [...match.players.keys()].some((accountId) =>
+        this._isAiBot(accountId),
+      );
 
       for (const pr of result.players) {
         const playerState = match.players.get(pr.accountId);
@@ -872,8 +875,8 @@ export class GameRoom {
               'INSERT INTO vote_logs (match_id, game_number, question_id, account_id, display_name_snapshot, ' +
                 'revealed_option_index, revealed_option_label, won_game, earns_coordination_credit, ' +
                 'ante_amount, game_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
-                'winner_count, winning_option_indexes_json, voided, void_reason, timestamp) ' +
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'winner_count, winning_option_indexes_json, voided, void_reason, timestamp, includes_ai_bot) ' +
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             ).bind(
               match.matchId,
               match.currentGame,
@@ -895,6 +898,7 @@ export class GameRoom {
               result.voided ? 1 : 0,
               result.voidReason,
               now,
+              includesAiBot ? 1 : 0,
             ),
           );
         }

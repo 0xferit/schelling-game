@@ -523,6 +523,7 @@ export async function handleHttpRequest(
       'voided',
       'void_reason',
       'timestamp',
+      'includes_ai_bot',
     ];
     const header = columns.join(',');
     const rows = (results || []).map((r: Record<string, unknown>) =>

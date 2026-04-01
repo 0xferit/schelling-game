@@ -1,0 +1,2 @@
+ALTER TABLE vote_logs
+ADD COLUMN includes_ai_bot INTEGER NOT NULL DEFAULT 0;

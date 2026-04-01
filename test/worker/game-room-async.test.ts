@@ -641,7 +641,9 @@ describe('GameRoom async task tracking', () => {
     );
 
     expect(voteLogStatements).toHaveLength(1);
+    expect(voteLogStatements[0]?.sql).toContain('includes_ai_bot');
     expect(voteLogStatements[0]?.args[3]).toBe('acct-1');
+    expect(voteLogStatements[0]?.args[20]).toBe(1);
 
     if (match.resultsTimer) clearTimeout(match.resultsTimer);
   });

@@ -651,6 +651,60 @@ describe('HTTP routes', () => {
     );
   }
 
+  it('GET /api/export/votes.csv includes the AI bot match marker', async () => {
+    const matchId = `match-export-ai-${crypto.randomUUID()}`;
+    await env.DB.prepare(
+      'INSERT INTO vote_logs (match_id, game_number, question_id, account_id, display_name_snapshot, ' +
+        'revealed_option_index, revealed_option_label, won_game, earns_coordination_credit, ' +
+        'ante_amount, game_payout, net_delta, player_count, valid_reveal_count, top_count, ' +
+        'winner_count, winning_option_indexes_json, voided, void_reason, timestamp, includes_ai_bot) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(
+        matchId,
+        1,
+        99,
+        'acct-export-ai',
+        'Alice',
+        0,
+        'Red',
+        1,
+        1,
+        2520,
+        5040,
+        2520,
+        3,
+        3,
+        2,
+        2,
+        '[0]',
+        0,
+        null,
+        '2026-04-01T12:00:00.000Z',
+        1,
+      )
+      .run();
+
+    const resp = await adminGet('/api/export/votes.csv', {
+      Authorization: `Bearer ${ADMIN_KEY}`,
+    });
+    expect(resp.status).toBe(200);
+
+    const csv = await resp.text();
+    const [header, ...rows] = csv.trim().split('\n');
+    const columns = header.split(',');
+    const row = rows.find((candidate) => candidate.includes(matchId));
+
+    expect(columns).toContain('includes_ai_bot');
+    expect(row).toBeDefined();
+    expect(must(row, 'Expected exported vote row').split(',')).toContain('1');
+    expect(
+      must(row, 'Expected exported vote row').split(',')[
+        columns.indexOf('includes_ai_bot')
+      ],
+    ).toBe('1');
+  });
+
   it('admin route with valid Bearer token succeeds', async () => {
     const resp = await adminGet('/api/export/votes.csv', {
       Authorization: `Bearer ${ADMIN_KEY}`,
