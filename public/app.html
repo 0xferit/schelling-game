@@ -82,6 +82,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
 .btn-danger{background:var(--red);color:#fff}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);font-size:.84rem;letter-spacing:.08em;font-weight:500}
 .btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn-ghost[aria-disabled='true'],.btn-ghost[aria-disabled='true']:hover{opacity:.55;border-color:var(--border);color:var(--muted);cursor:help;transform:none}
 .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--sans);font-size:.95rem;padding:.5rem .75rem;width:100%;outline:none;transition:border-color .15s}
 input:focus{border-color:var(--accent)}
@@ -945,6 +946,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
         <span class="bal" id="header-balance"></span>
       </div>
       <div class="header-actions">
+        <button class="btn-ghost" id="manage-name-btn" title="Claim or change display name">Claim Name</button>
         <button class="btn-ghost hidden" id="backup-seed-btn" title="Export seed phrase">Backup</button>
         <button class="btn-ghost" id="logout-btn" title="Log out">✕</button>
       </div>
@@ -970,11 +972,12 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
       <button class="btn-ghost" id="connect-wallet-btn">Connect External Wallet</button>
       <button class="btn-ghost" id="show-import-btn">Import Existing Wallet</button>
       <div id="name-section" class="hidden">
-        <label>Claim your display name (1-20 chars, A-Z 0-9 _ -)</label>
+        <label id="name-section-label">Display name (1-20 chars, A-Z 0-9 _ -)</label>
         <div class="row">
           <input id="name-input" type="text" placeholder="e.g. alice" maxlength="20" autocomplete="off" pattern="^[A-Za-z0-9_-]{1,20}$"/>
-          <button class="btn-primary" id="claim-name-btn">Claim</button>
+          <button class="btn-primary" id="claim-name-btn">Save</button>
         </div>
+        <button class="btn-ghost hidden" id="cancel-name-btn">Cancel</button>
       </div>
     </div>
   </div>
@@ -1007,18 +1010,18 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
             <div class="forming-main">
               <div class="forming-label">Forming Match</div>
               <div class="forming-title"><strong id="forming-count">0</strong> players reserved</div>
-              <p class="forming-copy">When every human in this forming match votes yes, the match launches immediately.</p>
+              <p class="forming-copy">The queue countdown stays idle until someone presses ready. If every human gets ready, the match launches immediately.</p>
             </div>
             <div class="forming-side">
-              <span class="forming-side-label">Fill closes in</span>
-              <span class="forming-side-value"><strong id="forming-timer">--</strong>s</span>
+              <span class="forming-side-label">Queue countdown</span>
+              <span class="forming-side-value"><strong id="forming-timer">Not started</strong></span>
             </div>
             <div class="forming-banner-foot">
               <div class="forming-readiness">
                 <span id="start-now-meta">0 / 0 humans ready to start</span>
-                <span id="start-now-note">When every human in this forming match votes yes, the match launches immediately.</span>
+                <span id="start-now-note">Press ready to arm the 30s queue countdown. If every human gets ready, the match launches immediately.</span>
               </div>
-              <button class="btn-ghost hidden" id="start-now-btn" type="button" aria-pressed="false">Vote Start Now</button>
+              <button class="btn-ghost hidden" id="start-now-btn" type="button" aria-pressed="false">Press Ready</button>
             </div>
           </div>
           <div class="queue-action-row action-row">
@@ -1302,6 +1305,7 @@ const S = {
   walletAddress: null,
   accountId: null,
   displayName: null,
+  hasClaimedDisplayName: false,
   tokenBalance: 0,
   aiAssistedMatch: false,
   startNow: false,
@@ -1336,6 +1340,7 @@ const S = {
   gameHistory: [],
   // leaderboard
   previousView: 'queue',
+  nameEditorReturnView: 'queue',
   // ws
   ws: null,
   wsConnected: false,
@@ -1474,15 +1479,34 @@ window.addEventListener('unhandledrejection', (event) => {
 // ── Header profile ──────────────────────────────────────────────
 function updateHeaderProfile() {
   if (S.accountId) {
+    const manageNameBtn = $('#manage-name-btn');
+    const displayNameBlockMessage = getDisplayNameEditBlockMessage();
     $('#header-profile').classList.remove('hidden');
     $('#header-name').textContent = S.displayName || S.accountId.slice(0, 6) + '…';
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
+    manageNameBtn.textContent = S.hasClaimedDisplayName ? 'Change Name' : 'Claim Name';
+    manageNameBtn.disabled = false;
+    manageNameBtn.setAttribute('aria-disabled', displayNameBlockMessage ? 'true' : 'false');
+    manageNameBtn.title = displayNameBlockMessage || 'Claim or change display name';
     $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
   }
 }
 
 function hasActiveMatch() {
   return S.matchId !== null;
+}
+
+function getDisplayNameEditBlockMessage() {
+  if (hasActiveMatch()) {
+    return 'You can\'t update your display name during an active match.';
+  }
+  if (S.formingMatch) {
+    return 'You can\'t update your display name while a match is forming.';
+  }
+  if (S.inQueue) {
+    return 'You can\'t update your display name while in the matchmaking queue.';
+  }
+  return null;
 }
 
 function updateNavigation() {
@@ -1813,11 +1837,13 @@ function showView(name) {
   if (name === 'queue') renderQueue();
 }
 
-// ── Name-claim UI (shared by authenticateWithWallet + checkSession) ──
-function showNameClaim(statusText) {
+// ── Display-name editor ─────────────────────────────────────────
+function showDisplayNameEditor(statusText, tone = 'success') {
   updateHeaderProfile();
-  setAuthStatus(statusText, 'success');
+  setAuthStatus(statusText, tone);
   $('#name-section').classList.remove('hidden');
+  $('#cancel-name-btn').classList.toggle('hidden', !S.accountId);
+  $('#name-input').value = S.hasClaimedDisplayName ? S.displayName : '';
   $('#connect-wallet-btn').classList.add('hidden');
   $('#browser-wallet-btn').classList.add('hidden');
   $('.auth-divider').classList.add('hidden');
@@ -1826,6 +1852,25 @@ function showNameClaim(statusText) {
   $('#import-section').classList.add('hidden');
   $('#show-import-btn').setAttribute('aria-expanded', 'false');
   $('#import-input').value = '';
+  requestAnimationFrame(() => $('#name-input').focus());
+}
+
+function openDisplayNameEditor(statusText) {
+  const displayNameBlockMessage = getDisplayNameEditBlockMessage();
+  if (displayNameBlockMessage) {
+    notify(displayNameBlockMessage, 'error');
+    return;
+  }
+  S.nameEditorReturnView = S.view === 'auth' ? 'queue' : S.view;
+  showView('auth');
+  showDisplayNameEditor(statusText, 'hint');
+}
+
+function closeDisplayNameEditor() {
+  $('#name-section').classList.add('hidden');
+  if (S.accountId) {
+    showView(S.nameEditorReturnView || 'queue');
+  }
 }
 
 // ── REST helpers ────────────────────────────────────────────────
@@ -1905,6 +1950,7 @@ async function authenticateWithWallet(address, signFn, { signingMsg, successMsg,
   S.accountId = result.accountId;
   S.tokenBalance = result.tokenBalance;
   S.isBrowserWallet = isBrowserWallet;
+  S.hasClaimedDisplayName = !!result.displayName;
 
   S.displayName = result.displayName || (result.accountId.slice(0, 6) + '..' + result.accountId.slice(-4));
   onAuthComplete();
@@ -1955,13 +2001,29 @@ $('#claim-name-btn').addEventListener('click', async () => {
     return;
   }
   try {
-    setAuthStatus('Claiming your display name...', 'pending');
+    setAuthStatus('Saving your display name...', 'pending');
     await api('PATCH', '/api/me/profile', { displayName: name });
     S.displayName = name;
-    onAuthComplete();
+    S.hasClaimedDisplayName = true;
+    $('#name-section').classList.add('hidden');
+    showView(S.nameEditorReturnView || 'queue');
+    updateHeaderProfile();
+    notify('Display name saved.', 'success');
   } catch (err) {
-    setAuthStatus(describeAuthError(err, 'claim that display name'), 'error');
+    setAuthStatus(describeAuthError(err, 'save that display name'), 'error');
   }
+});
+
+$('#manage-name-btn').addEventListener('click', () => {
+  openDisplayNameEditor(
+    S.hasClaimedDisplayName
+      ? 'Choose a new display name.'
+      : 'Claim a human-readable display name.',
+  );
+});
+
+$('#cancel-name-btn').addEventListener('click', () => {
+  closeDisplayNameEditor();
 });
 
 $('#show-import-btn').setAttribute('aria-controls', 'import-section');
@@ -2169,6 +2231,7 @@ $('#logout-btn').addEventListener('click', async () => {
   S.walletAddress = null;
   S.accountId = null;
   S.displayName = null;
+  S.hasClaimedDisplayName = false;
   S.tokenBalance = 0;
   S.isBrowserWallet = false;
   S.inQueue = false;
@@ -2177,6 +2240,7 @@ $('#logout-btn').addEventListener('click', async () => {
   S.pendingQueueAction = null;
   S.matchId = null;
   S.aiAssistedMatch = false;
+  S.nameEditorReturnView = 'queue';
   $('#header-profile').classList.add('hidden');
   $('#connect-wallet-btn').classList.remove('hidden');
   $('#browser-wallet-btn').classList.remove('hidden');
@@ -2199,6 +2263,7 @@ async function checkSession() {
     const me = await api('GET', '/api/me');
     S.accountId = me.accountId;
     S.displayName = me.displayName;
+    S.hasClaimedDisplayName = !!me.displayName;
     S.tokenBalance = me.tokenBalance;
     // Detect if this session belongs to a browser wallet
     try {
@@ -2556,7 +2621,7 @@ $('#start-now-btn').addEventListener('click', () => {
 function syncStartNowUI() {
   const btn = $('#start-now-btn');
   btn.setAttribute('aria-pressed', S.startNow ? 'true' : 'false');
-  btn.textContent = S.startNow ? 'Ready to Start' : 'Vote Start Now';
+  btn.textContent = S.startNow ? 'Ready' : 'Press Ready';
 }
 
 function onQueueState(msg) {
@@ -2598,6 +2663,7 @@ function renderQueue() {
   const selfForfeited = hasSelfForfeited();
   const activeMatchBanner = $('#active-match-banner');
   const queueCount = S.queuedPlayers.length;
+  updateHeaderProfile();
   $('#queue-count').textContent = queueCount;
   $('#queue-inline-count').textContent =
     queueCount === 1 ? '1 visible' : queueCount + ' visible';
@@ -2622,9 +2688,11 @@ function renderQueue() {
     const readyCount = S.formingMatch.readyHumanCount || 0;
     const humanCount = S.formingMatch.humanPlayerCount || 0;
     $('#start-now-meta').textContent = readyCount + ' / ' + humanCount + ' humans ready to start';
-    let note = 'When every human in this forming match votes yes, the match launches immediately.';
+    let note = 'Press ready to arm the 30s queue countdown. If every human gets ready, the match launches immediately.';
     if (S.startNow) {
-      note = 'Your vote is in. The match starts as soon as every other human votes yes.';
+      note = 'You are marked ready. The 30s queue countdown is running, and full readiness still launches immediately.';
+    } else if (readyCount > 0) {
+      note = 'At least one player is ready, so the 30s queue countdown is running. Press ready too if you want an immediate launch.';
     }
     $('#start-now-note').textContent = note;
     $('#forming-banner').classList.toggle('is-armed', readyCount > 0);
@@ -2636,6 +2704,7 @@ function renderQueue() {
     $('#forming-banner').classList.remove('is-armed');
     S.startNow = false;
     syncStartNowUI();
+    $('#forming-timer').textContent = 'Not started';
   }
 
   // buttons
@@ -2680,11 +2749,11 @@ function renderQueuePlayersList(list) {
 
 function updateFormingTimer() {
   if (!S.formingMatch || !S.formingMatch.fillDeadlineMs) {
-    $('#forming-timer').textContent = '--';
+    $('#forming-timer').textContent = 'Not started';
     return;
   }
   const remaining = Math.max(0, Math.ceil((S.formingMatch.fillDeadlineMs - Date.now()) / 1000));
-  $('#forming-timer').textContent = remaining;
+  $('#forming-timer').textContent = remaining + 's';
 }
 
 // Update forming timer every second

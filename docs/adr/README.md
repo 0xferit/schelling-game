@@ -26,3 +26,4 @@ Format:
 | [0012](./0012-decouple-catalog-from-match-length.md) | Decouple prompt catalog size from match length | Accepted | 2026-03-30 |
 | [0013](./0013-raise-ai-backfill-target-to-five-players.md) | Raise AI backfill target to five players | Accepted | 2026-03-30 |
 | [0014](./0014-require-distinct-models-for-ai-backfill-seats.md) | Require distinct models for AI backfill seats | Accepted | 2026-03-30 |
+| [0015](./0015-delay-public-fill-countdown-until-first-ready-vote.md) | Delay public fill countdown until the first ready vote | Accepted | 2026-04-01 |
