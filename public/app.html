@@ -2044,7 +2044,7 @@ $('#start-now-btn').addEventListener('click', () => {
 function syncStartNowUI() {
   const btn = $('#start-now-btn');
   btn.setAttribute('aria-pressed', S.startNow ? 'true' : 'false');
-  btn.textContent = S.startNow ? 'Ready to Start' : 'Press Ready';
+  btn.textContent = S.startNow ? 'Ready' : 'Press Ready';
 }
 
 function onQueueState(msg) {
@@ -2114,7 +2114,7 @@ function renderQueue() {
     if (S.startNow) {
       note = 'You are marked ready. The 30s queue countdown is running, and full readiness still launches immediately.';
     } else if (readyCount > 0) {
-      note = 'A ready vote has armed the 30s queue countdown. Press ready too if you want an immediate launch.';
+      note = 'At least one player is ready, so the 30s queue countdown is running. Press ready too if you want an immediate launch.';
     }
     $('#start-now-note').textContent = note;
     $('#forming-banner').classList.toggle('is-armed', readyCount > 0);
