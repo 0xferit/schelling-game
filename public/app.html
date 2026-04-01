@@ -508,7 +508,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
             <div class="forming-main">
               <div class="forming-label">Forming Match</div>
               <div class="forming-title"><strong id="forming-count">0</strong> players reserved</div>
-              <p class="forming-copy">The queue countdown stays idle until someone gets ready. If every human votes yes, the match launches immediately.</p>
+              <p class="forming-copy">The queue countdown stays idle until someone presses ready. If every human gets ready, the match launches immediately.</p>
             </div>
             <div class="forming-side">
               <span class="forming-side-label">Queue countdown</span>
@@ -517,7 +517,7 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
             <div class="forming-banner-foot">
               <div class="forming-readiness">
                 <span id="start-now-meta">0 / 0 humans ready to start</span>
-                <span id="start-now-note">Press ready to arm the 30s queue countdown. If every human votes yes, the match launches immediately.</span>
+                <span id="start-now-note">Press ready to arm the 30s queue countdown. If every human gets ready, the match launches immediately.</span>
               </div>
               <button class="btn-ghost hidden" id="start-now-btn" type="button" aria-pressed="false">Press Ready</button>
             </div>
@@ -2110,11 +2110,11 @@ function renderQueue() {
     const readyCount = S.formingMatch.readyHumanCount || 0;
     const humanCount = S.formingMatch.humanPlayerCount || 0;
     $('#start-now-meta').textContent = readyCount + ' / ' + humanCount + ' humans ready to start';
-    let note = 'Press ready to arm the 30s queue countdown. If every human votes yes, the match launches immediately.';
+    let note = 'Press ready to arm the 30s queue countdown. If every human gets ready, the match launches immediately.';
     if (S.startNow) {
-      note = 'Your vote is in. The 30s queue countdown is running, and unanimity still launches immediately.';
+      note = 'You are marked ready. The 30s queue countdown is running, and full readiness still launches immediately.';
     } else if (readyCount > 0) {
-      note = 'A ready vote has armed the 30s queue countdown. Vote yes too if you want an immediate launch.';
+      note = 'A ready vote has armed the 30s queue countdown. Press ready too if you want an immediate launch.';
     }
     $('#start-now-note').textContent = note;
     $('#forming-banner').classList.toggle('is-armed', readyCount > 0);
