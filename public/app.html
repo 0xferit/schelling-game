@@ -82,6 +82,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
 .btn-danger{background:var(--red);color:#fff}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);font-size:.84rem;letter-spacing:.08em;font-weight:500}
 .btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn-ghost[aria-disabled='true'],.btn-ghost[aria-disabled='true']:hover{opacity:.55;border-color:var(--border);color:var(--muted);cursor:help;transform:none}
 .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--sans);font-size:.95rem;padding:.5rem .75rem;width:100%;outline:none;transition:border-color .15s}
 input:focus{border-color:var(--accent)}
@@ -472,10 +473,10 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
       <button class="btn-ghost" id="connect-wallet-btn">Connect External Wallet</button>
       <button class="btn-ghost" id="show-import-btn">Import Existing Wallet</button>
       <div id="name-section" class="hidden">
-        <label>Claim your display name (1-20 chars, A-Z 0-9 _ -)</label>
+        <label id="name-section-label">Display name (1-20 chars, A-Z 0-9 _ -)</label>
         <div class="row">
           <input id="name-input" type="text" placeholder="e.g. alice" maxlength="20" autocomplete="off" pattern="^[A-Za-z0-9_-]{1,20}$"/>
-          <button class="btn-primary" id="claim-name-btn">Claim</button>
+          <button class="btn-primary" id="claim-name-btn">Save</button>
         </div>
         <button class="btn-ghost hidden" id="cancel-name-btn">Cancel</button>
       </div>
@@ -972,7 +973,8 @@ function updateHeaderProfile() {
     $('#header-name').textContent = S.displayName || S.accountId.slice(0, 6) + '…';
     $('#header-balance').textContent = S.tokenBalance + ' tokens';
     manageNameBtn.textContent = S.hasClaimedDisplayName ? 'Change Name' : 'Claim Name';
-    manageNameBtn.disabled = !!displayNameBlockMessage;
+    manageNameBtn.disabled = false;
+    manageNameBtn.setAttribute('aria-disabled', displayNameBlockMessage ? 'true' : 'false');
     manageNameBtn.title = displayNameBlockMessage || 'Claim or change display name';
     $('#backup-seed-btn').classList.toggle('hidden', !S.isBrowserWallet);
   }
@@ -984,13 +986,13 @@ function hasActiveMatch() {
 
 function getDisplayNameEditBlockMessage() {
   if (hasActiveMatch()) {
-    return "You can't update your display name during an active match.";
+    return 'You can\'t update your display name during an active match.';
   }
   if (S.formingMatch) {
-    return "You can't update your display name while a match is forming.";
+    return 'You can\'t update your display name while a match is forming.';
   }
   if (S.inQueue) {
-    return "You can't update your display name while in the matchmaking queue.";
+    return 'You can\'t update your display name while in the matchmaking queue.';
   }
   return null;
 }
@@ -1487,16 +1489,16 @@ $('#claim-name-btn').addEventListener('click', async () => {
     return;
   }
   try {
-    setAuthStatus('Claiming your display name...', 'pending');
+    setAuthStatus('Saving your display name...', 'pending');
     await api('PATCH', '/api/me/profile', { displayName: name });
     S.displayName = name;
     S.hasClaimedDisplayName = true;
     $('#name-section').classList.add('hidden');
     showView(S.nameEditorReturnView || 'queue');
     updateHeaderProfile();
-    notify('Display name updated.', 'success');
+    notify('Display name saved.', 'success');
   } catch (err) {
-    setAuthStatus(describeAuthError(err, 'claim that display name'), 'error');
+    setAuthStatus(describeAuthError(err, 'save that display name'), 'error');
   }
 });
 
