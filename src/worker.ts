@@ -169,7 +169,7 @@ const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const AI_BOT_TEMPERATURE = 0.05;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
-const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 3_000;
+const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 10_000;
 const OPEN_TEXT_NORMALIZER_TEMPERATURE = 0;
 const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const OPEN_TEXT_NORMALIZING_STATUS = 'Normalizing open-text answers...';
@@ -3353,7 +3353,10 @@ export class GameRoom {
           // treat them as newly disconnected and give them one fresh grace
           // window rather than forfeiting them immediately on restore.
           disconnectedAt:
-            !rp.forfeited && rm.phase !== 'ending' && rp.disconnectedAt === null
+            !this._isAiBot(id) &&
+            !rp.forfeited &&
+            rm.phase !== 'ending' &&
+            rp.disconnectedAt === null
               ? restoredAt
               : rp.disconnectedAt,
           ws: null,
@@ -3477,7 +3480,12 @@ export class GameRoom {
     // Start grace timers for still-disconnected, non-forfeited players
     const now = Date.now();
     for (const p of match.players.values()) {
-      if (p.disconnectedAt !== null && !p.forfeited && !p.graceTimer) {
+      if (
+        !this._isAiBot(p.accountId) &&
+        p.disconnectedAt !== null &&
+        !p.forfeited &&
+        !p.graceTimer
+      ) {
         const elapsedGrace = now - p.disconnectedAt;
         const remainingGrace = GRACE_DURATION_MS - elapsedGrace;
         if (remainingGrace <= 0) {

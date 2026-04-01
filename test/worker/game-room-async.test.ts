@@ -736,6 +736,11 @@ describe('GameRoom async task tracking', () => {
     });
   });
 
+  it('uses a longer default timeout budget for open-text normalization', () => {
+    const { room } = createRoom();
+    expect(room._getOpenTextNormalizerTimeoutMs()).toBe(10000);
+  });
+
   it('skips Workers AI normalization when only one candidate remains', async () => {
     const aiRun = vi.fn();
     const { room } = createRoom({
@@ -3297,6 +3302,102 @@ describe('GameRoom async task tracking', () => {
       expect(forfeitPlayer).toHaveBeenCalledWith(match, 'acct-2');
 
       vi.advanceTimersByTime(3_000);
+      expect(forfeitPlayer).toHaveBeenCalledWith(match, 'acct-1');
+    } finally {
+      vi.restoreAllMocks();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not mark restored AI backfill seats disconnected or start grace timers for them', () => {
+    vi.useFakeTimers();
+
+    try {
+      const restoreTime = new Date('2026-03-30T12:00:00.000Z');
+      const restoreMs = restoreTime.getTime();
+      vi.setSystemTime(restoreTime);
+
+      const matchRows = [
+        {
+          match_id: 'restored-ai-match',
+          phase: 'commit',
+          current_game: 5,
+          total_games: 10,
+          prompts_json: JSON.stringify([TEST_SELECT_PROMPT]),
+          phase_entered_at: restoreMs,
+          last_settled_game: 4,
+          last_game_result_json: null,
+          ai_assisted: 1,
+          created_at: restoreMs,
+        },
+      ];
+      const playerRows = [
+        {
+          ...createRestoredPlayerRow('restored-ai-match', 'acct-1'),
+          display_name: 'Alice',
+        },
+        {
+          ...createRestoredPlayerRow('restored-ai-match', 'ai-bot:0:test'),
+          display_name: 'AI Backfill',
+        },
+        {
+          ...createRestoredPlayerRow('restored-ai-match', 'ai-bot:1:test'),
+          display_name: 'AI Backfill',
+        },
+      ];
+
+      const forfeitPlayer = vi
+        .spyOn(GameRoom.prototype, '_forfeitPlayer')
+        .mockImplementation(() => {});
+      const state = {
+        waitUntil: vi.fn((_task: Promise<unknown>) => undefined),
+        storage: {
+          transactionSync: vi.fn((fn: () => unknown) => fn()),
+          sql: createRestoreSql(matchRows, {
+            'restored-ai-match': playerRows,
+          }),
+        },
+      } as unknown as DurableObjectState;
+      const defaultDb = {
+        prepare: vi.fn(() => ({
+          bind: vi.fn(() => ({
+            first: vi.fn().mockResolvedValue({ token_balance: 0 }),
+            all: vi.fn().mockResolvedValue({ results: [] }),
+            run: vi.fn().mockResolvedValue(undefined),
+          })),
+        })),
+        batch: vi.fn().mockResolvedValue(undefined),
+      } as unknown as D1Database;
+
+      const room = new GameRoom(state, {
+        DB: defaultDb,
+      } as Env);
+
+      const match = must(
+        room.activeMatches.get('restored-ai-match'),
+        'Expected restored AI-assisted match',
+      );
+      const alice = must(match.players.get('acct-1'), 'Expected Alice state');
+      const botA = must(
+        match.players.get('ai-bot:0:test'),
+        'Expected first AI bot state',
+      );
+      const botB = must(
+        match.players.get('ai-bot:1:test'),
+        'Expected second AI bot state',
+      );
+
+      expect(alice.disconnectedAt).toBe(restoreMs);
+      expect(alice.graceTimer).not.toBeNull();
+
+      expect(botA.disconnectedAt).toBeNull();
+      expect(botA.graceTimer).toBeNull();
+      expect(botB.disconnectedAt).toBeNull();
+      expect(botB.graceTimer).toBeNull();
+
+      vi.advanceTimersByTime(15_000);
+      expect(forfeitPlayer).toHaveBeenCalledTimes(1);
       expect(forfeitPlayer).toHaveBeenCalledWith(match, 'acct-1');
     } finally {
       vi.restoreAllMocks();

@@ -23,6 +23,7 @@ AI_BOT_ENABLED = "true"
 AI_BOT_MODELS = "@cf/meta/llama-3-8b-instruct,@cf/meta/llama-3.1-8b-instruct-fast,@cf/meta/llama-3.1-70b-instruct,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "10000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
+OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
 TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
 
 [env.staging]
@@ -47,6 +48,7 @@ AI_BOT_ENABLED = "true"
 AI_BOT_MODELS = "@cf/meta/llama-3-8b-instruct,@cf/meta/llama-3.1-8b-instruct-fast,@cf/meta/llama-3.1-70b-instruct,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "10000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
+OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
 
 [assets]
 directory = "./public"
