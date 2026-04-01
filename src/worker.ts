@@ -159,10 +159,12 @@ const AI_BOT_TARGET_MATCH_SIZE = 5;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
-  '@cf/nvidia/nemotron-3-120b-a12b',
+  '@cf/meta/llama-3-8b-instruct',
+  '@cf/meta/llama-3.1-8b-instruct-fast',
+  '@cf/meta/llama-3.1-70b-instruct',
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
 ];
-const DEFAULT_AI_BOT_TIMEOUT_MS = 5_000;
+const DEFAULT_AI_BOT_TIMEOUT_MS = 10_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const AI_BOT_TEMPERATURE = 0.05;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =

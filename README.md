@@ -104,7 +104,7 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `AI` | Optional | `wrangler.toml` | Workers AI binding used for open-text answer normalization. |
 | `ADMIN_KEY` | Optional | Worker secret/var | Protects admin-only HTTP routes such as leaderboard eligibility and CSV export. |
 | `AI_BOT_ENABLED` | Optional | `wrangler.toml` var | Enables limited AI queue backfill for undersized public queues. Bot-assisted matches stay off the record. |
-| `AI_BOT_MODELS` | Optional | `wrangler.toml` var | Comma-separated Workers AI model list for backfill bot selection. Models are deduplicated, each AI-assisted match may use each model at most once, and backfill is skipped if there are not enough distinct models to reach the current target size. |
+| `AI_BOT_MODELS` | Optional | `wrangler.toml` var | Comma-separated Workers AI model list for backfill bot selection. Models are deduplicated, each AI-assisted match may use each model at most once, and backfill is skipped if there are not enough distinct models to reach the current target size. These models must support Workers AI structured JSON output because bot commits use a schema-constrained response. |
 | `AI_BOT_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for Workers AI bot decisions. |
 | `OPEN_TEXT_PROMPTS_ENABLED` | Required for public play | `wrangler.toml` var | Enables the canonical mixed prompt catalog. If disabled, public matches will not start. |
 | `TURNSTILE_SITE_KEY` | Required for interactive landing-page demo voting | Worker var / local `.dev.vars` | Public site key exposed through `/api/game-config` so the landing page can run Turnstile before posting demo votes. |

@@ -1625,6 +1625,37 @@ describe('GameRoom async task tracking', () => {
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
 
+  it('injects four bots from the default model pool when AI_BOT_MODELS is unset', async () => {
+    const { room } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      OPEN_TEXT_PROMPTS_ENABLED: 'true',
+      AI: { run: vi.fn() },
+    });
+    vi.spyOn(room, '_broadcastQueueState').mockImplementation(() => {});
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+
+    await room._handleJoinQueue('acct-1');
+
+    expect(room.waitingQueue).toEqual([]);
+    expect(room.formingMatch).not.toBeNull();
+    expect(
+      room.formingMatch?.players.filter((id) => !room._isAiBot(id)),
+    ).toEqual(['acct-1']);
+    expect(
+      room.formingMatch?.players.filter((id) => room._isAiBot(id)),
+    ).toHaveLength(4);
+    expect(
+      new Set(
+        (room.formingMatch?.players || [])
+          .filter((id) => room._isAiBot(id))
+          .map((id) => room._getAiBotModel(id)),
+      ).size,
+    ).toBe(4);
+
+    if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
+  });
+
   it('injects one bot when four humans are queued', async () => {
     const { room } = createRoom({
       AI_BOT_ENABLED: 'true',
