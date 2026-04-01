@@ -5,18 +5,21 @@
   "main": "index.js",
   "scripts": {
     "db:migrate:local": "CI=1 npx wrangler d1 migrations apply DB --local",
+    "db:migrate:next": "npx wrangler d1 migrations apply DB --env next --remote",
     "start": "npm run db:migrate:local && npx wrangler dev",
     "dev": "npm run db:migrate:local && npx wrangler dev",
     "test": "vitest run",
     "test:worker": "vitest run --config vitest.config.worker.ts",
     "test:worker:extended": "RUN_EXTENDED_WORKER_TESTS=1 vitest run --config vitest.config.worker.ts test/worker/game-room.test.ts -t \"runs a full 10-game lifecycle and emits match_over\"",
     "smoke:staging": "node scripts/smoke-staging.mjs",
+    "smoke:next": "DEPLOY_BASE_URL=https://next.schelling.games node scripts/smoke-staging.mjs",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
-    "stamp-build": "sed -i.bak -e \"s/__BUILD_HASH__/$(git rev-parse --short HEAD)/\" -e \"s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/\" public/index.html public/app.html",
-    "unstamp-build": "mv public/index.html.bak public/index.html && mv public/app.html.bak public/app.html",
-    "deploy": "sh -c 'set -e; cleanup(){ npm run unstamp-build >/dev/null 2>&1 || true; }; trap cleanup EXIT; npm run stamp-build; CLOUDFLARE_API_TOKEN=${CLOUDFLARE_FERIT_API_TOKEN:-$CLOUDFLARE_API_TOKEN} npx wrangler deploy; trap - EXIT; cleanup'"
+    "stamp-build": "node scripts/stamp-build.mjs",
+    "unstamp-build": "node scripts/unstamp-build.mjs",
+    "deploy": "sh -c 'set -e; cleanup(){ npm run unstamp-build >/dev/null 2>&1 || true; }; trap cleanup EXIT; npm run stamp-build; npx wrangler deploy; trap - EXIT; cleanup'",
+    "deploy:next": "sh -c 'set -e; cleanup(){ npm run unstamp-build >/dev/null 2>&1 || true; }; trap cleanup EXIT; npm run stamp-build; npx wrangler deploy --env next; trap - EXIT; cleanup'"
   },
   "repository": {
     "type": "git",

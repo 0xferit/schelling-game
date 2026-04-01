@@ -4,6 +4,7 @@ node_modules/
 *.db-wal
 nohup.out
 .wrangler/
+.stamp-build/
 .playwright-mcp/
 .mcp.json
 .dev.vars

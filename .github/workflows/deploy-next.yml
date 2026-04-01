@@ -1,36 +1,41 @@
-name: Deploy schelling.games
+name: Deploy next.schelling.games
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
-        description: Git ref to deploy to schelling.games
+        description: Git ref to deploy to next.schelling.games
         required: true
         default: main
 
 jobs:
-  deploy:
+  deploy-next:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     concurrency:
-      group: deploy-production
+      group: deploy-next
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
 
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
 
-      - name: Apply D1 migrations
+      - name: Apply next D1 migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler d1 migrations apply DB --remote
+        run: npx wrangler d1 migrations apply DB --env next --remote
 
-      - name: Deploy
+      - name: Deploy next worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
@@ -39,7 +44,7 @@ jobs:
           attempts=3
           for attempt in $(seq 1 "$attempts"); do
             log_file="$(mktemp)"
-            if npm run deploy 2>&1 | tee "$log_file"; then
+            if npm run deploy:next 2>&1 | tee "$log_file"; then
               rm -f "$log_file"
               exit 0
             fi
@@ -52,11 +57,16 @@ jobs:
             rm -f "$log_file"
 
             if [ "$attempt" -eq "$attempts" ]; then
-              echo "wrangler deploy hit transient Cloudflare API 7010 after ${attempts} attempts" >&2
+              echo "next deploy hit transient Cloudflare API 7010 after ${attempts} attempts" >&2
               exit 1
             fi
 
             sleep_seconds=$((attempt * 10))
-            echo "Retrying wrangler deploy after transient Cloudflare API 7010 (${attempt}/${attempts}) in ${sleep_seconds}s..." >&2
+            echo "Retrying next deploy after transient Cloudflare API 7010 (${attempt}/${attempts}) in ${sleep_seconds}s..." >&2
             sleep "$sleep_seconds"
           done
+
+      - name: Smoke test next
+        env:
+          DEPLOY_BASE_URL: https://next.schelling.games
+        run: npm run smoke:next

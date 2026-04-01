@@ -1,9 +1,9 @@
 import { Wallet } from 'ethers';
 
-const baseUrl = process.env.STAGING_BASE_URL;
+const baseUrl = process.env.DEPLOY_BASE_URL ?? process.env.STAGING_BASE_URL;
 
 if (!baseUrl) {
-  throw new Error('STAGING_BASE_URL is required');
+  throw new Error('DEPLOY_BASE_URL or STAGING_BASE_URL is required');
 }
 
 const base = new URL(baseUrl);
@@ -47,7 +47,7 @@ async function waitForReady() {
   }
 
   throw new Error(
-    `staging deployment never became ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    `deployment never became ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
   );
 }
 
@@ -216,4 +216,4 @@ await expectJson(
   },
 );
 
-console.log(`staging smoke passed for ${base.origin}`);
+console.log(`deployment smoke passed for ${base.origin}`);

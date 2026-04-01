@@ -5,6 +5,7 @@ The Schelling Game is a wallet-authenticated multiplayer coordination game built
 ## Live Links And Docs
 
 - Live app: [schelling.games](https://schelling.games/)
+- Next channel: [next.schelling.games](https://next.schelling.games/) (auto-deployed from `main`, manually overrideable)
 - Canonical game rules: [docs/game-design.md](docs/game-design.md)
 - Architecture decisions: [docs/adr/README.md](docs/adr/README.md)
 
@@ -82,8 +83,11 @@ If you change D1 schema, re-apply the local migrations before restarting or re-t
 | `npm run typecheck` | Type-check the Node-side domain/test code with `tsconfig.json`. |
 | `npm run typecheck:worker` | Type-check Worker code with `tsconfig.worker.json`. |
 | `npm run lint` | Run Biome checks across the repo. |
+| `npm run db:migrate:next` | Apply remote D1 migrations to the long-lived next environment. |
 | `npm run smoke:staging` | Run the deployed staging smoke test. Requires `STAGING_BASE_URL`. |
+| `npm run smoke:next` | Run the next smoke test against `https://next.schelling.games`. |
 | `npm run deploy` | Stamp build metadata, deploy the Worker, and restore checked-in HTML files. |
+| `npm run deploy:next` | Stamp build metadata, deploy the next Worker, and restore checked-in HTML files. |
 
 CI runs:
 
@@ -92,10 +96,12 @@ CI runs:
 - domain tests with coverage
 - Worker tests
 - a staging deploy plus smoke validation for same-repo pull requests
+- an automatic next deploy on pushes to `main`
+- a manually triggered next deploy workflow for hand-picked refs
 
 ## Configuration And Secrets
 
-Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler.toml). The repo defines both default and `staging` environments.
+Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler.toml). The repo defines default (production), `staging`, and `next` environments. `next` is a long-lived release-candidate target attached to `next.schelling.games`.
 
 | Name | Required | Source | Purpose |
 | --- | --- | --- | --- |
@@ -119,11 +125,12 @@ TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
 
-For staging/production, set `TURNSTILE_SITE_KEY` as an environment variable and provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
+For staging/production/next, set `TURNSTILE_SITE_KEY` as an environment variable and provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
 
 ```sh
 npx wrangler secret put TURNSTILE_SECRET_KEY
 npx wrangler secret put TURNSTILE_SECRET_KEY --env staging
+npx wrangler secret put TURNSTILE_SECRET_KEY --env next
 ```
 
 ## Deployment And CI
@@ -134,21 +141,38 @@ Before deploying to any remote environment, apply D1 migrations for that environ
 # Staging
 npx wrangler d1 migrations apply DB --env staging --remote
 
+# Next
+npx wrangler d1 migrations apply DB --env next --remote
+
 # Default/production environment
 npx wrangler d1 migrations apply DB --remote
 ```
 
-Staging and production environment bindings are declared in [wrangler.toml](wrangler.toml). Production deploys use:
+Staging, next, and production environment bindings are declared in [wrangler.toml](wrangler.toml).
+
+Production deploys are manual and should be used only when you want to promote a chosen ref to `schelling.games`:
 
 ```sh
 CLOUDFLARE_API_TOKEN=... npm run deploy
 ```
 
+`next.schelling.games` deploys automatically on every push to `main`. You can also deploy a hand-picked branch, tag, or commit SHA to `next` manually:
+
+```sh
+CLOUDFLARE_API_TOKEN=... npm run db:migrate:next
+CLOUDFLARE_API_TOKEN=... npm run deploy:next
+npm run smoke:next
+```
+
+GitHub Actions automatically deploys `next.schelling.games` on every push to `main`, exposes a `Deploy next.schelling.games` workflow for manual override, and exposes a separate `Deploy schelling.games` workflow for manual production promotion.
+
 GitHub Actions workflows currently do the following:
 
 - pull requests to `main`: run lint, both typechecks, domain tests, and Worker tests
 - eligible pull requests from the same repository: deploy to staging and run the smoke script
-- pushes to `main`: apply production D1 migrations and deploy the Worker
+- pushes to `main`: apply next D1 migrations, deploy `next.schelling.games`, and run the next smoke test
+- manual `workflow_dispatch`: deploy a chosen ref to `next.schelling.games` and run the next smoke test
+- manual `workflow_dispatch`: deploy a chosen ref to `schelling.games`
 
 ## Background
 

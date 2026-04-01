@@ -47,6 +47,35 @@ AI_BOT_ENABLED = "true"
 AI_BOT_MODELS = "@cf/zai-org/glm-4.7-flash,@cf/moonshotai/kimi-k2.5,@cf/qwen/qwen3-30b-a3b-fp8,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "5000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
+TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
+
+[env.next]
+name = "schelling-game-next"
+
+[[env.next.durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[env.next.d1_databases]]
+binding = "DB"
+database_name = "schelling-game-next"
+database_id = "fa042605-3f3d-4e7d-bb05-a391a1ce05e3"
+migrations_dir = "d1-migrations"
+
+[env.next.ai]
+binding = "AI"
+remote = true
+
+[env.next.vars]
+AI_BOT_ENABLED = "true"
+AI_BOT_MODELS = "@cf/zai-org/glm-4.7-flash,@cf/moonshotai/kimi-k2.5,@cf/qwen/qwen3-30b-a3b-fp8,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+AI_BOT_TIMEOUT_MS = "5000"
+OPEN_TEXT_PROMPTS_ENABLED = "true"
+TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
+
+[[env.next.routes]]
+pattern = "next.schelling.games"
+custom_domain = true
 
 [assets]
 directory = "./public"
