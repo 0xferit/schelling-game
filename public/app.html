@@ -301,42 +301,534 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 #forfeit-match-btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.03)}
 #forfeit-panel.is-locked .forfeit-copy{color:var(--muted)}
 /* Summary */
-#summary-view .card{max-width:none;margin:0;padding:1.75rem clamp(1.25rem,2.4vw,2.4rem) 2rem}
-#summary-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-#summary-headline{font-size:.92rem;color:var(--muted);margin-top:.35rem}
-#summary-placement{display:inline-flex;align-items:center;justify-content:center;padding:.35rem .75rem;border:1px solid rgba(201,168,76,.4);border-radius:999px;background:rgba(201,168,76,.08);color:var(--accent);font-size:.82rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
-#summary-stats{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:1rem;margin-top:1rem}
-.summary-stat{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
-.summary-stat-label{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
-.summary-stat-value{font-family:var(--serif);font-size:1.45rem;line-height:1.1;margin-top:.35rem}
-.summary-section{margin-top:1rem}
-.summary-section-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.65rem}
-.summary-section-header h3,.summary-section h3{font-size:.84rem;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:var(--accent)}
-.summary-section-note{font-size:.84rem;color:var(--muted)}
-#summary-highlights-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:1rem}
-.summary-highlight{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
-.summary-highlight-title{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
-.summary-highlight-value{font-size:1rem;font-weight:500;line-height:1.35;margin-top:.35rem}
-.summary-highlight-copy{font-size:.88rem;color:var(--muted);line-height:1.55;margin-top:.35rem}
-#summary-timeline{display:flex;flex-direction:column;gap:.75rem}
-.summary-game{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
-.summary-game-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
-.summary-game-kicker{font-size:.78rem;color:var(--accent);text-transform:uppercase;letter-spacing:.12em}
-.summary-game-question{font-family:var(--serif);font-size:1.05rem;line-height:1.25;margin-top:.15rem}
-.summary-game-status{display:inline-flex;align-items:center;justify-content:center;padding:.28rem .65rem;border-radius:999px;border:1px solid var(--border);font-size:.78rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
-.summary-game-status.won{border-color:rgba(76,175,80,.45);color:var(--green);background:rgba(76,175,80,.08)}
-.summary-game-status.lost{border-color:rgba(229,57,53,.35);color:var(--red);background:rgba(229,57,53,.08)}
-.summary-game-status.void{border-color:rgba(255,152,0,.35);color:var(--orange);background:rgba(255,152,0,.08)}
-.summary-game-status.forfeited{border-color:rgba(229,57,53,.35);color:var(--red);background:rgba(229,57,53,.08)}
-.summary-game-delta{font-size:1rem;font-weight:700}
-.summary-game-meta{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.75rem}
-.summary-chip{display:inline-flex;align-items:center;padding:.25rem .55rem;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--border);font-size:.84rem;color:var(--muted);line-height:1.25}
-#summary-table{width:100%;border-collapse:collapse;font-size:.94rem}
-#summary-table th,#summary-table td{padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border)}
-#summary-table th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em}
-#summary-table tr:last-child td{border-bottom:none}
-#summary-table tr.me td{background:rgba(201,168,76,.08)}
-.summary-actions{align-items:center}
+#summary-view .summary-shell{
+  max-width:none;
+  margin:0;
+  padding:clamp(1.35rem,2.5vw,2.35rem);
+  background:
+    radial-gradient(circle at top right, rgba(201,168,76,.16), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,0)),
+    var(--surface);
+  border:1px solid rgba(201,168,76,.18);
+  position:relative;
+  overflow:hidden;
+}
+#summary-view .summary-shell::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px);
+  background-size:48px 48px;
+  opacity:.15;
+  pointer-events:none;
+}
+#summary-header{
+  display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);
+  gap:1rem 1.25rem;
+  align-items:stretch;
+  position:relative;
+  z-index:1;
+}
+.summary-hero-copy{display:flex;flex-direction:column;gap:.85rem}
+.summary-kicker{
+  font-size:.78rem;
+  font-weight:600;
+  letter-spacing:.24em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+#summary-title{
+  font-family:var(--serif);
+  font-size:clamp(3rem,7vw,5.8rem);
+  line-height:.88;
+  letter-spacing:-.03em;
+}
+#summary-headline{
+  max-width:32rem;
+  font-size:1rem;
+  line-height:1.6;
+  color:var(--muted-strong);
+}
+.summary-hero-meta{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+#summary-placement{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:.38rem .82rem;
+  border:1px solid rgba(201,168,76,.45);
+  border-radius:999px;
+  background:rgba(201,168,76,.08);
+  color:var(--accent);
+  font-size:.8rem;
+  font-weight:600;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.summary-scoreboard{
+  display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+  gap:.9rem;
+  align-items:stretch;
+}
+.summary-balance-card{
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:var(--radius);
+  padding:1rem;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  min-height:100%;
+}
+.summary-balance-label{
+  font-size:.78rem;
+  font-weight:600;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+#summary-balance-value{
+  display:block;
+  margin-top:.55rem;
+  font-family:var(--serif);
+  font-size:clamp(2.5rem,5vw,4.25rem);
+  line-height:.9;
+}
+.summary-balance-meta{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:.55rem;
+  margin-top:.9rem;
+}
+.summary-net-pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:2rem;
+  padding:.35rem .72rem;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.03);
+  font-size:.88rem;
+  font-weight:600;
+}
+.summary-net-pill.delta-pos{
+  color:var(--green);
+  border-color:rgba(76,175,80,.35);
+  background:rgba(76,175,80,.08);
+}
+.summary-net-pill.delta-neg{
+  color:var(--red);
+  border-color:rgba(229,57,53,.35);
+  background:rgba(229,57,53,.08);
+}
+.summary-net-pill.delta-zero{color:var(--muted)}
+.summary-balance-start{
+  font-size:.82rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+#summary-rings{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(120px,1fr));
+  gap:.85rem;
+}
+.summary-ring-card{
+  min-height:168px;
+  padding:.85rem .75rem;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:.65rem;
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+}
+.summary-ring{
+  --ratio:0;
+  --ring-color:var(--accent);
+  width:102px;
+  aspect-ratio:1;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:
+    radial-gradient(circle, var(--surface) 56%, transparent 57%),
+    conic-gradient(var(--ring-color) calc(var(--ratio) * 1turn), rgba(255,255,255,.08) 0);
+}
+.summary-ring-center{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:.18rem;
+}
+.summary-ring strong{
+  font-family:var(--serif);
+  font-size:1.45rem;
+  line-height:.9;
+}
+.summary-ring span{
+  font-size:.72rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.summary-ring-label{
+  font-size:.76rem;
+  font-weight:600;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--text);
+}
+#summary-stats{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(160px,1fr));
+  gap:.85rem;
+  margin-top:1rem;
+  position:relative;
+  z-index:1;
+}
+.summary-stat{
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:.9rem;
+}
+.summary-stat-label{
+  font-size:.74rem;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.12em;
+}
+.summary-stat-value{
+  font-family:var(--serif);
+  font-size:clamp(1.6rem,2.6vw,2.2rem);
+  line-height:.95;
+  margin-top:.45rem;
+  word-break:break-word;
+}
+.summary-stat-copy{
+  font-size:.82rem;
+  color:var(--muted);
+  line-height:1.4;
+  margin-top:.35rem;
+}
+.summary-section{
+  margin-top:1.15rem;
+  position:relative;
+  z-index:1;
+}
+.summary-section-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  flex-wrap:wrap;
+  margin-bottom:.7rem;
+}
+.summary-section-header h3{
+  font-size:.82rem;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.18em;
+  color:var(--accent);
+}
+.summary-section-note{
+  font-size:.82rem;
+  color:var(--muted);
+}
+#summary-runway{
+  background:rgba(0,0,0,.18);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:1rem;
+}
+.summary-runway-chart{height:220px}
+.summary-runway-svg{width:100%;height:100%;display:block}
+.summary-runway-grid{
+  stroke:rgba(255,255,255,.08);
+  stroke-width:1;
+}
+.summary-runway-fill{fill:url(#summary-runway-fill)}
+.summary-runway-line{
+  fill:none;
+  stroke:var(--accent2);
+  stroke-width:3;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.summary-runway-point{
+  fill:var(--accent2);
+  stroke:var(--bg);
+  stroke-width:2;
+}
+.summary-runway-axis{
+  --axis-count:4;
+  display:grid;
+  grid-template-columns:repeat(var(--axis-count),minmax(0,1fr));
+  gap:.4rem;
+  margin-top:.85rem;
+}
+.summary-runway-tick{
+  font-size:.72rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.summary-runway-highlow{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.45rem;
+  margin-top:.8rem;
+}
+.summary-chip{
+  display:inline-flex;
+  align-items:center;
+  padding:.28rem .58rem;
+  border-radius:999px;
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  font-size:.8rem;
+  color:var(--muted);
+  line-height:1.2;
+}
+#summary-round-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:.85rem;
+}
+.summary-round{
+  --round-color:rgba(201,168,76,.78);
+  position:relative;
+  min-height:148px;
+  padding:.9rem;
+  overflow:hidden;
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+}
+.summary-round::before{
+  content:'';
+  position:absolute;
+  left:0;
+  top:0;
+  bottom:0;
+  width:4px;
+  background:var(--round-color);
+}
+.summary-round.won{--round-color:rgba(76,175,80,.9)}
+.summary-round.lost{--round-color:rgba(229,57,53,.78)}
+.summary-round.void{--round-color:rgba(255,152,0,.82)}
+.summary-round.forfeited{--round-color:rgba(229,57,53,.95)}
+.summary-round.missing{
+  --round-color:rgba(255,255,255,.22);
+  border-style:dashed;
+  background:rgba(255,255,255,.015);
+}
+.summary-round-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:.5rem;
+}
+.summary-round-num{
+  font-size:.74rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.summary-round-state{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:.22rem .48rem;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:999px;
+  background:rgba(255,255,255,.03);
+  font-size:.7rem;
+  font-weight:600;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--text);
+}
+.summary-round-delta{
+  margin-top:.7rem;
+  font-family:var(--serif);
+  font-size:2rem;
+  line-height:.88;
+}
+.summary-round-pick{
+  margin-top:.55rem;
+  min-height:2.35em;
+  font-size:.86rem;
+  line-height:1.35;
+  color:var(--text);
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.summary-round-pick.is-muted{color:var(--muted)}
+.summary-round-meter{
+  height:6px;
+  margin-top:.8rem;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(255,255,255,.06);
+}
+.summary-round-meter span{
+  display:block;
+  height:100%;
+  width:var(--strength,0%);
+  background:linear-gradient(90deg,var(--round-color),rgba(255,255,255,.88));
+}
+.summary-round-foot{
+  display:flex;
+  justify-content:space-between;
+  gap:.5rem;
+  margin-top:.55rem;
+  font-size:.72rem;
+  color:var(--muted);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+#summary-podium{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.9rem;
+  align-items:end;
+  margin-bottom:1rem;
+}
+.summary-podium-slot{
+  display:flex;
+  align-items:flex-end;
+  min-height:220px;
+}
+.summary-podium-step{
+  width:100%;
+  height:var(--podium-height,150px);
+  padding:.85rem .8rem 1rem;
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  gap:.35rem;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+  border:1px solid var(--border);
+  border-radius:var(--radius) var(--radius) 0 0;
+}
+.summary-podium-step::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(180deg,rgba(201,168,76,.18),transparent 55%);
+  opacity:.6;
+  pointer-events:none;
+}
+.summary-podium-step.me{border-color:rgba(201,168,76,.45)}
+.summary-podium-rank{
+  font-size:.78rem;
+  font-weight:600;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.summary-podium-name{
+  font-family:var(--serif);
+  font-size:1.45rem;
+  line-height:.95;
+  overflow-wrap:anywhere;
+}
+.summary-podium-balance{font-size:1rem;color:var(--text)}
+.summary-podium-net{font-size:.82rem}
+#summary-standings{
+  display:flex;
+  flex-direction:column;
+  gap:.75rem;
+}
+.summary-standing{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  gap:.9rem;
+  align-items:center;
+  padding:.9rem 0;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.summary-standing:first-child{border-top:none}
+.summary-standing.me{
+  padding:.9rem .85rem;
+  background:rgba(201,168,76,.06);
+  border-radius:var(--radius);
+}
+.summary-standing-rank{
+  font-family:var(--serif);
+  font-size:1.2rem;
+  color:var(--accent);
+}
+.summary-standing-main{
+  display:flex;
+  flex-direction:column;
+  gap:.4rem;
+  min-width:0;
+}
+.summary-standing-top{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:.75rem;
+  flex-wrap:wrap;
+}
+.summary-standing-name{
+  min-width:0;
+  font-size:1rem;
+  font-weight:600;
+  overflow-wrap:anywhere;
+}
+.summary-standing-status{
+  font-size:.72rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.summary-standing-bar{
+  height:10px;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(255,255,255,.06);
+}
+.summary-standing-fill{
+  display:block;
+  height:100%;
+  width:var(--standing-width,0%);
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+}
+.summary-standing-values{
+  display:flex;
+  flex-direction:column;
+  gap:.2rem;
+  text-align:right;
+}
+.summary-standing-balance{
+  font-family:var(--serif);
+  font-size:1.25rem;
+  line-height:.95;
+}
+.summary-standing-net{
+  font-size:.82rem;
+  font-weight:600;
+}
+.summary-actions{
+  align-items:center;
+  position:relative;
+  z-index:1;
+}
 /* Leaderboard */
 #leaderboard-view.active{display:flex;flex-direction:column;gap:1rem}
 .leaderboard-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
@@ -379,11 +871,15 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   nav{justify-content:flex-start}
   #header-profile{justify-self:start;justify-content:flex-start}
   #header-profile .identity{align-items:flex-start}
+  #summary-header{grid-template-columns:1fr}
 }
 @media(max-width:960px){
   .queue-shell{grid-template-columns:1fr}
   .queue-inline-roster{display:flex}
   .queue-side{display:none}
+  #summary-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #summary-podium{grid-template-columns:1fr}
+  .summary-podium-slot{min-height:unset}
 }
 /* ── Narrow viewport (phones) ─────────────────────────────────── */
 @media(max-width:650px){
@@ -396,12 +892,15 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
   .forming-side{align-items:flex-start}
   .forming-banner-foot{align-items:stretch}
   #start-now-btn{width:100%}
+  .summary-scoreboard{grid-template-columns:1fr}
 }
 @media(max-width:560px){
   .question-meta-row{margin-bottom:.7rem}
   #off-record-banner{max-width:none;justify-content:flex-start;text-align:left}
   .card-picker-grid{grid-template-columns:1fr}
-  #summary-stats,#summary-highlights-grid{grid-template-columns:1fr}
+  #summary-rings,#summary-stats{grid-template-columns:1fr}
+  .summary-standing{grid-template-columns:1fr}
+  .summary-standing-values{text-align:left}
 }
 @media(max-width:480px){
   header{padding:.7rem 0}
@@ -618,40 +1117,53 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
 
   <!-- ── SUMMARY ───────────────────────────────────────────────── -->
   <div id="summary-view" class="view">
-    <div class="card">
+    <div class="card summary-shell">
       <div id="summary-header">
-        <div>
-          <h2>Match Over</h2>
+        <div class="summary-hero-copy">
+          <div class="summary-kicker">Match over</div>
+          <h2 id="summary-title">Final</h2>
           <p id="summary-headline"></p>
+          <div class="summary-hero-meta">
+            <div id="summary-placement">Final</div>
+          </div>
         </div>
-        <div id="summary-placement">Final</div>
+        <div class="summary-scoreboard">
+          <div class="summary-balance-card">
+            <div class="summary-balance-label">Final stack</div>
+            <div id="summary-balance-value">—</div>
+            <div class="summary-balance-meta">
+              <div id="summary-net-pill" class="summary-net-pill">—</div>
+              <div id="summary-starting-balance" class="summary-balance-start">Start —</div>
+            </div>
+          </div>
+          <div id="summary-rings"></div>
+        </div>
       </div>
       <div id="summary-off-record-banner" class="info-banner hidden" style="margin-top:1rem">
         <strong>Off the record.</strong> This AI-assisted match did not change balances, streaks, or leaderboard standing.
       </div>
       <div id="summary-stats"></div>
-      <div id="summary-highlights-section" class="summary-section hidden">
-        <h3>Highlights</h3>
-        <div id="summary-highlights-grid"></div>
-      </div>
-      <div id="summary-timeline-section" class="summary-section hidden">
+      <div id="summary-runway-section" class="summary-section hidden">
         <div class="summary-section-header">
-          <h3>Game by Game</h3>
-          <span id="summary-timeline-note" class="summary-section-note"></span>
+          <h3>Balance Runway</h3>
+          <span id="summary-runway-note" class="summary-section-note"></span>
         </div>
-        <div id="summary-timeline"></div>
+        <div id="summary-runway"></div>
+      </div>
+      <div id="summary-rounds-section" class="summary-section hidden">
+        <div class="summary-section-header">
+          <h3>Round Strip</h3>
+          <span id="summary-rounds-note" class="summary-section-note"></span>
+        </div>
+        <div id="summary-round-grid"></div>
       </div>
       <div class="summary-section">
         <div class="summary-section-header">
-          <h3>Final Standings</h3>
-          <span class="summary-section-note">Sorted by ending balance.</span>
+          <h3>Final Stack</h3>
+          <span class="summary-section-note">Podium first, full field below.</span>
         </div>
-      <table id="summary-table">
-        <thead><tr>
-          <th>Player</th><th>Start</th><th>End</th><th>Net</th><th>Status</th>
-        </tr></thead>
-        <tbody id="summary-tbody"></tbody>
-      </table>
+        <div id="summary-podium"></div>
+        <div id="summary-standings"></div>
       </div>
       <div class="action-row summary-actions">
         <button class="btn-primary" id="requeue-btn">Back to Queue</button>
@@ -3174,6 +3686,7 @@ function renderSummary(summary) {
     || a.displayName.localeCompare(b.displayName)
   );
   const capturedRounds = S.gameHistory.filter(Boolean).length;
+  const totalGames = S.totalGames || S.gameHistory.length || capturedRounds;
   const me = standings.find(p => p.displayName === S.displayName) || null;
   const placement = me ? getPlacement(standings, me) : null;
   const wins = countMyGameResults((p) => p.wonGame);
@@ -3182,173 +3695,385 @@ function renderSummary(summary) {
   const rawRoughestRound = getMyExtremeRound((a, b) => a.netDelta - b.netDelta);
   const bestRound = rawBestRound && rawBestRound.netDelta > 0 ? rawBestRound : null;
   const roughestRound = rawRoughestRound && rawRoughestRound.netDelta < 0 ? rawRoughestRound : null;
+  const leaders = getLeaders(standings);
+  const tightestConvergence = getTightestConvergence();
+  const runway = me ? getSummaryRunway(me, totalGames) : null;
 
+  $('#summary-title').textContent = me
+    ? me.result === 'forfeited'
+      ? 'Forfeited'
+      : placement
+        ? `${placement.tied ? 'Tied ' : ''}${ordinal(placement.rank)} Place`
+        : 'Match Closed'
+    : 'Match Closed';
   $('#summary-placement').textContent = placement
     ? `${placement.tied ? 'T-' : ''}${ordinal(placement.rank)}`
     : 'Final';
   if (S.aiAssistedMatch) {
     $('#summary-headline').textContent = me
-      ? `AI-assisted match: off the record. You finished ${placement && placement.tied ? 'tied ' : ''}${placement ? ordinal(placement.rank) : 'in the match'}, and your balance stayed at ${me.endingBalance} tokens.`
-      : 'AI-assisted match: off the record. Final standings are shown, but balances and stats did not change.';
+      ? `Standings only. Your stack stayed at ${formatCompactNumber(me.endingBalance)} tokens.`
+      : 'Standings only. This AI-assisted match did not move balances.';
   } else {
     $('#summary-headline').textContent = me
-      ? `You finished ${placement && placement.tied ? 'tied ' : ''}${placement ? ordinal(placement.rank) : 'in the match'} with ${me.endingBalance} tokens (${formatDelta(me.netDelta)} net).`
-      : `Final balances settled. Queue again when you want another ${S.totalGames}-game run.`;
+      ? me.result === 'forfeited'
+        ? `Locked out early. Final stack ${formatCompactNumber(me.endingBalance)} tokens.`
+        : `${wins} wins, ${coordinationHits} crowd hits, ${formatDelta(me.netDelta)} on this run.`
+      : `Final balances settled for ${standings.length} players.`;
   }
 
+  $('#summary-balance-value').textContent = me ? formatCompactNumber(me.endingBalance) : '—';
+  const netPill = $('#summary-net-pill');
+  netPill.textContent = me ? formatDelta(me.netDelta) : '—';
+  netPill.className = `summary-net-pill${me ? ` ${deltaClassName(me.netDelta)}` : ''}`;
+  $('#summary-starting-balance').textContent = me
+    ? `Start ${formatCompactNumber(me.startingBalance)}`
+    : `${standings.length} players`;
+
+  const leadRatio = me && leaders.balance > 0
+    ? me.endingBalance / leaders.balance
+    : 0;
+  const rings = [
+    {
+      label: 'Wins',
+      value: capturedRounds ? `${wins}` : '—',
+      detail: capturedRounds ? `of ${capturedRounds}` : 'no data',
+      ratio: capturedRounds ? wins / capturedRounds : 0,
+      color: 'var(--green)',
+    },
+    {
+      label: 'Coord',
+      value: capturedRounds ? `${coordinationHits}` : '—',
+      detail: capturedRounds ? `of ${capturedRounds}` : 'no data',
+      ratio: capturedRounds ? coordinationHits / capturedRounds : 0,
+      color: 'var(--accent2)',
+    },
+    {
+      label: 'Seen',
+      value: totalGames ? `${capturedRounds}` : '—',
+      detail: totalGames ? `of ${totalGames}` : 'rounds',
+      ratio: totalGames ? capturedRounds / totalGames : 0,
+      color: 'var(--accent)',
+    },
+    {
+      label: 'Stack',
+      value: me && leaders.balance ? `${Math.round(leadRatio * 100)}%` : '—',
+      detail: leaders.balance ? 'of lead' : 'field',
+      ratio: leadRatio,
+      color: 'var(--accent2)',
+    },
+  ];
+  $('#summary-rings').innerHTML = rings.map(buildSummaryRing).join('');
+
+  const leaderNames = leaders.names
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
   const statCards = [
-    { label: 'Final Balance', value: me ? `${me.endingBalance}` : '—', className: '' },
-    { label: 'Match Net', value: me ? formatDelta(me.netDelta) : '—', className: me ? deltaClassName(me.netDelta) : '' },
-    { label: 'Games Won', value: capturedRounds ? `${wins} / ${capturedRounds}` : '—', className: '' },
-    { label: 'Coordination Hits', value: capturedRounds ? `${coordinationHits}` : '—', className: '' },
+    {
+      label: 'Leader',
+      value: standings.length ? formatCompactNumber(leaders.balance) : '—',
+      copy: leaderNames.length > 1 ? `${leaderNames.length} tied` : (leaderNames[0] || 'No players'),
+      className: '',
+    },
+    {
+      label: 'Best swing',
+      value: bestRound ? formatDelta(bestRound.netDelta) : '—',
+      copy: bestRound ? `G${bestRound.gameNum}` : 'No spike',
+      className: bestRound ? deltaClassName(bestRound.netDelta) : '',
+    },
+    {
+      label: 'Roughest',
+      value: roughestRound ? formatDelta(roughestRound.netDelta) : '—',
+      copy: roughestRound ? `G${roughestRound.gameNum}` : 'No dip',
+      className: roughestRound ? deltaClassName(roughestRound.netDelta) : '',
+    },
+    {
+      label: 'Crowd peak',
+      value: tightestConvergence ? `${tightestConvergence.topCount}-way` : '—',
+      copy: tightestConvergence ? `G${tightestConvergence.gameNum}` : 'No cluster',
+      className: '',
+    },
   ];
   $('#summary-stats').innerHTML = statCards.map((card) => `
     <div class="summary-stat">
       <div class="summary-stat-label">${esc(card.label)}</div>
       <div class="summary-stat-value ${card.className}">${esc(card.value)}</div>
+      <div class="summary-stat-copy">${esc(card.copy)}</div>
     </div>
   `).join('');
 
-  renderSummaryHighlights(standings, {
-    bestRound,
-    roughestRound,
-  });
-  renderSummaryTimeline();
-
-  const tbody = $('#summary-tbody');
-  tbody.innerHTML = '';
-  standings.forEach(p => {
-    const tr = document.createElement('tr');
-    if (p.displayName === S.displayName) tr.classList.add('me');
-    const deltaClass = p.netDelta > 0 ? 'delta-pos' : (p.netDelta < 0 ? 'delta-neg' : 'delta-zero');
-    const deltaStr = formatDelta(p.netDelta);
-    tr.innerHTML = `
-      <td>${esc(p.displayName)}</td>
-      <td>${p.startingBalance}</td>
-      <td>${p.endingBalance}</td>
-      <td class="${deltaClass}">${deltaStr}</td>
-      <td>${p.result === 'forfeited' ? 'Forfeited' : 'Completed'}</td>
-    `;
-    tbody.appendChild(tr);
-  });
+  renderSummaryRunway(runway, totalGames);
+  renderSummaryRounds(totalGames, me);
+  renderSummaryStandings(standings);
 }
 
-function renderSummaryHighlights(standings, rounds) {
-  const section = $('#summary-highlights-section');
-  if (!S.gameHistory.length) {
-    section.classList.add('hidden');
-    $('#summary-highlights-grid').innerHTML = '';
-    return;
-  }
-
-  const leaders = getLeaders(standings);
-  const tightestConvergence = getTightestConvergence();
-
-  const highlights = [
-    {
-      title: 'Top Stack',
-      value: leaders.names,
-      copy: `${leaders.balance} tokens at the buzzer.`,
-    },
-    {
-      title: 'Best Round',
-      value: rounds.bestRound ? `Game ${rounds.bestRound.gameNum} ${formatDelta(rounds.bestRound.netDelta)}` : 'No breakout round',
-      copy: rounds.bestRound
-        ? `You picked ${quoteLabel(rounds.bestRound.revealedChoiceLabel || 'no valid reveal')} and ${rounds.bestRound.wonGame ? 'won' : 'missed'} that pot.`
-        : 'No completed round data was available on this client.',
-    },
-    {
-      title: 'Roughest Miss',
-      value: rounds.roughestRound ? `Game ${rounds.roughestRound.gameNum} ${formatDelta(rounds.roughestRound.netDelta)}` : 'No losing round',
-      copy: rounds.roughestRound
-        ? `You picked ${quoteLabel(rounds.roughestRound.revealedChoiceLabel || 'no valid reveal')} there.`
-        : 'No negative round delta was recorded on this client.',
-    },
-    {
-      title: 'Sharpest Convergence',
-      value: tightestConvergence
-        ? `Game ${tightestConvergence.gameNum}`
-        : 'No valid reveals',
-      copy: tightestConvergence
-        ? `${tightestConvergence.topCount} players landed on ${quoteLabel(tightestConvergence.winningOptions.join(', '))}.`
-        : 'Every visible round on this client was voided.',
-    },
-  ];
-
-  $('#summary-highlights-grid').innerHTML = highlights.map((item) => `
-    <div class="summary-highlight">
-      <div class="summary-highlight-title">${esc(item.title)}</div>
-      <div class="summary-highlight-value">${esc(item.value)}</div>
-      <div class="summary-highlight-copy">${esc(item.copy)}</div>
+function buildSummaryRing(ring) {
+  const ratio = Math.max(0, Math.min(1, ring.ratio || 0));
+  return `
+    <div class="summary-ring-card">
+      <div class="summary-ring" style="--ratio:${ratio};--ring-color:${ring.color}">
+        <div class="summary-ring-center">
+          <strong>${esc(ring.value)}</strong>
+          <span>${esc(ring.detail)}</span>
+        </div>
+      </div>
+      <div class="summary-ring-label">${esc(ring.label)}</div>
     </div>
-  `).join('');
-  section.classList.remove('hidden');
+  `;
 }
 
-function renderSummaryTimeline() {
-  const section = $('#summary-timeline-section');
-  const timeline = $('#summary-timeline');
-  const note = $('#summary-timeline-note');
+function renderSummaryRunway(runway, totalGames) {
+  const section = $('#summary-runway-section');
+  const container = $('#summary-runway');
+  const note = $('#summary-runway-note');
 
-  if (!S.gameHistory.length) {
+  if (!runway || runway.points.length < 2) {
     section.classList.add('hidden');
-    timeline.innerHTML = '';
+    container.innerHTML = '';
     note.textContent = '';
     return;
   }
 
-  const visibleRounds = S.gameHistory.filter(Boolean);
-  note.textContent = visibleRounds.length === S.totalGames
-    ? `All ${S.totalGames} rounds captured.`
-    : `${visibleRounds.length} round${visibleRounds.length === 1 ? '' : 's'} captured in this tab.`;
+  const values = runway.points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(1, max - min);
+  const chartTop = 10;
+  const chartBottom = 88;
+  const chartHeight = chartBottom - chartTop;
+  const plotted = runway.points.map((point, index) => {
+    const x = runway.points.length === 1
+      ? 50
+      : (index / (runway.points.length - 1)) * 100;
+    const normalized = (point.value - min) / range;
+    return {
+      ...point,
+      x,
+      y: chartBottom - (normalized * chartHeight),
+    };
+  });
+  const linePath = plotted.map((point, index) =>
+    `${index === 0 ? 'M' : 'L'} ${point.x},${point.y}`
+  ).join(' ');
+  const areaPath = [
+    `M ${plotted[0].x},${chartBottom}`,
+    `L ${plotted[0].x},${plotted[0].y}`,
+    ...plotted.slice(1).map((point) => `L ${point.x},${point.y}`),
+    `L ${plotted[plotted.length - 1].x},${chartBottom}`,
+    'Z',
+  ].join(' ');
 
-  timeline.innerHTML = visibleRounds.map((game) => {
-    const me = getMyRound(game);
-    const status = game.voided
-      ? 'void'
-      : me?.wonGame
-        ? 'won'
-        : me?.result === 'forfeited'
-          ? 'forfeited'
-          : 'lost';
-    const statusLabel = status === 'won'
-      ? 'Won'
-      : status === 'void'
-        ? 'Void'
-        : status === 'forfeited'
-          ? 'Forfeited'
-          : 'Missed';
-    const winningOptions = game.voided
-      ? (game.voidReason || 'all antes refunded')
-      : quoteLabel(game.winningOptions.length ? game.winningOptions.join(', ') : 'none');
-    const chips = [
-      me ? `You picked ${quoteLabel(me.revealedChoiceLabel || 'no valid reveal')}` : null,
-      game.voided ? `Reason: ${game.voidReason || 'voided'}` : `Winning answer ${winningOptions}`,
-      `Valid reveals ${game.validRevealCount}`,
-      game.voided ? null : `Top count ${game.topCount}`,
-      game.normalizationMode ? `Normalization ${game.normalizationMode}` : null,
-      me ? `Net ${formatDelta(me.netDelta)}` : null,
-    ].filter(Boolean);
+  container.innerHTML = `
+    <div class="summary-runway-chart">
+      <svg class="summary-runway-svg" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Balance runway">
+        <defs>
+          <linearGradient id="summary-runway-fill" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="rgba(223,192,106,.35)"></stop>
+            <stop offset="100%" stop-color="rgba(223,192,106,0)"></stop>
+          </linearGradient>
+        </defs>
+        <line class="summary-runway-grid" x1="0" y1="24" x2="100" y2="24"></line>
+        <line class="summary-runway-grid" x1="0" y1="48" x2="100" y2="48"></line>
+        <line class="summary-runway-grid" x1="0" y1="72" x2="100" y2="72"></line>
+        <path class="summary-runway-fill" d="${areaPath}"></path>
+        <path class="summary-runway-line" d="${linePath}"></path>
+        ${plotted.map((point, index) => `
+          <circle class="summary-runway-point" cx="${point.x}" cy="${point.y}" r="${index === plotted.length - 1 ? 3.3 : 2.6}"></circle>
+        `).join('')}
+      </svg>
+    </div>
+    <div class="summary-runway-axis" style="--axis-count:${runway.points.length}">
+      ${runway.points.map((point) => `<span class="summary-runway-tick">${esc(point.label)}</span>`).join('')}
+    </div>
+    <div class="summary-runway-highlow">
+      <span class="summary-chip">High ${formatCompactNumber(max)}</span>
+      <span class="summary-chip">Low ${formatCompactNumber(min)}</span>
+      <span class="summary-chip">Close ${formatCompactNumber(runway.points[runway.points.length - 1].value)}</span>
+    </div>
+  `;
+  note.textContent = runway.complete
+    ? `Full ${totalGames}-game swing.`
+    : runway.stoppedAtForfeit
+      ? 'Locked at your forfeit game.'
+      : `First ${runway.captured} rounds stayed consecutive in this tab.`;
+  section.classList.remove('hidden');
+}
 
-    return `
-      <div class="summary-game">
-        <div class="summary-game-top">
-          <div>
-            <div class="summary-game-kicker">Game ${game.gameNum}</div>
-            <div class="summary-game-question">${esc(game.promptText)}</div>
+function renderSummaryRounds(totalGames, summaryPlayer) {
+  const section = $('#summary-rounds-section');
+  const grid = $('#summary-round-grid');
+  const note = $('#summary-rounds-note');
+
+  if (!totalGames) {
+    section.classList.add('hidden');
+    grid.innerHTML = '';
+    note.textContent = '';
+    return;
+  }
+
+  const lastVisibleMyRound = S.gameHistory.reduce((latest, game) => {
+    const mine = getMyRound(game);
+    return game && mine ? Math.max(latest, game.gameNum) : latest;
+  }, 0);
+
+  let captured = 0;
+  const tiles = [];
+  for (let gameNumber = 1; gameNumber <= totalGames; gameNumber++) {
+    const game = S.gameHistory[gameNumber - 1];
+    const mine = getMyRound(game);
+    if (!game || !mine) {
+      const isAfterForfeit = summaryPlayer?.result === 'forfeited'
+        && lastVisibleMyRound
+        && gameNumber > lastVisibleMyRound;
+      tiles.push(`
+        <div class="summary-round missing">
+          <div class="summary-round-top">
+            <span class="summary-round-num">G${gameNumber}</span>
+            <span class="summary-round-state">${isAfterForfeit ? 'Out' : 'Off-tab'}</span>
           </div>
-          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end">
-            ${me ? `<div class="summary-game-delta ${deltaClassName(me.netDelta)}">${esc(formatDelta(me.netDelta))}</div>` : ''}
-            <div class="summary-game-status ${status}">${statusLabel}</div>
+          <div class="summary-round-delta delta-zero">—</div>
+          <div class="summary-round-pick is-muted">${isAfterForfeit ? 'Detached after your forfeit.' : 'Result not captured in this browser.'}</div>
+          <div class="summary-round-meter"><span style="width:0%"></span></div>
+          <div class="summary-round-foot"><span>Hidden</span><span>G${gameNumber}</span></div>
+        </div>
+      `);
+      continue;
+    }
+
+    captured += 1;
+    const roundStatus = getSummaryRoundStatus(game, mine);
+    const pickLabel = mine.revealedChoiceLabel || (roundStatus.status === 'forfeited' ? 'Forfeited' : 'No valid reveal');
+    const strength = game.voided || !game.validRevealCount
+      ? 0
+      : Math.max(8, Math.round((game.topCount / game.validRevealCount) * 100));
+    tiles.push(`
+      <div class="summary-round ${roundStatus.status}" title="${esc(game.promptText)}">
+        <div class="summary-round-top">
+          <span class="summary-round-num">G${game.gameNum}</span>
+          <span class="summary-round-state">${roundStatus.label}</span>
+        </div>
+        <div class="summary-round-delta ${deltaClassName(mine.netDelta)}">${esc(formatDelta(mine.netDelta))}</div>
+        <div class="summary-round-pick${pickLabel === 'No valid reveal' ? ' is-muted' : ''}">${esc(pickLabel)}</div>
+        <div class="summary-round-meter"><span style="width:${strength}%"></span></div>
+        <div class="summary-round-foot">
+          <span>${game.voided ? 'Refunded' : `Peak ${game.topCount}`}</span>
+          <span>${game.validRevealCount} live</span>
+        </div>
+      </div>
+    `);
+  }
+
+  note.textContent = captured === totalGames
+    ? 'Every round visible.'
+    : `${captured} of ${totalGames} rounds visible in this tab.`;
+  grid.innerHTML = tiles.join('');
+  section.classList.remove('hidden');
+}
+
+function getSummaryRoundStatus(game, mine) {
+  if (game.voided) return { status: 'void', label: 'Void' };
+  if (mine.result === 'forfeited') return { status: 'forfeited', label: 'Out' };
+  if (mine.wonGame) return { status: 'won', label: 'Won' };
+  return { status: 'lost', label: 'Missed' };
+}
+
+function renderSummaryStandings(standings) {
+  const podium = $('#summary-podium');
+  const chart = $('#summary-standings');
+  const topBalance = standings[0]?.endingBalance || 0;
+
+  podium.innerHTML = [1, 0, 2]
+    .map((index) => ({ player: standings[index], rank: index + 1 }))
+    .filter((entry) => entry.player)
+    .map(({ player, rank }) => {
+      const height = topBalance
+        ? Math.max(126, Math.round((player.endingBalance / topBalance) * 220))
+        : 126;
+      return `
+        <div class="summary-podium-slot">
+          <div class="summary-podium-step${player.displayName === S.displayName ? ' me' : ''}" style="--podium-height:${height}px">
+            <div class="summary-podium-rank">#${rank}</div>
+            <div class="summary-podium-name">${esc(player.displayName)}</div>
+            <div class="summary-podium-balance">${formatCompactNumber(player.endingBalance)} tokens</div>
+            <div class="summary-podium-net ${deltaClassName(player.netDelta)}">${esc(formatDelta(player.netDelta))}</div>
           </div>
         </div>
-        <div class="summary-game-meta">
-          ${chips.map((chip) => `<span class="summary-chip">${esc(chip)}</span>`).join('')}
+      `;
+    })
+    .join('');
+
+  chart.innerHTML = standings.map((player, index) => {
+    const width = topBalance
+      ? Math.max(6, Math.round((player.endingBalance / topBalance) * 100))
+      : 0;
+    return `
+      <div class="summary-standing${player.displayName === S.displayName ? ' me' : ''}">
+        <div class="summary-standing-rank">#${index + 1}</div>
+        <div class="summary-standing-main">
+          <div class="summary-standing-top">
+            <div class="summary-standing-name">${esc(player.displayName)}</div>
+            <div class="summary-standing-status">${player.result === 'forfeited' ? 'Forfeited' : 'Completed'}</div>
+          </div>
+          <div class="summary-standing-bar">
+            <span class="summary-standing-fill" style="width:${width}%"></span>
+          </div>
+        </div>
+        <div class="summary-standing-values">
+          <div class="summary-standing-balance">${formatCompactNumber(player.endingBalance)}</div>
+          <div class="summary-standing-net ${deltaClassName(player.netDelta)}">${esc(formatDelta(player.netDelta))}</div>
         </div>
       </div>
     `;
   }).join('');
-  section.classList.remove('hidden');
+}
+
+function getSummaryRunway(player, totalGames) {
+  const visibleRounds = S.gameHistory.filter(Boolean);
+  if (!visibleRounds.length) return null;
+  const capturedFromStart = visibleRounds.every((game, index) => game.gameNum === index + 1);
+  if (!capturedFromStart) return null;
+
+  const points = [{
+    label: 'Start',
+    value: player.startingBalance,
+  }];
+  let balance = player.startingBalance;
+
+  for (const game of visibleRounds) {
+    const mine = getMyRound(game);
+    if (!mine) {
+      return player.result === 'forfeited'
+        ? {
+            points,
+            captured: points.length - 1,
+            complete: false,
+            stoppedAtForfeit: true,
+          }
+        : null;
+    }
+
+    balance += mine.netDelta;
+    points.push({
+      label: `G${game.gameNum}`,
+      value: balance,
+    });
+
+    if (mine.result === 'forfeited') {
+      return {
+        points,
+        captured: game.gameNum,
+        complete: game.gameNum === totalGames,
+        stoppedAtForfeit: true,
+      };
+    }
+  }
+
+  return {
+    points,
+    captured: points.length - 1,
+    complete: points.length - 1 === totalGames,
+    stoppedAtForfeit: false,
+  };
 }
 
 function storeGameHistoryEntry(result) {
@@ -3570,6 +4295,10 @@ function esc(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
+}
+
+function formatCompactNumber(value) {
+  return Number.isFinite(value) ? value.toLocaleString('en-US') : '—';
 }
 
 function formatBuildStamp() {
