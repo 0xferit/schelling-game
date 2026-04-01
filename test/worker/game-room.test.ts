@@ -263,9 +263,7 @@ async function formMatch(
     waitForMessage(p.ws, 'match_started', MATCH_START_TIMEOUT_MS),
   );
 
-  for (const p of players) {
-    p.ws.send(JSON.stringify({ type: 'join_queue' }));
-  }
+  await joinPlayersAndStartNow(players);
 
   const started = await Promise.all(startedPromises);
   return players.map((p, i) => ({
@@ -435,8 +433,48 @@ describe('GameRoom Durable Object', () => {
     ws.close();
   });
 
-  // The fill timer is 30 seconds; the match starts after it expires.
-  it('3 players joining queue triggers match formation', {
+  it('holds a forming lobby until someone presses ready', async () => {
+    const players = await Promise.all([
+      connectPlayer(10, 'ReadyHold1'),
+      connectPlayer(11, 'ReadyHold2'),
+      connectPlayer(12, 'ReadyHold3'),
+    ]);
+
+    const formingPromises = players.map((player) =>
+      waitForMessageWhere(
+        player.ws,
+        (msg) => msg.type === 'queue_state' && msg.status === 'forming',
+        3000,
+      ),
+    );
+
+    for (const player of players) {
+      player.ws.send(JSON.stringify({ type: 'join_queue' }));
+    }
+
+    const formingStates = await Promise.all(formingPromises);
+    for (const state of formingStates) {
+      expect(state.formingMatch).toBeDefined();
+      expect(
+        must(state.formingMatch, 'Expected forming match state').fillDeadlineMs,
+      ).toBeNull();
+    }
+
+    const matchStarted = await Promise.all(
+      players.map((player) =>
+        waitForMessage(player.ws, 'match_started', 1200)
+          .then(() => true)
+          .catch(() => false),
+      ),
+    );
+    expect(matchStarted).toEqual([false, false, false]);
+
+    for (const player of players) {
+      player.ws.close();
+    }
+  });
+
+  it('3 players can queue and launch once everyone readies up', {
     timeout: 45_000,
   }, async () => {
     const players = await formMatch([

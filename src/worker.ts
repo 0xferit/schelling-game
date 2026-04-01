@@ -396,6 +396,7 @@ export class GameRoom {
       try {
         oldWs.close(1000, 'Replaced by new connection');
       } catch {}
+      this._syncFormingMatchFillTimer();
       this._broadcastQueueState();
       return;
     }
@@ -720,6 +721,42 @@ export class GameRoom {
     );
   }
 
+  _anyFormingHumanWantsStartNow(): boolean {
+    const humanIds = this._getFormingHumanIds();
+    if (humanIds.length === 0) return false;
+
+    return humanIds.some(
+      (accountId) => this.connections.get(accountId)?.startNow,
+    );
+  }
+
+  _clearFormingMatchFillTimer(): void {
+    if (!this.formingMatch) return;
+    if (this.formingMatch.timer) {
+      clearTimeout(this.formingMatch.timer);
+      this.formingMatch.timer = null;
+    }
+    this.formingMatch.fillDeadlineMs = null;
+  }
+
+  _armFormingMatchFillTimer(): void {
+    if (!this.formingMatch || this.formingMatch.timer) return;
+    this.formingMatch.fillDeadlineMs = Date.now() + FILL_TIMER_MS;
+    this.formingMatch.timer = setTimeout(
+      () => this._onFillTimerExpired(),
+      FILL_TIMER_MS,
+    );
+  }
+
+  _syncFormingMatchFillTimer(): void {
+    if (!this.formingMatch) return;
+    if (this._anyFormingHumanWantsStartNow()) {
+      this._armFormingMatchFillTimer();
+      return;
+    }
+    this._clearFormingMatchFillTimer();
+  }
+
   _tryStartReadyMatch(): boolean {
     if (!this.formingMatch) return false;
     if (this.formingMatch.players.length < MIN_MATCH_SIZE) return false;
@@ -861,6 +898,7 @@ export class GameRoom {
 
     conn.startNow = msg.value;
     if (this._tryStartReadyMatch()) return;
+    this._syncFormingMatchFillTimer();
     this._broadcastQueueState();
   }
 
@@ -880,11 +918,13 @@ export class GameRoom {
         }
       }
     }
+
+    this._syncFormingMatchFillTimer();
   }
 
   _cancelFormingMatch(): void {
     if (!this.formingMatch) return;
-    if (this.formingMatch.timer) clearTimeout(this.formingMatch.timer);
+    this._clearFormingMatchFillTimer();
 
     // Return remaining players to front of queue in their existing order
     const returning = this.formingMatch.players;
@@ -908,7 +948,9 @@ export class GameRoom {
       if (this.formingMatch.players.length >= MAX_MATCH_SIZE) {
         this._startFormingMatch();
       } else {
-        this._tryStartReadyMatch();
+        if (!this._tryStartReadyMatch()) {
+          this._syncFormingMatchFillTimer();
+        }
       }
       return;
     }
@@ -931,24 +973,31 @@ export class GameRoom {
       return;
     }
 
-    // Start 30s fill timer
-    const fillDeadlineMs = Date.now() + FILL_TIMER_MS;
-    const timer = setTimeout(() => this._onFillTimerExpired(), FILL_TIMER_MS);
-    this.formingMatch = { players: reserved, timer, fillDeadlineMs };
-    this._tryStartReadyMatch();
+    // Hold the forming lobby until someone signals they are ready.
+    this.formingMatch = {
+      players: reserved,
+      timer: null,
+      fillDeadlineMs: null,
+    };
+    if (!this._tryStartReadyMatch()) {
+      this._syncFormingMatchFillTimer();
+    }
   }
 
   _onFillTimerExpired(): void {
     if (!this.formingMatch) return;
+    this.formingMatch.timer = null;
+    this.formingMatch.fillDeadlineMs = null;
+    if (!this._anyFormingHumanWantsStartNow()) {
+      this._broadcastQueueState();
+      return;
+    }
     this._startFormingMatch();
   }
 
   _startFormingMatch(): void {
     if (!this.formingMatch) return;
-    if (this.formingMatch.timer) {
-      clearTimeout(this.formingMatch.timer);
-      this.formingMatch.timer = null;
-    }
+    this._clearFormingMatchFillTimer();
 
     const players = this.formingMatch.players;
 

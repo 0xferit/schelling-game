@@ -1307,6 +1307,69 @@ describe('GameRoom async task tracking', () => {
     await must(waitUntil.mock.calls[0], 'Expected waitUntil call')[0];
   });
 
+  it('does not arm the fill timer until a player votes ready', () => {
+    vi.useFakeTimers();
+    try {
+      const { room } = createRoom();
+      const startFormingMatch = vi
+        .spyOn(room, '_startFormingMatch')
+        .mockImplementation(() => {});
+
+      room.connections.set('acct-1', createConnectionState('Alice'));
+      room.connections.set('acct-2', createConnectionState('Bob'));
+      room.connections.set('acct-3', createConnectionState('Carol'));
+      room.waitingQueue = ['acct-1', 'acct-2', 'acct-3'];
+
+      room._tryFormMatch();
+
+      expect(room.formingMatch?.players).toEqual([
+        'acct-1',
+        'acct-2',
+        'acct-3',
+      ]);
+      expect(room.formingMatch?.timer).toBeNull();
+      expect(room.formingMatch?.fillDeadlineMs).toBeNull();
+
+      vi.advanceTimersByTime(30_000);
+      expect(startFormingMatch).not.toHaveBeenCalled();
+
+      room._handleSetStartNow('acct-1', { value: true });
+
+      expect(room.formingMatch?.timer).not.toBeNull();
+      expect(room.formingMatch?.fillDeadlineMs).not.toBeNull();
+
+      vi.advanceTimersByTime(29_999);
+      expect(startFormingMatch).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      expect(startFormingMatch).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('disarms the fill timer when the last ready vote is cleared', () => {
+    const { room } = createRoom();
+
+    room.connections.set('acct-1', createConnectionState('Alice'));
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+    room.formingMatch = {
+      players: ['acct-1', 'acct-2', 'acct-3'],
+      timer: null,
+      fillDeadlineMs: null,
+    };
+
+    room._handleSetStartNow('acct-1', { value: true });
+    expect(room.formingMatch?.timer).not.toBeNull();
+    expect(room.formingMatch?.fillDeadlineMs).not.toBeNull();
+
+    room._handleSetStartNow('acct-1', { value: false });
+    expect(room.formingMatch?.timer).toBeNull();
+    expect(room.formingMatch?.fillDeadlineMs).toBeNull();
+  });
+
   it('starts immediately when all humans in a forming match vote start now', () => {
     const { room } = createRoom();
     const startFormingMatch = vi
@@ -1460,10 +1523,11 @@ describe('GameRoom async task tracking', () => {
     room.waitingQueue = Array.from({ length: 24 }, (_, i) => `acct-${i + 1}`);
     room._tryFormMatch();
 
-    // The final broadcast must see the leftover formingMatch so clients
-    // receive the fill timer countdown.
+    // The final broadcast must see the leftover formingMatch so clients can
+    // render the held lobby and wait for a ready vote.
     expect(capturedFormingMatch).not.toBeNull();
     expect(capturedFormingMatch?.players).toHaveLength(3);
+    expect(capturedFormingMatch?.fillDeadlineMs).toBeNull();
 
     if (room.formingMatch?.timer) clearTimeout(room.formingMatch.timer);
   });
