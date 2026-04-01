@@ -736,6 +736,11 @@ describe('GameRoom async task tracking', () => {
     });
   });
 
+  it('uses a longer default timeout budget for open-text normalization', () => {
+    const { room } = createRoom();
+    expect(room._getOpenTextNormalizerTimeoutMs()).toBe(10000);
+  });
+
   it('skips Workers AI normalization when only one candidate remains', async () => {
     const aiRun = vi.fn();
     const { room } = createRoom({

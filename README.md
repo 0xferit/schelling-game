@@ -107,6 +107,8 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `AI_BOT_MODELS` | Optional | `wrangler.toml` var | Comma-separated Workers AI model list for backfill bot selection. Models are deduplicated, each AI-assisted match may use each model at most once, and backfill is skipped if there are not enough distinct models to reach the current target size. These models must support Workers AI structured JSON output because bot commits use a schema-constrained response. |
 | `AI_BOT_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for Workers AI bot decisions. |
 | `OPEN_TEXT_PROMPTS_ENABLED` | Required for public play | `wrangler.toml` var | Enables the canonical mixed prompt catalog. If disabled, public matches will not start. |
+| `OPEN_TEXT_NORMALIZER_MODEL` | Optional | `wrangler.toml` var | Workers AI model used for authoritative open-text answer normalization. It must support structured JSON output. |
+| `OPEN_TEXT_NORMALIZER_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for each open-text normalization attempt before the retry/backoff loop advances. |
 | `TURNSTILE_SITE_KEY` | Required for interactive landing-page demo voting | Worker var / local `.dev.vars` | Public site key exposed through `/api/game-config` so the landing page can run Turnstile before posting demo votes. |
 | `TURNSTILE_SECRET_KEY` | Required for interactive landing-page demo voting | Worker secret / local `.dev.vars` | Secret used by the Worker to validate Turnstile tokens server-side before inserting demo votes. |
 | `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for staging and production operations. |
