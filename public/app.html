@@ -510,18 +510,18 @@ header .btn-ghost,header .button-link{padding:.48rem .78rem;font-size:.78rem;let
             <div class="forming-main">
               <div class="forming-label">Forming Match</div>
               <div class="forming-title"><strong id="forming-count">0</strong> players reserved</div>
-              <p class="forming-copy">When every human in this forming match votes yes, the match launches immediately.</p>
+              <p class="forming-copy">The queue countdown stays idle until someone presses ready. If every human gets ready, the match launches immediately.</p>
             </div>
             <div class="forming-side">
-              <span class="forming-side-label">Fill closes in</span>
-              <span class="forming-side-value"><strong id="forming-timer">--</strong>s</span>
+              <span class="forming-side-label">Queue countdown</span>
+              <span class="forming-side-value"><strong id="forming-timer">Not started</strong></span>
             </div>
             <div class="forming-banner-foot">
               <div class="forming-readiness">
                 <span id="start-now-meta">0 / 0 humans ready to start</span>
-                <span id="start-now-note">When every human in this forming match votes yes, the match launches immediately.</span>
+                <span id="start-now-note">Press ready to arm the 30s queue countdown. If every human gets ready, the match launches immediately.</span>
               </div>
-              <button class="btn-ghost hidden" id="start-now-btn" type="button" aria-pressed="false">Vote Start Now</button>
+              <button class="btn-ghost hidden" id="start-now-btn" type="button" aria-pressed="false">Press Ready</button>
             </div>
           </div>
           <div class="queue-action-row action-row">
@@ -2089,7 +2089,7 @@ $('#start-now-btn').addEventListener('click', () => {
 function syncStartNowUI() {
   const btn = $('#start-now-btn');
   btn.setAttribute('aria-pressed', S.startNow ? 'true' : 'false');
-  btn.textContent = S.startNow ? 'Ready to Start' : 'Vote Start Now';
+  btn.textContent = S.startNow ? 'Ready' : 'Press Ready';
 }
 
 function onQueueState(msg) {
@@ -2155,9 +2155,11 @@ function renderQueue() {
     const readyCount = S.formingMatch.readyHumanCount || 0;
     const humanCount = S.formingMatch.humanPlayerCount || 0;
     $('#start-now-meta').textContent = readyCount + ' / ' + humanCount + ' humans ready to start';
-    let note = 'When every human in this forming match votes yes, the match launches immediately.';
+    let note = 'Press ready to arm the 30s queue countdown. If every human gets ready, the match launches immediately.';
     if (S.startNow) {
-      note = 'Your vote is in. The match starts as soon as every other human votes yes.';
+      note = 'You are marked ready. The 30s queue countdown is running, and full readiness still launches immediately.';
+    } else if (readyCount > 0) {
+      note = 'At least one player is ready, so the 30s queue countdown is running. Press ready too if you want an immediate launch.';
     }
     $('#start-now-note').textContent = note;
     $('#forming-banner').classList.toggle('is-armed', readyCount > 0);
@@ -2169,6 +2171,7 @@ function renderQueue() {
     $('#forming-banner').classList.remove('is-armed');
     S.startNow = false;
     syncStartNowUI();
+    $('#forming-timer').textContent = 'Not started';
   }
 
   // buttons
@@ -2213,11 +2216,11 @@ function renderQueuePlayersList(list) {
 
 function updateFormingTimer() {
   if (!S.formingMatch || !S.formingMatch.fillDeadlineMs) {
-    $('#forming-timer').textContent = '--';
+    $('#forming-timer').textContent = 'Not started';
     return;
   }
   const remaining = Math.max(0, Math.ceil((S.formingMatch.fillDeadlineMs - Date.now()) / 1000));
-  $('#forming-timer').textContent = remaining;
+  $('#forming-timer').textContent = remaining + 's';
 }
 
 // Update forming timer every second
