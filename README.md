@@ -115,7 +115,7 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `OPEN_TEXT_PROMPTS_ENABLED` | Required for public play | `wrangler.toml` var | Enables the canonical mixed prompt catalog. If disabled, public matches will not start. |
 | `OPEN_TEXT_NORMALIZER_MODEL` | Optional | `wrangler.toml` var | Workers AI model used for authoritative open-text answer normalization. It must support structured JSON output. |
 | `OPEN_TEXT_NORMALIZER_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for each open-text normalization attempt before the retry/backoff loop advances. |
-| `TURNSTILE_SITE_KEY` | Required for interactive landing-page demo voting | Worker var / local `.dev.vars` | Public site key exposed through `/api/game-config` so the landing page can run Turnstile before posting demo votes. |
+| `TURNSTILE_SITE_KEY` | Required for interactive landing-page demo voting | `wrangler.toml` var / local `.dev.vars` | Public site key exposed through `/api/game-config` so the landing page can run Turnstile before posting demo votes. |
 | `TURNSTILE_SECRET_KEY` | Required for interactive landing-page demo voting | Worker secret / local `.dev.vars` | Secret used by the Worker to validate Turnstile tokens server-side before inserting demo votes. |
 | `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for staging and production operations. |
 | `STAGING_BASE_URL` | Required only for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed staging Worker that the smoke script targets. |
@@ -127,7 +127,7 @@ TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
 
-For staging/production/next, set `TURNSTILE_SITE_KEY` as an environment variable and provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
+For staging/production/next, `TURNSTILE_SITE_KEY` is committed in `wrangler.toml`. Provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
 
 ```sh
 npx wrangler secret put TURNSTILE_SECRET_KEY
