@@ -7,6 +7,7 @@ const restoreTargets = new Map([
   ['index.html', path.join(rootDir, 'public', 'index.html')],
   ['app.html', path.join(rootDir, 'public', 'app.html')],
 ]);
+const requiredBackupFiles = [...restoreTargets.keys()];
 
 let backupFiles;
 try {
@@ -16,6 +17,15 @@ try {
     process.exit(0);
   }
   throw error;
+}
+
+const missingBackupFiles = requiredBackupFiles.filter(
+  (fileName) => !backupFiles.includes(fileName),
+);
+if (missingBackupFiles.length > 0) {
+  throw new Error(
+    `Cannot restore stamped build: missing backup file(s) ${missingBackupFiles.join(', ')} in .stamp-build.`,
+  );
 }
 
 for (const fileName of backupFiles) {

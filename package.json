@@ -18,8 +18,8 @@
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "stamp-build": "node scripts/stamp-build.mjs",
     "unstamp-build": "node scripts/unstamp-build.mjs",
-    "deploy": "sh -c 'set -e; cleanup(){ npm run unstamp-build >/dev/null 2>&1 || true; }; trap cleanup EXIT; npm run stamp-build; npx wrangler deploy; trap - EXIT; cleanup'",
-    "deploy:next": "sh -c 'set -e; cleanup(){ npm run unstamp-build >/dev/null 2>&1 || true; }; trap cleanup EXIT; npm run stamp-build; npx wrangler deploy --env next; trap - EXIT; cleanup'"
+    "deploy": "sh -c 'set -e; cleanup(){ npm run unstamp-build; }; trap cleanup EXIT; npm run stamp-build; npx wrangler deploy; trap - EXIT; cleanup'",
+    "deploy:next": "sh -c 'set -e; cleanup(){ npm run unstamp-build; }; trap cleanup EXIT; npm run stamp-build; npx wrangler deploy --env next; trap - EXIT; cleanup'"
   },
   "repository": {
     "type": "git",
