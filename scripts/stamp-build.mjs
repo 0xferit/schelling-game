@@ -39,15 +39,31 @@ const replacements = {
   __BUILD_DATE__: getBuildDate(),
 };
 
+const stampedTargets = [];
+
 for (const relativePath of targets) {
   const absolutePath = path.join(rootDir, relativePath);
   const original = await readFile(absolutePath, 'utf8');
   const backupPath = path.join(backupDir, path.basename(relativePath));
-  await writeFile(backupPath, original, 'utf8');
 
   let stamped = original;
   for (const [placeholder, replacement] of Object.entries(replacements)) {
+    if (!original.includes(placeholder)) {
+      throw new Error(
+        `Cannot stamp ${relativePath}: missing required placeholder ${placeholder}.`,
+      );
+    }
     stamped = stamped.replaceAll(placeholder, replacement);
   }
+
+  if (stamped === original) {
+    throw new Error(`Cannot stamp ${relativePath}: stamping produced no changes.`);
+  }
+
+  stampedTargets.push({ absolutePath, backupPath, original, stamped });
+}
+
+for (const { absolutePath, backupPath, original, stamped } of stampedTargets) {
+  await writeFile(backupPath, original, 'utf8');
   await writeFile(absolutePath, stamped, 'utf8');
 }

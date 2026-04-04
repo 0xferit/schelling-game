@@ -12,7 +12,7 @@
     "test:worker": "vitest run --config vitest.config.worker.ts",
     "test:worker:extended": "RUN_EXTENDED_WORKER_TESTS=1 vitest run --config vitest.config.worker.ts test/worker/game-room.test.ts -t \"runs a full 10-game lifecycle and emits match_over\"",
     "smoke:staging": "node scripts/smoke-deploy.mjs",
-    "smoke:next": "DEPLOY_BASE_URL=https://next.schelling.games node scripts/smoke-deploy.mjs",
+    "smoke:next": "node scripts/smoke-deploy.mjs",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",

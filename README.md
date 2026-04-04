@@ -119,7 +119,7 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `TURNSTILE_SECRET_KEY` | Required for interactive landing-page demo voting | Worker secret / local `.dev.vars` | Secret used by the Worker to validate Turnstile tokens server-side before inserting demo votes. |
 | `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for staging and production operations. |
 | `STAGING_BASE_URL` | Optional for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed staging Worker when you want the staging smoke alias to target a specific URL. |
-| `DEPLOY_BASE_URL` | Optional for `npm run smoke:staging` and used by `npm run smoke:next` | Shell environment / CI | Generic base URL consumed by the shared deployment smoke script. |
+| `DEPLOY_BASE_URL` | Optional for `npm run smoke:staging` and as an override for `npm run smoke:next` | Shell environment / CI | Generic base URL consumed by the shared deployment smoke script. |
 
 For local manual testing of the landing-page demo vote flow, Cloudflare provides dummy Turnstile keys that work on `localhost`. Put them in `.dev.vars` instead of source control:
 

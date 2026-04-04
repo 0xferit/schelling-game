@@ -3,6 +3,10 @@ import path from 'node:path';
 
 const rootDir = process.cwd();
 const backupDir = path.join(rootDir, '.stamp-build');
+const restoreTargets = new Map([
+  ['index.html', path.join(rootDir, 'public', 'index.html')],
+  ['app.html', path.join(rootDir, 'public', 'app.html')],
+]);
 
 let backupFiles;
 try {
@@ -15,8 +19,16 @@ try {
 }
 
 for (const fileName of backupFiles) {
+  if (fileName.startsWith('.')) {
+    continue;
+  }
+
+  const targetPath = restoreTargets.get(fileName);
+  if (!targetPath) {
+    continue;
+  }
+
   const backupPath = path.join(backupDir, fileName);
-  const targetPath = path.join(rootDir, 'public', fileName);
   const original = await readFile(backupPath, 'utf8');
   await writeFile(targetPath, original, 'utf8');
 }

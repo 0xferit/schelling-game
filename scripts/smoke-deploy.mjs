@@ -1,6 +1,11 @@
 import { Wallet } from 'ethers';
 
-const baseUrl = process.env.DEPLOY_BASE_URL ?? process.env.STAGING_BASE_URL;
+const baseUrl =
+  process.env.DEPLOY_BASE_URL ??
+  process.env.STAGING_BASE_URL ??
+  (process.env.npm_lifecycle_event === 'smoke:next'
+    ? 'https://next.schelling.games'
+    : undefined);
 
 if (!baseUrl) {
   throw new Error('DEPLOY_BASE_URL or STAGING_BASE_URL is required');
