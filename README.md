@@ -84,7 +84,7 @@ If you change D1 schema, re-apply the local migrations before restarting or re-t
 | `npm run typecheck:worker` | Type-check Worker code with `tsconfig.worker.json`. |
 | `npm run lint` | Run Biome checks across the repo. |
 | `npm run db:migrate:next` | Apply remote D1 migrations to the long-lived next environment. |
-| `npm run smoke:staging` | Run the deployed staging smoke test. Requires `STAGING_BASE_URL`. |
+| `npm run smoke:staging` | Run the deployed staging smoke test. Accepts `STAGING_BASE_URL` or `DEPLOY_BASE_URL`. |
 | `npm run smoke:next` | Run the next smoke test against `https://next.schelling.games`. |
 | `npm run deploy` | Stamp build metadata, deploy the Worker, and restore checked-in HTML files. |
 | `npm run deploy:next` | Stamp build metadata, deploy the next Worker, and restore checked-in HTML files. |
@@ -118,7 +118,8 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `TURNSTILE_SITE_KEY` | Required for interactive landing-page demo voting | `wrangler.toml` var / local `.dev.vars` | Public site key exposed through `/api/game-config` so the landing page can run Turnstile before posting demo votes. |
 | `TURNSTILE_SECRET_KEY` | Required for interactive landing-page demo voting | Worker secret / local `.dev.vars` | Secret used by the Worker to validate Turnstile tokens server-side before inserting demo votes. |
 | `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for staging and production operations. |
-| `STAGING_BASE_URL` | Required only for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed staging Worker that the smoke script targets. |
+| `STAGING_BASE_URL` | Optional for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed staging Worker when you want the staging smoke alias to target a specific URL. |
+| `DEPLOY_BASE_URL` | Optional for `npm run smoke:staging` and used by `npm run smoke:next` | Shell environment / CI | Generic base URL consumed by the shared deployment smoke script. |
 
 For local manual testing of the landing-page demo vote flow, Cloudflare provides dummy Turnstile keys that work on `localhost`. Put them in `.dev.vars` instead of source control:
 
