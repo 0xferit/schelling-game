@@ -461,6 +461,7 @@ $('#claim-name-btn').addEventListener('click', async () => {
     $('#name-section').classList.add('hidden');
     showView(S.nameEditorReturnView || 'queue');
     updateHeaderProfile();
+    refreshLiveWebSocketIdentity();
     notify('Display name saved.', 'success');
   } catch (err) {
     setAuthStatus(describeAuthError(err, 'save that display name'), 'error');
@@ -890,6 +891,24 @@ function ensureWebSocketConnection() {
   return true;
 }
 
+function refreshLiveWebSocketIdentity() {
+  if (!S.accountId) return;
+  clearWebSocketRetryTimer();
+  wsReconnectPaused = false;
+  intentionalClose = false;
+  const previousWs = S.ws;
+  if (
+    previousWs &&
+    (previousWs.readyState === WebSocket.OPEN ||
+      previousWs.readyState === WebSocket.CONNECTING)
+  ) {
+    connectWebSocket();
+    try { previousWs.close(1000, 'Identity refresh'); } catch (_) {}
+    return;
+  }
+  connectWebSocket();
+}
+
 function queueQueueAction(action) {
   const isNewAction = S.pendingQueueAction !== action;
   S.pendingQueueAction = action;
@@ -929,6 +948,7 @@ function connectWebSocket() {
   const thisWs = S.ws;
   renderQueue();
   S.ws.onopen = () => {
+    if (thisWs !== S.ws) return;
     wsRetryCount = 0;
     wsRetryTimer = null;
     S.wsConnected = true;
@@ -963,6 +983,7 @@ function connectWebSocket() {
     scheduleWebSocketReconnect();
   };
   S.ws.onmessage = (evt) => {
+    if (thisWs !== S.ws) return;
     let msg;
     try {
       msg = JSON.parse(evt.data);
