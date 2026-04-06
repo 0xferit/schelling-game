@@ -23,6 +23,27 @@ describe('feedback entry points', () => {
     expect(appHtml).toContain('issues/new?template=feedback.md');
   });
 
+  it('app shell keeps build stamp placeholders for deploy stamping', () => {
+    expect(appHtml).toContain('__BUILD_HASH__');
+    expect(appHtml).toContain('__BUILD_DATE__');
+  });
+
+  it('app shell references extracted stylesheets and runtime script', () => {
+    expect(appHtml).toContain('/styles/tokens.css');
+    expect(appHtml).toContain('/styles/base.css');
+    expect(appHtml).toContain('/styles/layout.css');
+    expect(appHtml).toContain('/styles/components.css');
+    expect(appHtml).toContain(
+      '<script type="module" src="/scripts/app.js"></script>',
+    );
+  });
+
+  it('app shell no longer embeds the application style block or runtime script', () => {
+    expect(appHtml).not.toContain('<style>');
+    expect(appHtml).not.toContain('The Schelling Game client');
+    expect(appHtml).not.toContain("window.addEventListener('error'");
+  });
+
   it('feedback issue template is present', () => {
     expect(feedbackTemplate).toContain('name: Feedback');
   });

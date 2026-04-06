@@ -55,6 +55,29 @@ export interface OpenTextPrompt extends BasePrompt {
 
 export type SchellingPrompt = SelectPrompt | OpenTextPrompt;
 
+export type PromptRoot =
+  | 'coin_side'
+  | 'number_1_to_10'
+  | 'fruit'
+  | 'colour'
+  | 'day_of_week'
+  | 'playing_card'
+  | 'fair_split_keep_amount'
+  | 'planet'
+  | 'city'
+  | 'word';
+
+export interface PromptAiBackfillProfile {
+  promptHints: string[];
+}
+
+export interface PromptCatalogRecord {
+  prompt: SchellingPrompt;
+  root: PromptRoot;
+  calibration: boolean;
+  aiBackfill: PromptAiBackfillProfile;
+}
+
 export type GamePhase = 'commit' | 'reveal' | 'normalizing' | 'results';
 export type NormalizationMode = 'llm' | null;
 
