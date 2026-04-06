@@ -91,7 +91,7 @@ CI runs:
 - both TypeScript configs
 - domain tests with coverage
 - Worker tests
-- a staging deploy plus smoke validation for same-repo pull requests
+- a PR-scoped preview deploy plus smoke validation for same-repo pull requests
 - a `next.schelling.games` deploy plus smoke validation on pushes to `main`
 
 ## Configuration And Secrets
@@ -112,8 +112,8 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `OPEN_TEXT_NORMALIZER_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for each open-text normalization attempt before the retry/backoff loop advances. |
 | `TURNSTILE_SITE_KEY` | Required for interactive landing-page demo voting | Worker var / local `.dev.vars` | Public site key exposed through `/api/game-config` so the landing page can run Turnstile before posting demo votes. |
 | `TURNSTILE_SECRET_KEY` | Required for interactive landing-page demo voting | Worker secret / local `.dev.vars` | Secret used by the Worker to validate Turnstile tokens server-side before inserting demo votes. |
-| `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for staging and production operations. |
-| `STAGING_BASE_URL` | Required only for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed staging Worker that the smoke script targets. |
+| `CLOUDFLARE_API_TOKEN` | Required for remote migrations and deploys | Shell environment / CI secret | Authenticates Wrangler for PR preview, next, and production operations. |
+| `STAGING_BASE_URL` | Required only for `npm run smoke:staging` | Shell environment / CI | Base URL of the deployed Worker that the smoke script targets. |
 
 For local manual testing of the landing-page demo vote flow, Cloudflare provides dummy Turnstile keys that work on `localhost`. Put them in `.dev.vars` instead of source control:
 
@@ -154,9 +154,16 @@ CLOUDFLARE_API_TOKEN=... npm run deploy
 GitHub Actions workflows currently do the following:
 
 - pull requests to `main`: run lint, both typechecks, domain tests, and Worker tests
-- eligible pull requests from the same repository: deploy to staging and run the smoke script
+- eligible pull requests from the same repository: deploy a PR-scoped preview Worker plus D1 database, then run the smoke script against that preview URL
 - pushes to `main`: apply next D1 migrations, deploy `schelling-games-next`, and smoke-test `https://next.schelling.games`
 - manual `Deploy production to Cloudflare Workers` runs: apply production D1 migrations and deploy `schelling.games`
+
+PR previews use the GitHub pull request merge ref, so they show the merged result rather than only the branch head. Each same-repo PR gets a stable `workers.dev` preview URL backed by a dedicated Worker service and D1 database, and both are deleted automatically when the PR closes.
+
+To support PR previews in GitHub Actions, add these repository secrets alongside `CLOUDFLARE_API_TOKEN`:
+
+- `SCHELLING_GAMES_ADMIN_KEY`
+- `SCHELLING_GAMES_TURNSTILE_SECRET_KEY`
 
 ## Background
 

@@ -89,8 +89,8 @@ jobs:
       - name: Worker tests
         run: npm run test:worker
 
-  staging-smoke:
-    name: Staging deploy + smoke
+  pr-preview:
+    name: PR preview deploy + smoke
     if: github.event.pull_request.head.repo.full_name == github.repository
     outputs:
       url: ${{ steps.deploy.outputs.url }}
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
-      group: cloudflare-staging
+      group: cloudflare-pr-preview-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
@@ -123,33 +123,123 @@ jobs:
             -e "s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/" \
             public/index.html public/app.html
 
-      - name: Apply staging D1 migrations
+      - name: Preview metadata
+        id: preview
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler d1 migrations apply DB --env staging --remote
-
-      - name: Deploy staging worker
-        id: deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          deploy_output="$(npx wrangler deploy --env staging 2>&1 | tee /dev/stderr)"
-          staging_url="$(printf '%s\n' "$deploy_output" | grep -Eo 'https://[^[:space:]]+' | grep 'workers.dev' | tail -n 1 || true)"
+          preview_name="schelling-games-pr-${PR_NUMBER}"
+          echo "worker_name=$preview_name" >> "$GITHUB_OUTPUT"
+          echo "db_name=$preview_name" >> "$GITHUB_OUTPUT"
 
-          if [ -z "$staging_url" ]; then
-            staging_url="$(printf '%s\n' "$deploy_output" | grep -Eo 'https://[^[:space:]]+' | tail -n 1 || true)"
+      - name: Ensure preview D1 database
+        id: db
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PREVIEW_DB_NAME: ${{ steps.preview.outputs.db_name }}
+        run: |
+          set -euo pipefail
+
+          lookup_db_id() {
+            npx wrangler d1 list --json | node -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const match = data.find((db) => db.name === process.env.PREVIEW_DB_NAME); if (match) process.stdout.write(match.uuid);"
+          }
+
+          db_id="$(lookup_db_id)"
+          if [ -z "$db_id" ]; then
+            npx wrangler d1 create "$PREVIEW_DB_NAME"
+            db_id="$(lookup_db_id)"
           fi
 
-          if [ -z "$staging_url" ]; then
-            echo "Failed to determine staging URL from wrangler deploy output" >&2
+          if [ -z "$db_id" ]; then
+            echo "Failed to resolve preview D1 database ID for $PREVIEW_DB_NAME" >&2
             exit 1
           fi
 
-          echo "url=$staging_url" >> "$GITHUB_OUTPUT"
-          echo "Staging URL: $staging_url" >> "$GITHUB_STEP_SUMMARY"
+          echo "id=$db_id" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke test staging
+      - name: Write preview Wrangler config
+        env:
+          PREVIEW_WORKER_NAME: ${{ steps.preview.outputs.worker_name }}
+          PREVIEW_DB_NAME: ${{ steps.preview.outputs.db_name }}
+          PREVIEW_DB_ID: ${{ steps.db.outputs.id }}
+        run: |
+          cat > wrangler.preview.toml <<EOF
+          name = "${PREVIEW_WORKER_NAME}"
+          account_id = "abfb18f38d5263b5da582e40ba6ae552"
+          main = "src/worker.ts"
+          compatibility_date = "2026-03-29"
+          compatibility_flags = ["nodejs_compat"]
+
+          [[durable_objects.bindings]]
+          name = "GAME_ROOM"
+          class_name = "GameRoom"
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "${PREVIEW_DB_NAME}"
+          database_id = "${PREVIEW_DB_ID}"
+          migrations_dir = "d1-migrations"
+
+          [ai]
+          binding = "AI"
+          remote = true
+
+          [vars]
+          AI_BOT_ENABLED = "true"
+          AI_BOT_MODELS = "@cf/zai-org/glm-4.7-flash,@cf/moonshotai/kimi-k2.5,@cf/qwen/qwen3-30b-a3b-fp8,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+          AI_BOT_TIMEOUT_MS = "5000"
+          OPEN_TEXT_PROMPTS_ENABLED = "true"
+          OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
+          TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
+
+          [assets]
+          directory = "./public"
+          run_worker_first = ["/ws*", "/api/*"]
+
+          [[migrations]]
+          tag = "v1"
+          new_sqlite_classes = ["GameRoom"]
+          EOF
+
+      - name: Write preview secrets file
+        env:
+          SCHELLING_GAMES_ADMIN_KEY: ${{ secrets.SCHELLING_GAMES_ADMIN_KEY }}
+          SCHELLING_GAMES_TURNSTILE_SECRET_KEY: ${{ secrets.SCHELLING_GAMES_TURNSTILE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          cat > preview.secrets.env <<EOF
+          ADMIN_KEY=${SCHELLING_GAMES_ADMIN_KEY}
+          TURNSTILE_SECRET_KEY=${SCHELLING_GAMES_TURNSTILE_SECRET_KEY}
+          EOF
+
+      - name: Apply preview D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler d1 migrations apply DB --config wrangler.preview.toml --remote
+
+      - name: Deploy preview worker
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PREVIEW_WORKER_NAME: ${{ steps.preview.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          deploy_output="$(npx wrangler deploy --config wrangler.preview.toml --secrets-file preview.secrets.env 2>&1 | tee /dev/stderr)"
+          preview_url="$(printf '%s\n' "$deploy_output" | grep -Eo 'https://[^[:space:]]+' | grep 'workers.dev' | tail -n 1 || true)"
+
+          if [ -z "$preview_url" ]; then
+            preview_url="$(printf '%s\n' "$deploy_output" | grep -Eo 'https://[^[:space:]]+' | tail -n 1 || true)"
+          fi
+
+          if [ -z "$preview_url" ]; then
+            preview_url="https://${PREVIEW_WORKER_NAME}.0xferit.workers.dev"
+          fi
+
+          echo "url=$preview_url" >> "$GITHUB_OUTPUT"
+          echo "Preview URL: $preview_url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test preview
         env:
           STAGING_BASE_URL: ${{ steps.deploy.outputs.url }}
         run: npm run smoke:staging
@@ -163,56 +253,107 @@ jobs:
       - typecheck-worker
       - domain-tests
       - worker-tests
-      - staging-smoke
+      - pr-preview
     runs-on: ubuntu-latest
     steps:
       - name: Update preview guide comment
         uses: actions/github-script@v8
         env:
           SAME_REPO_PR: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-          STAGING_RESULT: ${{ needs.staging-smoke.result }}
-          STAGING_URL: ${{ needs.staging-smoke.outputs.url }}
+          PREVIEW_RESULT: ${{ needs.pr-preview.result }}
+          PREVIEW_URL: ${{ needs.pr-preview.outputs.url }}
         with:
           script: |
             const marker = '<!-- preview-guide -->';
             const sameRepo = process.env.SAME_REPO_PR === 'true';
-            const stagingResult = process.env.STAGING_RESULT || 'skipped';
-            const stagingUrl = process.env.STAGING_URL || '';
+            const previewResult = process.env.PREVIEW_RESULT || 'skipped';
+            const previewUrl = process.env.PREVIEW_URL || '';
 
             if (!sameRepo) {
-              core.info('Fork PR detected; relying on PR template for preview instructions.');
+              const body = [
+                marker,
+                '## Preview Guide',
+                '',
+                'Preview deployments are only created for same-repository pull requests because the preview workflow needs deploy secrets.',
+                '',
+                '- PR preview: unavailable for fork PRs',
+                '- Local preview:',
+                '  ```sh',
+                '  npm ci',
+                '  npx wrangler d1 migrations apply DB --local',
+                '  npm run dev',
+                '  ```',
+              ].join('\n');
+
+              const { owner, repo } = context.repo;
+              const issue_number = context.issue.number;
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                {
+                  owner,
+                  repo,
+                  issue_number,
+                  per_page: 100,
+                },
+              );
+
+              const existing = comments.find(
+                (comment) =>
+                  comment.user?.type === 'Bot' &&
+                  typeof comment.body === 'string' &&
+                  comment.body.includes(marker),
+              );
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existing.id,
+                  body,
+                });
+                return;
+              }
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
               return;
             }
 
-            let statusLine = '- Staging preview: pending';
+            let statusLine = '- PR preview: pending';
             let nextStepLine =
-              '- Next step: wait for lint, typechecks, and tests to pass so the `Staging deploy + smoke` job can run.';
+              '- Next step: wait for lint, typechecks, tests, deployment, and smoke validation to finish.';
 
-            if (stagingResult === 'success' && stagingUrl) {
-              statusLine = `- Staging preview: [${stagingUrl}](${stagingUrl})`;
+            if (previewResult === 'success' && previewUrl) {
+              statusLine = `- PR preview: [${previewUrl}](${previewUrl})`;
               nextStepLine =
-                '- Next step: open the staging URL above. It is a shared preview environment, so later PR runs can replace it.';
-            } else if (stagingResult === 'failure' || stagingResult === 'cancelled') {
-              statusLine = '- Staging preview: unavailable';
+                '- Next step: open the preview URL above. This preview is dedicated to this PR and updates in place on new pushes.';
+            } else if (previewResult === 'failure' || previewResult === 'cancelled') {
+              statusLine = '- PR preview: unavailable';
               nextStepLine =
-                '- Next step: inspect the `Staging deploy + smoke` job in Actions, or run the local preview flow below.';
+                '- Next step: inspect the `PR preview deploy + smoke` job in Actions, or run the local preview flow below.';
             }
 
             const body = [
               marker,
               '## Preview Guide',
               '',
-              'This repo uses a shared Cloudflare staging deployment instead of isolated per-PR preview environments.',
+              'This repo deploys a PR-scoped Cloudflare preview for same-repository pull requests.',
               '',
               statusLine,
               nextStepLine,
+              '- Build source: the GitHub pull request merge ref, so the preview reflects the merged result rather than just the branch head.',
+              '- Isolation: each PR gets its own Worker and D1 database, and the preview is deleted automatically when the PR closes.',
               '- Local preview:',
               '  ```sh',
               '  npm ci',
               '  npx wrangler d1 migrations apply DB --local',
               '  npm run dev',
               '  ```',
-              '- Smoke validation: if staging deploys successfully, the same CI run also executes `npm run smoke:staging`.',
+              '- Smoke validation: if preview deployment succeeds, the same CI run also executes `npm run smoke:staging` against the PR URL.',
             ].join('\n');
 
             const { owner, repo } = context.repo;

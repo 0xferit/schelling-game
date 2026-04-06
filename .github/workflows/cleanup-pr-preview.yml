@@ -1,0 +1,120 @@
+name: Cleanup PR preview
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  cleanup-preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cloudflare-pr-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Preview metadata
+        id: preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          preview_name="schelling-games-pr-${PR_NUMBER}"
+          echo "worker_name=$preview_name" >> "$GITHUB_OUTPUT"
+          echo "db_name=$preview_name" >> "$GITHUB_OUTPUT"
+
+      - name: Delete preview worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PREVIEW_WORKER_NAME: ${{ steps.preview.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          worker_url="https://api.cloudflare.com/client/v4/accounts/abfb18f38d5263b5da582e40ba6ae552/workers/scripts/${PREVIEW_WORKER_NAME}"
+          status_code="$(curl -sS -o /tmp/preview-worker.json -w '%{http_code}' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$worker_url")"
+
+          if [ "$status_code" = "200" ]; then
+            npx wrangler delete "$PREVIEW_WORKER_NAME" --force
+            exit 0
+          fi
+
+          if [ "$status_code" = "404" ]; then
+            echo "Preview worker ${PREVIEW_WORKER_NAME} is already absent."
+            exit 0
+          fi
+
+          cat /tmp/preview-worker.json >&2
+          exit 1
+
+      - name: Delete preview D1 database
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PREVIEW_DB_NAME: ${{ steps.preview.outputs.db_name }}
+        run: |
+          set -euo pipefail
+          db_id="$(npx wrangler d1 list --json | node -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const match = data.find((db) => db.name === process.env.PREVIEW_DB_NAME); if (match) process.stdout.write(match.uuid);")"
+
+          if [ -z "$db_id" ]; then
+            echo "Preview D1 database ${PREVIEW_DB_NAME} is already absent."
+            exit 0
+          fi
+
+          npx wrangler d1 delete "$PREVIEW_DB_NAME" -y
+
+      - name: Mark preview comment retired
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const marker = '<!-- preview-guide -->';
+            const body = [
+              marker,
+              '## Preview Guide',
+              '',
+              '- PR preview: retired after PR close',
+              '- Local preview:',
+              '  ```sh',
+              '  npm ci',
+              '  npx wrangler d1 migrations apply DB --local',
+              '  npm run dev',
+              '  ```',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner,
+                repo,
+                issue_number,
+                per_page: 100,
+              },
+            );
+
+            const existing = comments.find(
+              (comment) =>
+                comment.user?.type === 'Bot' &&
+                typeof comment.body === 'string' &&
+                comment.body.includes(marker),
+            );
+
+            if (!existing) return;
+
+            await github.rest.issues.updateComment({
+              owner,
+              repo,
+              comment_id: existing.id,
+              body,
+            });
