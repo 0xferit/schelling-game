@@ -93,14 +93,32 @@ async function expectHtml(path, marker) {
   assert(text.includes(marker), `${path} did not include marker ${marker}`);
 }
 
+async function expectHtmlEventually(path, marker) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    try {
+      await expectHtml(path, marker);
+      return;
+    } catch (error) {
+      lastError = error;
+      await sleep(2000);
+    }
+  }
+
+  throw new Error(
+    `${path} never became ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
+}
+
 function uniqueDisplayName() {
   return `smoke${Date.now().toString(36).slice(-8)}`;
 }
 
 await waitForReady();
 
-await expectHtml('/', 'The Schelling Game');
-await expectHtml('/app.html', 'The Schelling Game');
+await expectHtmlEventually('/', 'The Schelling Game');
+await expectHtmlEventually('/app', 'The Schelling Game');
 
 await expectJson('/api/game-config', undefined, (payload) => {
   assert(payload.commitDuration === 60, 'unexpected commitDuration');
