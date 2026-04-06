@@ -27,7 +27,7 @@
 /docs/game-design.md @0xferit
 
 # Designer-owned
-/public/app.html @0xferit
-/public/styles/ @0xferit
-/public/favicon.svg @0xferit
-/public/site.webmanifest @0xferit
+/public/app.html @0xferit @mnvvr
+/public/styles/ @0xferit @mnvvr
+/public/favicon.svg @0xferit @mnvvr
+/public/site.webmanifest @0xferit @mnvvr
