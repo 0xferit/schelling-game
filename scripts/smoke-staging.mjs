@@ -42,9 +42,10 @@ function isRetryablePreviewFailure(status, payload, text) {
 }
 
 async function fetchWithTransientPreviewRetry(path, init) {
+  const MAX_ATTEMPTS = 6;
   let lastError;
 
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetch(new URL(path, base), {
         headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
@@ -54,14 +55,14 @@ async function fetchWithTransientPreviewRetry(path, init) {
       const text = await response.text();
       const payload = parseJson(text);
       if (
-        attempt < 6 &&
+        attempt < MAX_ATTEMPTS &&
         isRetryablePreviewFailure(response.status, payload, text)
       ) {
         lastError = new Error(
           `${path} returned transient preview error ${response.status}: ${text.slice(0, 200)}`,
         );
         console.warn(
-          `${lastError.message}; retrying (${attempt}/6) after preview propagation delay`,
+          `${lastError.message}; retrying (${attempt}/${MAX_ATTEMPTS}) after preview propagation delay`,
         );
         await sleep(2000);
         continue;
@@ -70,9 +71,9 @@ async function fetchWithTransientPreviewRetry(path, init) {
       return { response, text, payload };
     } catch (error) {
       lastError = error;
-      if (attempt === 6) break;
+      if (attempt === MAX_ATTEMPTS) break;
       console.warn(
-        `${path} request failed (${error instanceof Error ? error.message : String(error)}); retrying (${attempt}/6)`,
+        `${path} request failed (${error instanceof Error ? error.message : String(error)}); retrying (${attempt}/${MAX_ATTEMPTS})`,
       );
       await sleep(2000);
     }
