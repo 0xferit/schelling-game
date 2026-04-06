@@ -426,6 +426,72 @@ describe('GameRoom async task tracking', () => {
     room._clearConnectionLivenessMonitor('acct-1');
   });
 
+  it('preserves start-now votes for forming-match socket replacement', () => {
+    const { room } = createRoom();
+    const broadcastQueueState = vi
+      .spyOn(room, '_broadcastQueueState')
+      .mockImplementation(() => {});
+    const sendQueueState = vi
+      .spyOn(room, '_sendQueueState')
+      .mockImplementation(() => {});
+    const removeFromQueue = vi
+      .spyOn(room, '_removeFromQueue')
+      .mockImplementation(() => {});
+    const handleDisconnect = vi
+      .spyOn(room, '_handleDisconnect')
+      .mockImplementation(() => {});
+    const { ws: oldWs, listeners: oldListeners } = createSocketWithListeners();
+
+    room.connections.set('acct-1', createConnectionState('Alice', oldWs));
+    must(room.connections.get('acct-1'), 'Expected Alice connection').startNow =
+      true;
+    room.connections.set('acct-2', createConnectionState('Bob'));
+    room.connections.set('acct-3', createConnectionState('Carol'));
+    room.formingMatch = {
+      players: ['acct-1', 'acct-2', 'acct-3'],
+      timer: null,
+      fillDeadlineMs: null,
+    };
+    room._setupWsListeners(oldWs, 'acct-1');
+
+    const { ws: newWs } = createSocketWithListeners();
+
+    room._handleWebSocket(newWs, 'acct-1', 'Alice Reloaded', 0);
+
+    expect(room.connections.get('acct-1')?.ws).toBe(newWs);
+    expect(room.connections.get('acct-1')?.displayName).toBe('Alice Reloaded');
+    expect(room.connections.get('acct-1')?.startNow).toBe(true);
+    expect(room.formingMatch?.players).toEqual(['acct-1', 'acct-2', 'acct-3']);
+    expect(room._buildQueueStateMsg('acct-1')).toMatchObject({
+      status: 'forming',
+      startNow: true,
+      formingMatch: {
+        readyHumanCount: 1,
+        youCanVoteStartNow: true,
+      },
+    });
+    expect(removeFromQueue).not.toHaveBeenCalled();
+    expect(sendQueueState).not.toHaveBeenCalled();
+    expect(broadcastQueueState).toHaveBeenCalledOnce();
+    expect(oldWs.close).toHaveBeenCalledWith(
+      1000,
+      'Replaced by new connection',
+    );
+
+    const onOldClose = must(
+      oldListeners.get('close'),
+      'Expected close listener on the old socket',
+    );
+    onOldClose();
+    expect(handleDisconnect).not.toHaveBeenCalled();
+
+    room._clearConnectionLivenessMonitor('acct-1');
+    if (room.formingMatch?.timer) {
+      clearTimeout(room.formingMatch.timer);
+      room.formingMatch.timer = null;
+    }
+  });
+
   it('responds to ping with pong metadata', async () => {
     const { room } = createRoom();
     const sendTo = vi.spyOn(room, '_sendTo').mockImplementation(() => {});

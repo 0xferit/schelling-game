@@ -375,18 +375,21 @@ export class GameRoom {
       }
     }
 
+    const inFormingMatch =
+      this.formingMatch?.players.includes(accountId) ?? false;
     const queuedConnection =
       existingConn &&
       !this.playerMatchIndex.has(accountId) &&
-      (this.waitingQueue.includes(accountId) ||
-        (this.formingMatch?.players.includes(accountId) ?? false));
+      (this.waitingQueue.includes(accountId) || inFormingMatch);
 
     if (queuedConnection) {
       const oldWs = existingConn.ws;
       this._clearConnectionLivenessMonitor(accountId);
       existingConn.ws = ws;
       existingConn.displayName = displayName;
-      existingConn.startNow = false;
+      if (!inFormingMatch) {
+        existingConn.startNow = false;
+      }
       existingConn.lastActivityAt = Date.now();
       this._setupWsListeners(ws, accountId);
       try {
