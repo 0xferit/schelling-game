@@ -466,6 +466,7 @@ $('#claim-name-btn').addEventListener('click', async () => {
     $('#name-section').classList.add('hidden');
     showView(S.nameEditorReturnView || 'queue');
     updateHeaderProfile();
+    refreshLiveWebSocketIdentity();
     notify('Display name saved.', 'success');
   } catch (err) {
     setAuthStatus(describeAuthError(err, 'save that display name'), 'error');
@@ -893,6 +894,22 @@ function ensureWebSocketConnection() {
   clearWebSocketRetryTimer();
   connectWebSocket();
   return true;
+}
+
+function refreshLiveWebSocketIdentity() {
+  if (!S.accountId) return;
+  clearWebSocketRetryTimer();
+  wsReconnectPaused = false;
+  intentionalClose = false;
+  if (
+    S.ws &&
+    (S.ws.readyState === WebSocket.OPEN ||
+      S.ws.readyState === WebSocket.CONNECTING)
+  ) {
+    connectWebSocket();
+    return;
+  }
+  ensureWebSocketConnection();
 }
 
 function queueQueueAction(action) {
@@ -2858,4 +2875,3 @@ formatBuildStamp();
 checkSession();
 
 })();
-

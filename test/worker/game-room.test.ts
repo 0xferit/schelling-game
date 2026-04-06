@@ -180,13 +180,7 @@ function waitForMessageWhere(
   });
 }
 
-/** Open a WebSocket for a wallet index, returning the client socket. */
-async function connectWs(
-  walletIndex: number,
-): Promise<{ ws: WebSocket; accountId: string }> {
-  const wallet = createTestWallet(walletIndex);
-  const { accountId, cookie } = await createTestSession(wallet);
-
+async function openWs(cookie: string): Promise<WebSocket> {
   const resp = await exports.default.fetch(
     new Request(`${BASE}/ws`, {
       headers: {
@@ -198,6 +192,24 @@ async function connectWs(
   expect(resp.status).toBe(101);
   const ws = must(resp.webSocket, 'Expected WebSocket upgrade response');
   ws.accept();
+  return ws;
+}
+
+/** Open a WebSocket for a wallet index, returning the client socket. */
+async function connectWsWithSession(
+  walletIndex: number,
+): Promise<{ ws: WebSocket; accountId: string; cookie: string }> {
+  const wallet = createTestWallet(walletIndex);
+  const { accountId, cookie } = await createTestSession(wallet);
+  const ws = await openWs(cookie);
+  return { ws, accountId, cookie };
+}
+
+/** Open a WebSocket for a wallet index, returning the client socket. */
+async function connectWs(
+  walletIndex: number,
+): Promise<{ ws: WebSocket; accountId: string }> {
+  const { ws, accountId } = await connectWsWithSession(walletIndex);
   return { ws, accountId };
 }
 
@@ -211,6 +223,18 @@ async function connectPlayer(
   const { accountId } = await createTestSession(wallet);
   await seedAccount(env.DB, accountId, displayName, balance);
   return connectWs(walletIndex);
+}
+
+async function connectPlayerWithSession(
+  walletIndex: number,
+  displayName: string,
+  balance = 0,
+): Promise<{ ws: WebSocket; accountId: string; cookie: string }> {
+  const wallet = createTestWallet(walletIndex);
+  const { accountId, cookie } = await createTestSession(wallet);
+  await seedAccount(env.DB, accountId, displayName, balance);
+  const ws = await openWs(cookie);
+  return { ws, accountId, cookie };
 }
 
 /**
@@ -397,6 +421,81 @@ describe('GameRoom Durable Object', () => {
     const leaveMsgs = await collectMessages(ws, 300);
     const leaveState = leaveMsgs.find((m) => m.type === 'queue_state');
     expect(leaveState).toBeDefined();
+
+    ws.close();
+  });
+
+  it('queue state reflects a renamed player after websocket refresh', async () => {
+    const { ws: initialWs, cookie } = await connectPlayerWithSession(
+      1,
+      'OldName',
+    );
+    await waitForMessageWhere(
+      initialWs,
+      (msg) => msg.type === 'queue_state' && msg.status === 'idle',
+    );
+
+    const resp = await exports.default.fetch(
+      new Request(`${BASE}/api/me/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: `session=${cookie}`,
+        },
+        body: JSON.stringify({ displayName: 'NewName' }),
+      }),
+    );
+    expect(resp.status).toBe(200);
+
+    const replacementWs = await openWs(cookie);
+    await waitForMessageWhere(
+      replacementWs,
+      (msg) => msg.type === 'queue_state' && msg.status === 'idle',
+    );
+
+    replacementWs.send(JSON.stringify({ type: 'join_queue' }));
+    const queuedState = must(
+      await waitForMessageWhere(
+        replacementWs,
+        (msg) => msg.type === 'queue_state' && msg.status === 'queued',
+      ),
+      'Expected queued queue_state after join',
+    );
+    expect(queuedState.queuedPlayers).toContain('NewName');
+    expect(queuedState.queuedPlayers).not.toContain('OldName');
+
+    initialWs.close();
+    replacementWs.close();
+  });
+
+  it('PATCH /api/me/profile rejects display name changes while queued', async () => {
+    const { ws, cookie } = await connectPlayerWithSession(2, 'QueuedName');
+    await waitForMessageWhere(
+      ws,
+      (msg) => msg.type === 'queue_state' && msg.status === 'idle',
+    );
+
+    ws.send(JSON.stringify({ type: 'join_queue' }));
+    await waitForMessageWhere(
+      ws,
+      (msg) => msg.type === 'queue_state' && msg.status === 'queued',
+    );
+
+    const resp = await exports.default.fetch(
+      new Request(`${BASE}/api/me/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: `session=${cookie}`,
+        },
+        body: JSON.stringify({ displayName: 'BlockedName' }),
+      }),
+    );
+    expect(resp.status).toBe(409);
+    const data = (await resp.json()) as { error: string };
+    expect(data.error).toBe(
+      'Cannot change display name while queued, forming, or in a match',
+    );
 
     ws.close();
   });
