@@ -6,6 +6,7 @@ import {
   normalizeRevealText,
   validateOpenTextAnswer,
 } from './openText.js';
+import { getDisplayNameEditBlockMessage as getDisplayNameEditBlockMessageForState } from './displayNameEdit.js';
 
 /* ═══════════════════════════════════════════════════════════════════
    The Schelling Game client
@@ -213,16 +214,10 @@ function hasActiveMatch() {
 }
 
 function getDisplayNameEditBlockMessage() {
-  if (hasActiveMatch()) {
-    return 'You can\'t update your display name during an active match.';
-  }
-  if (S.formingMatch) {
-    return 'You can\'t update your display name while a match is forming.';
-  }
-  if (S.inQueue) {
-    return 'You can\'t update your display name while in the matchmaking queue.';
-  }
-  return null;
+  return getDisplayNameEditBlockMessageForState({
+    hasActiveMatch: hasActiveMatch(),
+    inQueue: S.inQueue,
+  });
 }
 
 function updateNavigation() {
