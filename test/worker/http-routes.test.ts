@@ -15,6 +15,8 @@ const HTTPS_BASE = 'https://test.local';
 const HTTP_BASE = 'http://test.local';
 const TURNSTILE_SITE_KEY = '1x00000000000000000000AA';
 const TURNSTILE_SECRET_KEY = '1x0000000000000000000000000000000AA';
+const NON_TEST_TURNSTILE_SITE_KEY = '3x00000000000000000000FF';
+const NON_TEST_TURNSTILE_SECRET_KEY = '3x0000000000000000000000000000000FF';
 const TURNSTILE_ACTION = 'landing_example_vote';
 const TURNSTILE_HOSTNAME = 'test.local';
 
@@ -118,6 +120,13 @@ const exampleVoteEnv = {
   GAME_ROOM: {} as DurableObjectNamespace,
   TURNSTILE_SECRET_KEY,
   TURNSTILE_SITE_KEY,
+} satisfies Env;
+
+const nonTestExampleVoteEnv = {
+  DB: env.DB,
+  GAME_ROOM: {} as DurableObjectNamespace,
+  TURNSTILE_SECRET_KEY: NON_TEST_TURNSTILE_SECRET_KEY,
+  TURNSTILE_SITE_KEY: NON_TEST_TURNSTILE_SITE_KEY,
 } satisfies Env;
 
 function getWithEnv(
@@ -781,6 +790,48 @@ describe('HTTP routes', () => {
         }),
       }),
       exampleVoteEnv,
+    );
+    expect(voteResp.status).toBe(200);
+  });
+
+  it('POST /api/example-vote accepts Cloudflare localhost test-key validation responses on bracketed IPv6 loopback', async () => {
+    mockTurnstileValidation({
+      success: true,
+      action: 'test',
+      hostname: 'localhost',
+    });
+
+    const voteResp = await handleHttpRequest(
+      new Request('http://[::1]:8787/api/example-vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          optionIndex: 6,
+          turnstileToken: 'token-ipv6-localhost-test-key',
+        }),
+      }),
+      exampleVoteEnv,
+    );
+    expect(voteResp.status).toBe(200);
+  });
+
+  it('POST /api/example-vote accepts bracketed IPv6 loopback when the verified hostname is unbracketed', async () => {
+    mockTurnstileValidation({
+      success: true,
+      action: TURNSTILE_ACTION,
+      hostname: '::1',
+    });
+
+    const voteResp = await handleHttpRequest(
+      new Request('http://[::1]:8787/api/example-vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          optionIndex: 5,
+          turnstileToken: 'token-ipv6-normalized-hostname',
+        }),
+      }),
+      nonTestExampleVoteEnv,
     );
     expect(voteResp.status).toBe(200);
   });
