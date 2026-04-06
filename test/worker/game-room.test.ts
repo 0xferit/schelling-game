@@ -157,6 +157,25 @@ function waitForMessage(
   });
 }
 
+/** Helper: wait for a WebSocket close event. */
+function waitForClose(
+  ws: WebSocket,
+  timeoutMs = 3000,
+): Promise<{ code: number; reason: string }> {
+  return new Promise((resolve, reject) => {
+    const handler = (evt: CloseEvent) => {
+      clearTimeout(timer);
+      ws.removeEventListener('close', handler);
+      resolve({ code: evt.code, reason: evt.reason });
+    };
+    const timer = setTimeout(() => {
+      ws.removeEventListener('close', handler);
+      reject(new Error('Timed out waiting for socket close'));
+    }, timeoutMs);
+    ws.addEventListener('close', handler);
+  });
+}
+
 /** Wait for a message that satisfies a predicate. */
 function waitForMessageWhere(
   ws: WebSocket,
@@ -195,7 +214,7 @@ async function openWs(cookie: string): Promise<WebSocket> {
   return ws;
 }
 
-/** Open a WebSocket for a wallet index, returning the client socket. */
+/** Open a WebSocket for a wallet index and return the socket plus session cookie. */
 async function connectWsWithSession(
   walletIndex: number,
 ): Promise<{ ws: WebSocket; accountId: string; cookie: string }> {
@@ -205,7 +224,6 @@ async function connectWsWithSession(
   return { ws, accountId, cookie };
 }
 
-/** Open a WebSocket for a wallet index, returning the client socket. */
 async function connectWs(
   walletIndex: number,
 ): Promise<{ ws: WebSocket; accountId: string }> {
@@ -219,10 +237,12 @@ async function connectPlayer(
   displayName: string,
   balance = 0,
 ): Promise<{ ws: WebSocket; accountId: string }> {
-  const wallet = createTestWallet(walletIndex);
-  const { accountId } = await createTestSession(wallet);
-  await seedAccount(env.DB, accountId, displayName, balance);
-  return connectWs(walletIndex);
+  const { ws, accountId } = await connectPlayerWithSession(
+    walletIndex,
+    displayName,
+    balance,
+  );
+  return { ws, accountId };
 }
 
 async function connectPlayerWithSession(
@@ -447,11 +467,16 @@ describe('GameRoom Durable Object', () => {
     );
     expect(resp.status).toBe(200);
 
+    const initialClose = waitForClose(initialWs);
     const replacementWs = await openWs(cookie);
     await waitForMessageWhere(
       replacementWs,
       (msg) => msg.type === 'queue_state' && msg.status === 'idle',
     );
+    await expect(initialClose).resolves.toEqual({
+      code: 1000,
+      reason: 'Replaced by new connection',
+    });
 
     replacementWs.send(JSON.stringify({ type: 'join_queue' }));
     const queuedState = must(
@@ -498,6 +523,41 @@ describe('GameRoom Durable Object', () => {
     );
 
     ws.close();
+  });
+
+  it('PATCH /api/me/profile rejects display name changes while in a match', async () => {
+    const players = await Promise.all([
+      connectPlayerWithSession(5, 'MatchRenameP1', 1000),
+      connectPlayerWithSession(6, 'MatchRenameP2', 1000),
+      connectPlayerWithSession(7, 'MatchRenameP3', 1000),
+    ]);
+
+    const startedPromises = players.map((player) =>
+      waitForMessage(player.ws, 'match_started', MATCH_START_TIMEOUT_MS),
+    );
+
+    await joinPlayersAndStartNow(players);
+    await Promise.all(startedPromises);
+
+    const resp = await exports.default.fetch(
+      new Request(`${BASE}/api/me/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: `session=${players[0].cookie}`,
+        },
+        body: JSON.stringify({ displayName: 'BlockedMidMatch' }),
+      }),
+    );
+    expect(resp.status).toBe(409);
+    const data = (await resp.json()) as { error: string };
+    expect(data.error).toBe(
+      'Cannot change display name while queued, forming, or in a match',
+    );
+
+    for (const player of players) {
+      player.ws.close();
+    }
   });
 
   it('repairs stale below-floor balances before queue entry', async () => {

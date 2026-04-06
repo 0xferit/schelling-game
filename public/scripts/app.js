@@ -901,15 +901,17 @@ function refreshLiveWebSocketIdentity() {
   clearWebSocketRetryTimer();
   wsReconnectPaused = false;
   intentionalClose = false;
+  const previousWs = S.ws;
   if (
-    S.ws &&
-    (S.ws.readyState === WebSocket.OPEN ||
-      S.ws.readyState === WebSocket.CONNECTING)
+    previousWs &&
+    (previousWs.readyState === WebSocket.OPEN ||
+      previousWs.readyState === WebSocket.CONNECTING)
   ) {
     connectWebSocket();
+    try { previousWs.close(1000, 'Identity refresh'); } catch (_) {}
     return;
   }
-  ensureWebSocketConnection();
+  connectWebSocket();
 }
 
 function queueQueueAction(action) {
@@ -951,6 +953,7 @@ function connectWebSocket() {
   const thisWs = S.ws;
   renderQueue();
   S.ws.onopen = () => {
+    if (thisWs !== S.ws) return;
     wsRetryCount = 0;
     wsRetryTimer = null;
     S.wsConnected = true;
@@ -985,6 +988,7 @@ function connectWebSocket() {
     scheduleWebSocketReconnect();
   };
   S.ws.onmessage = (evt) => {
+    if (thisWs !== S.ws) return;
     let msg;
     try {
       msg = JSON.parse(evt.data);
