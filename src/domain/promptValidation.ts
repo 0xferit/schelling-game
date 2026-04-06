@@ -90,11 +90,12 @@ function getPromptIssues(pool: readonly SchellingPrompt[]): string[] {
 
 function getRecordIssues(records: readonly PromptCatalogRecord[]): string[] {
   const issues: string[] = [];
-  const roots = new Set(records.map((record) => record.root));
+  const roots = new Set<PromptCatalogRecord['root']>();
   const ids = new Set<number>();
   let calibrationCount = 0;
 
   for (const record of records) {
+    roots.add(record.root);
     ids.add(record.prompt.id);
     if (record.calibration) calibrationCount += 1;
   }
