@@ -380,7 +380,7 @@ describe('GameRoom async task tracking', () => {
     room._clearConnectionLivenessMonitor('acct-1');
   });
 
-  it('preserves queued players across socket replacement', () => {
+  it('resets start-now for waiting-queue socket replacement', () => {
     const { room } = createRoom();
     const broadcastQueueState = vi
       .spyOn(room, '_broadcastQueueState')
@@ -397,6 +397,8 @@ describe('GameRoom async task tracking', () => {
     const { ws: oldWs, listeners: oldListeners } = createSocketWithListeners();
 
     room.connections.set('acct-1', createConnectionState('Alice', oldWs));
+    must(room.connections.get('acct-1'), 'Expected Alice connection').startNow =
+      true;
     room.waitingQueue = ['acct-1'];
     room._setupWsListeners(oldWs, 'acct-1');
 
