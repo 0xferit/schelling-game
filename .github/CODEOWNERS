@@ -1,0 +1,33 @@
+# Global fallback
+* @0xferit
+
+# Programmer-owned
+/public/scripts/ @0xferit
+/public/index.html @0xferit
+/public/_headers @0xferit
+/public/robots.txt @0xferit
+/public/sitemap.xml @0xferit
+/src/ @0xferit
+/test/ @0xferit
+/scripts/ @0xferit
+/d1-migrations/ @0xferit
+/.github/ @0xferit
+/docs/adr/ @0xferit
+/README.md @0xferit
+/.gitignore @0xferit
+/package.json @0xferit
+/package-lock.json @0xferit
+/biome.json @0xferit
+/tsconfig*.json @0xferit
+/vitest.config*.ts @0xferit
+/wrangler.toml @0xferit
+
+# Researcher-owned
+/src/catalog/ @0xferit
+/docs/game-design.md @0xferit
+
+# Designer-owned
+/public/app.html @0xferit
+/public/styles/ @0xferit
+/public/favicon.svg @0xferit
+/public/site.webmanifest @0xferit
