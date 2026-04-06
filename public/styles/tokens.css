@@ -2,7 +2,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-  --text:#e8e4de;--muted:#9a9488;--accent:#c9a84c;--accent2:#dfc06a;
+  --text:#e8e4de;--muted:#9a9488;--muted-strong:#b7b0a4;--accent:#c9a84c;--accent2:#dfc06a;
   --green:#4caf50;--red:#e53935;--orange:#ff9800;--yellow:#fdd835;
   --radius:3px;--serif:'Cormorant Garamond',Georgia,serif;--sans:'Outfit',system-ui,sans-serif;
   --app-gutter:clamp(1rem,3vw,3rem);--workspace-gap:clamp(1.5rem,3vw,3.75rem);
