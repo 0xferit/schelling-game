@@ -1,7 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { pathToFileURL } from 'node:url';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   canonicalizeOpenTextAnswer,
   normalizeRevealText,
@@ -22,32 +21,15 @@ interface BrowserOpenTextApi {
   } | null;
 }
 
-function loadBrowserOpenTextApi(): BrowserOpenTextApi {
-  const html = fs.readFileSync(
-    path.resolve(process.cwd(), 'public/app.html'),
-    'utf8',
-  );
-  const start = html.indexOf('function normalizeRevealText(answerText) {');
-  const end = html.indexOf('function hasRevealPreimageForPrompt(');
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error('Unable to locate browser open-text helpers in app.html');
-  }
-
-  const snippet = html.slice(start, end);
-  const context = vm.createContext({ globalThis: {} });
-  new vm.Script(
-    `${snippet}
-globalThis.__openTextApi = {
-  normalizeRevealText,
-  canonicalizeOpenTextAnswer,
-};`,
-  ).runInContext(context);
-
-  return (
-    (context as { __openTextApi?: BrowserOpenTextApi }).__openTextApi ??
-    ((context as { globalThis?: { __openTextApi?: BrowserOpenTextApi } })
-      .globalThis?.__openTextApi as BrowserOpenTextApi)
-  );
+async function loadBrowserOpenTextApi(): Promise<BrowserOpenTextApi> {
+  const moduleUrl = pathToFileURL(
+    path.resolve(process.cwd(), 'public/scripts/openText.js'),
+  ).href;
+  const module = await import(moduleUrl);
+  return {
+    normalizeRevealText: module.normalizeRevealText,
+    canonicalizeOpenTextAnswer: module.canonicalizeOpenTextAnswer,
+  };
 }
 
 function getOpenTextPrompt(id: number): OpenTextPrompt {
@@ -60,13 +42,17 @@ function getOpenTextPrompt(id: number): OpenTextPrompt {
   return prompt;
 }
 
-const browserOpenTextApi = loadBrowserOpenTextApi();
+let browserOpenTextApi: BrowserOpenTextApi;
 const numberPrompt = getOpenTextPrompt(1002);
 const cardPrompt = getOpenTextPrompt(1006);
 const cityPrompt = getOpenTextPrompt(1009);
 const wordPrompt = getOpenTextPrompt(1010);
 
 describe('browser and worker open-text canonicalization parity', () => {
+  beforeAll(async () => {
+    browserOpenTextApi = await loadBrowserOpenTextApi();
+  });
+
   it.each([
     'rock′n′roll',
     ' "New-York!" ',
