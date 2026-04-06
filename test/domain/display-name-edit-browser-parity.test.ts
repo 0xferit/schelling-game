@@ -6,6 +6,7 @@ interface BrowserDisplayNameEditApi {
   getDisplayNameEditBlockMessage(state: {
     hasActiveMatch: boolean;
     inQueue: boolean;
+    // Included in the test shape so callers can prove the helper ignores it.
     formingMatch?: unknown;
   }): string | null;
 }
