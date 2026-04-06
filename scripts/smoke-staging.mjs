@@ -47,9 +47,13 @@ async function fetchWithTransientPreviewRetry(path, init) {
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
+      const headers = new Headers(init?.headers);
+      if (!headers.has('Accept')) {
+        headers.set('Accept', 'application/json');
+      }
       const response = await fetch(new URL(path, base), {
-        headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
         ...init,
+        headers,
       });
 
       const text = await response.text();
