@@ -202,12 +202,20 @@ function getConfiguredTurnstileSecretKey(env: Env): string | null {
   return secretKey ? secretKey : null;
 }
 
+function normalizeBracketedIpv6Hostname(hostname: string): string {
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    return hostname.slice(1, -1);
+  }
+  return hostname;
+}
+
 function isLocalHostname(hostname: string): boolean {
+  const normalizedHostname = normalizeBracketedIpv6Hostname(hostname);
   return (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname.endsWith('.localhost')
+    normalizedHostname === 'localhost' ||
+    normalizedHostname === '127.0.0.1' ||
+    normalizedHostname === '::1' ||
+    normalizedHostname.endsWith('.localhost')
   );
 }
 
@@ -272,7 +280,12 @@ async function verifyExampleVoteTurnstileToken(
     return errorResponse('Human verification is temporarily unavailable.', 503);
   }
 
-  const expectedHostname = new URL(request.url).hostname;
+  const expectedHostname = normalizeBracketedIpv6Hostname(
+    new URL(request.url).hostname,
+  );
+  const verifiedHostname = verificationResult.hostname
+    ? normalizeBracketedIpv6Hostname(verificationResult.hostname)
+    : null;
   if (
     verificationResult.success &&
     isCloudflareTurnstileTestMode(siteKey, secretKey, expectedHostname)
@@ -283,7 +296,7 @@ async function verifyExampleVoteTurnstileToken(
   if (
     !verificationResult.success ||
     verificationResult.action !== EXAMPLE_VOTE_TURNSTILE_ACTION ||
-    verificationResult.hostname !== expectedHostname
+    verifiedHostname !== expectedHostname
   ) {
     return errorResponse('Human verification failed.', 403);
   }

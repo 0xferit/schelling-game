@@ -18,6 +18,74 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function parseJson(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRetryablePreviewFailure(status, payload, text) {
+  if (status >= 500) return true;
+  if (status !== 404) return false;
+
+  const title =
+    payload && typeof payload.title === 'string' ? payload.title : '';
+  const detail =
+    payload && typeof payload.detail === 'string' ? payload.detail : text;
+
+  return (
+    title.includes('Error 1042') || detail.includes('No Workers script was found')
+  );
+}
+
+async function fetchWithTransientPreviewRetry(path, init) {
+  const MAX_ATTEMPTS = 6;
+  let lastError;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const headers = new Headers(init?.headers);
+      if (!headers.has('Accept')) {
+        headers.set('Accept', 'application/json');
+      }
+      const response = await fetch(new URL(path, base), {
+        ...init,
+        headers,
+      });
+
+      const text = await response.text();
+      const payload = parseJson(text);
+      if (
+        attempt < MAX_ATTEMPTS &&
+        isRetryablePreviewFailure(response.status, payload, text)
+      ) {
+        lastError = new Error(
+          `${path} returned transient preview error ${response.status}: ${text.slice(0, 200)}`,
+        );
+        console.warn(
+          `${lastError.message}; retrying (${attempt}/${MAX_ATTEMPTS}) after preview propagation delay`,
+        );
+        await sleep(2000);
+        continue;
+      }
+
+      return { response, text, payload };
+    } catch (error) {
+      lastError = error;
+      if (attempt === MAX_ATTEMPTS) break;
+      console.warn(
+        `${path} request failed (${error instanceof Error ? error.message : String(error)}); retrying (${attempt}/${MAX_ATTEMPTS})`,
+      );
+      await sleep(2000);
+    }
+  }
+
+  throw lastError;
+}
+
 async function waitForReady() {
   let lastError;
 
@@ -52,16 +120,11 @@ async function waitForReady() {
 }
 
 async function expectJson(path, init, validate) {
-  const response = await fetch(new URL(path, base), {
-    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  });
-
-  const text = await response.text();
-  let payload;
-  try {
-    payload = text ? JSON.parse(text) : null;
-  } catch {
+  const { response, text, payload } = await fetchWithTransientPreviewRetry(
+    path,
+    init,
+  );
+  if (payload === undefined) {
     throw new Error(`${path} returned non-JSON response: ${text.slice(0, 200)}`);
   }
 
@@ -76,8 +139,7 @@ async function expectJson(path, init, validate) {
 }
 
 async function expectStatus(path, status, init) {
-  const response = await fetch(new URL(path, base), init);
-  const text = await response.text();
+  const { response, text } = await fetchWithTransientPreviewRetry(path, init);
   if (response.status !== status) {
     throw new Error(
       `${path} returned ${response.status}, expected ${status}: ${text.slice(0, 200)}`,
