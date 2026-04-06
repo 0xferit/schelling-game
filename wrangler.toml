@@ -1,4 +1,4 @@
-name = "schelling-game"
+name = "schelling-games"
 account_id = "abfb18f38d5263b5da582e40ba6ae552"
 main = "src/worker.ts"
 compatibility_date = "2026-03-29"
@@ -10,8 +10,8 @@ class_name = "GameRoom"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "schelling-game-db"
-database_id = "ccf25d5a-0c4e-4520-9e08-e3f2a02b78d1"
+database_name = "schelling-games-db"
+database_id = "26b17fcf-1579-40e2-8f7d-bdc187410c1a"
 migrations_dir = "d1-migrations"
 
 [ai]
@@ -27,7 +27,7 @@ OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
 TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
 
 [env.staging]
-name = "schelling-game-staging"
+name = "schelling-games-staging"
 
 [[env.staging.durable_objects.bindings]]
 name = "GAME_ROOM"
@@ -35,8 +35,8 @@ class_name = "GameRoom"
 
 [[env.staging.d1_databases]]
 binding = "DB"
-database_name = "schelling-game-staging"
-database_id = "bfb6e799-80bc-4e0b-bf92-99250555806b"
+database_name = "schelling-games-staging"
+database_id = "89517289-ab7f-459c-b9f4-59bd80aa9ffb"
 migrations_dir = "d1-migrations"
 
 [env.staging.ai]
@@ -49,6 +49,33 @@ AI_BOT_MODELS = "@cf/meta/llama-3-8b-instruct,@cf/meta/llama-3.1-8b-instruct-fas
 AI_BOT_TIMEOUT_MS = "10000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
 OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
+TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
+
+[env.next]
+name = "schelling-games-next"
+workers_dev = false
+
+[[env.next.durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[env.next.d1_databases]]
+binding = "DB"
+database_name = "schelling-games-next"
+database_id = "b221fd85-6c49-4bb3-a0c5-30a02b7726c4"
+migrations_dir = "d1-migrations"
+
+[env.next.ai]
+binding = "AI"
+remote = true
+
+[env.next.vars]
+AI_BOT_ENABLED = "true"
+AI_BOT_MODELS = "@cf/zai-org/glm-4.7-flash,@cf/moonshotai/kimi-k2.5,@cf/qwen/qwen3-30b-a3b-fp8,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+AI_BOT_TIMEOUT_MS = "5000"
+OPEN_TEXT_PROMPTS_ENABLED = "true"
+OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
+TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
 
 [assets]
 directory = "./public"

@@ -95,7 +95,7 @@ CI runs:
 
 ## Configuration And Secrets
 
-Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler.toml). The repo defines both default and `staging` environments.
+Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler.toml). The repo defines default, `staging`, and `next` environments.
 
 | Name | Required | Source | Purpose |
 | --- | --- | --- | --- |
@@ -133,6 +133,9 @@ npx wrangler secret put TURNSTILE_SECRET_KEY --env staging
 Before deploying to any remote environment, apply D1 migrations for that environment:
 
 ```sh
+# Next
+npx wrangler d1 migrations apply DB --env next --remote
+
 # Staging
 npx wrangler d1 migrations apply DB --env staging --remote
 
@@ -140,7 +143,7 @@ npx wrangler d1 migrations apply DB --env staging --remote
 npx wrangler d1 migrations apply DB --remote
 ```
 
-Staging and production environment bindings are declared in [wrangler.toml](wrangler.toml). Production deploys use:
+Staging, next, and production environment bindings are declared in [wrangler.toml](wrangler.toml). Production deploys use:
 
 ```sh
 CLOUDFLARE_API_TOKEN=... npm run deploy

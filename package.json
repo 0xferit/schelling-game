@@ -1,5 +1,5 @@
 {
-  "name": "schelling-game",
+  "name": "schelling-games",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -20,16 +20,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/proveuswrong/schelling-game.git"
+    "url": "git+https://github.com/0xferit/schelling-games.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/proveuswrong/schelling-game/issues"
+    "url": "https://github.com/0xferit/schelling-games/issues"
   },
-  "homepage": "https://github.com/proveuswrong/schelling-game#readme",
+  "homepage": "https://github.com/0xferit/schelling-games#readme",
   "dependencies": {
     "ethers": "^6.16.0"
   },
