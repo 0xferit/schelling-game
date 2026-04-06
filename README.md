@@ -92,6 +92,7 @@ CI runs:
 - domain tests with coverage
 - Worker tests
 - a staging deploy plus smoke validation for same-repo pull requests
+- a `next.schelling.games` deploy plus smoke validation on pushes to `main`
 
 ## Configuration And Secrets
 
@@ -121,10 +122,11 @@ TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
 
-For staging/production, set `TURNSTILE_SITE_KEY` as an environment variable and provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
+For staging/next/production, set `TURNSTILE_SITE_KEY` as an environment variable and provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
 
 ```sh
 npx wrangler secret put TURNSTILE_SECRET_KEY
+npx wrangler secret put TURNSTILE_SECRET_KEY --env next
 npx wrangler secret put TURNSTILE_SECRET_KEY --env staging
 ```
 
@@ -143,7 +145,7 @@ npx wrangler d1 migrations apply DB --env staging --remote
 npx wrangler d1 migrations apply DB --remote
 ```
 
-Staging, next, and production environment bindings are declared in [wrangler.toml](wrangler.toml). Production deploys use:
+Staging, next, and production environment bindings are declared in [wrangler.toml](wrangler.toml). The `next` Worker is attached to `next.schelling.games` in Cloudflare, and manual production deploys use:
 
 ```sh
 CLOUDFLARE_API_TOKEN=... npm run deploy
@@ -153,7 +155,8 @@ GitHub Actions workflows currently do the following:
 
 - pull requests to `main`: run lint, both typechecks, domain tests, and Worker tests
 - eligible pull requests from the same repository: deploy to staging and run the smoke script
-- pushes to `main`: apply production D1 migrations and deploy the Worker
+- pushes to `main`: apply next D1 migrations, deploy `schelling-games-next`, and smoke-test `https://next.schelling.games`
+- manual `Deploy production to Cloudflare Workers` runs: apply production D1 migrations and deploy `schelling.games`
 
 ## Background
 
