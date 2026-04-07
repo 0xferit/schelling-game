@@ -106,6 +106,7 @@ Wrangler-managed bindings and default variables live in [wrangler.toml](wrangler
 | `ADMIN_KEY` | Optional | Worker secret/var | Protects admin-only HTTP routes such as leaderboard eligibility and CSV export. |
 | `AI_BOT_ENABLED` | Optional | `wrangler.toml` var | Enables limited AI queue backfill for undersized public queues. Bot-assisted matches stay off the record. |
 | `AI_BOT_MODELS` | Optional | `wrangler.toml` var | Comma-separated Workers AI model list for backfill bot selection. Models are deduplicated, each AI-assisted match may use each model at most once, and backfill is skipped if there are not enough distinct models to reach the current target size. Models may use `guided_json`, `response_format` JSON mode, or a prompt-only fallback, but they must still return short, parseable JSON/text answers for both `select` and `open_text` bot decisions. |
+| `AI_BOT_MODEL_OUTPUT_MODES` | Optional | `wrangler.toml` var | Comma-separated `model=mode` mapping for AI backfill output handling. Supported modes are `guided_json`, `response_format`, and `prompt_only`. This overrides the Worker's built-in fallback allowlists when present. |
 | `AI_BOT_TIMEOUT_MS` | Optional | `wrangler.toml` var | Timeout budget for Workers AI bot decisions. |
 | `OPEN_TEXT_PROMPTS_ENABLED` | Required for public play | `wrangler.toml` var | Enables the canonical mixed prompt catalog. If disabled, public matches will not start. |
 | `OPEN_TEXT_NORMALIZER_MODEL` | Optional | `wrangler.toml` var | Workers AI model used for authoritative open-text answer normalization. It must support structured JSON output. |
@@ -121,6 +122,16 @@ For local manual testing of the landing-page demo vote flow, Cloudflare provides
 TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
+
+To rebuild the AI backfill pool from the latest supported Workers AI catalog entries, run:
+
+```sh
+npm run sync:ai-bot-pool
+```
+
+The sync script uses the current Cloudflare catalog, filters to the task buckets `Text Generation`, `Text Classification`, and `Translation`, sorts by newest `created_at`, and then writes the latest bot-compatible subset into `wrangler.toml`. It does not admit every catalog model automatically: only models that this repo already knows how to drive safely are eligible for the live backfill pool.
+
+`npm run deploy` runs this sync automatically before stamping and deploying the Worker.
 
 For `next` and production, set `TURNSTILE_SITE_KEY` as an environment variable and provision `TURNSTILE_SECRET_KEY` with Wrangler secrets:
 

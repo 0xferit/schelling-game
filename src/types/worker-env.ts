@@ -20,6 +20,7 @@ export interface Env {
   ADMIN_KEY?: string;
   AI_BOT_ENABLED?: string;
   AI_BOT_MODELS?: string;
+  AI_BOT_MODEL_OUTPUT_MODES?: string;
   AI_BOT_TIMEOUT_MS?: string;
   OPEN_TEXT_PROMPTS_ENABLED?: string;
   OPEN_TEXT_NORMALIZER_MODEL?: string;

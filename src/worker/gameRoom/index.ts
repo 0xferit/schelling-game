@@ -136,6 +136,11 @@ interface PersistedVoteLogRow {
   normalization_mode: NormalizationMode;
 }
 
+type AiBotStructuredOutputMode =
+  | 'guided_json'
+  | 'response_format'
+  | 'prompt_only';
+
 function neutralizeAiAssistedResult(result: GameResult): GameResult {
   return {
     ...result,
@@ -162,10 +167,10 @@ const AI_BOT_TARGET_MATCH_SIZE = 5;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
-  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
-  '@cf/qwen/qwq-32b',
-  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   '@cf/openai/gpt-oss-20b',
+  '@cf/qwen/qwq-32b',
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
 ];
 const GUIDED_JSON_AI_BOT_MODELS = new Set([
   '@cf/meta/llama-3-8b-instruct',
@@ -639,16 +644,52 @@ export class GameRoom {
     return models[0] as string;
   }
 
-  _getAiBotStructuredOutputMode(
-    model: string,
-  ): 'guided_json' | 'response_format' | null {
+  _getAiBotStructuredOutputMode(model: string): AiBotStructuredOutputMode {
+    const configuredMode =
+      this._getConfiguredAiBotStructuredOutputModes().get(model);
+    if (configuredMode) {
+      return configuredMode;
+    }
     if (GUIDED_JSON_AI_BOT_MODELS.has(model)) {
       return 'guided_json';
     }
     if (RESPONSE_FORMAT_AI_BOT_MODELS.has(model)) {
       return 'response_format';
     }
-    return null;
+    return 'prompt_only';
+  }
+
+  _getConfiguredAiBotStructuredOutputModes(): Map<
+    string,
+    AiBotStructuredOutputMode
+  > {
+    const configuredModes = new Map<string, AiBotStructuredOutputMode>();
+    const raw = this.env.AI_BOT_MODEL_OUTPUT_MODES?.trim();
+    if (!raw) {
+      return configuredModes;
+    }
+
+    for (const entry of raw.split(',')) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      const separatorIndex = trimmed.lastIndexOf('=');
+      if (separatorIndex <= 0 || separatorIndex >= trimmed.length - 1) {
+        continue;
+      }
+      const model = trimmed.slice(0, separatorIndex).trim();
+      const mode = trimmed.slice(separatorIndex + 1).trim();
+      if (
+        !model ||
+        (mode !== 'guided_json' &&
+          mode !== 'response_format' &&
+          mode !== 'prompt_only')
+      ) {
+        continue;
+      }
+      configuredModes.set(model, mode);
+    }
+
+    return configuredModes;
   }
 
   _openTextPromptsEnabled(): boolean {
@@ -2074,7 +2115,7 @@ export class GameRoom {
       temperature: AI_BOT_TEMPERATURE,
     };
     const structuredOutputMode = this._getAiBotStructuredOutputMode(model);
-    if (structuredOutputMode === null) {
+    if (structuredOutputMode === 'prompt_only') {
       return basePayload;
     }
     const schema = {
@@ -2106,7 +2147,7 @@ export class GameRoom {
       temperature: AI_BOT_TEMPERATURE,
     };
     const structuredOutputMode = this._getAiBotStructuredOutputMode(model);
-    if (structuredOutputMode === null) {
+    if (structuredOutputMode === 'prompt_only') {
       return basePayload;
     }
     const schema = {

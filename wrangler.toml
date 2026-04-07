@@ -20,7 +20,8 @@ remote = true
 
 [vars]
 AI_BOT_ENABLED = "true"
-AI_BOT_MODELS = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b,@cf/qwen/qwq-32b,@cf/meta/llama-3.3-70b-instruct-fp8-fast,@cf/openai/gpt-oss-20b"
+AI_BOT_MODELS = "@cf/openai/gpt-oss-20b,@cf/qwen/qwq-32b,@cf/deepseek-ai/deepseek-r1-distill-qwen-32b,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+AI_BOT_MODEL_OUTPUT_MODES = "@cf/openai/gpt-oss-20b=prompt_only,@cf/qwen/qwq-32b=guided_json,@cf/deepseek-ai/deepseek-r1-distill-qwen-32b=response_format,@cf/meta/llama-3.3-70b-instruct-fp8-fast=guided_json"
 AI_BOT_TIMEOUT_MS = "20000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
 OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
@@ -46,7 +47,8 @@ remote = true
 
 [env.next.vars]
 AI_BOT_ENABLED = "true"
-AI_BOT_MODELS = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b,@cf/qwen/qwq-32b,@cf/meta/llama-3.3-70b-instruct-fp8-fast,@cf/openai/gpt-oss-20b"
+AI_BOT_MODELS = "@cf/openai/gpt-oss-20b,@cf/qwen/qwq-32b,@cf/deepseek-ai/deepseek-r1-distill-qwen-32b,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+AI_BOT_MODEL_OUTPUT_MODES = "@cf/openai/gpt-oss-20b=prompt_only,@cf/qwen/qwq-32b=guided_json,@cf/deepseek-ai/deepseek-r1-distill-qwen-32b=response_format,@cf/meta/llama-3.3-70b-instruct-fp8-fast=guided_json"
 AI_BOT_TIMEOUT_MS = "20000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
 OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"

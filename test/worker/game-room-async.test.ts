@@ -2106,6 +2106,23 @@ describe('GameRoom async task tracking', () => {
     ).toHaveProperty('response_format');
   });
 
+  it('uses configured structured-output modes from env when provided', () => {
+    const { room } = createRoom({
+      AI_BOT_MODEL_OUTPUT_MODES: [
+        '@cf/test/model-a=response_format',
+        '@cf/test/model-b=guided_json',
+      ].join(','),
+    });
+
+    expect(
+      room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+    ).toHaveProperty('response_format');
+
+    expect(
+      room._buildAiBotOptionRequest('@cf/test/model-b', TEST_SELECT_PROMPT),
+    ).toHaveProperty('guided_json');
+  });
+
   it('uses guided_json for the known guided-json bot models', () => {
     const { room } = createRoom();
 
@@ -2136,6 +2153,26 @@ describe('GameRoom async task tracking', () => {
     expect(
       room._buildAiBotOptionRequest(
         '@cf/openai/gpt-oss-20b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('response_format');
+  });
+
+  it('lets env config force prompt-only mode for a structured-output model', () => {
+    const { room } = createRoom({
+      AI_BOT_MODEL_OUTPUT_MODES:
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast=prompt_only',
+    });
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('guided_json');
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
         TEST_SELECT_PROMPT,
       ),
     ).not.toHaveProperty('response_format');
