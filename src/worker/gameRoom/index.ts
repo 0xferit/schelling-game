@@ -2935,7 +2935,7 @@ export class GameRoom {
         attemptLog.push({
           attempt: attemptNumber,
           status: 'error',
-          error: (error as Error).message,
+          error: error instanceof Error ? error.message : String(error),
         });
       }
 
