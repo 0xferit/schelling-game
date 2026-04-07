@@ -5,10 +5,11 @@ import {
   loadPromptCatalogRecords,
 } from '../../src/catalog/loader';
 import { RAW_CANONICAL_PROMPT_RECORDS } from '../../src/catalog/records';
-import {
-  createOpenTextPrompt,
-  createSelectPrompt,
-} from '../../src/domain/promptBuilders';
+import type {
+  RawOpenTextPrompt,
+  RawPromptCatalogRecord,
+  RawSelectPrompt,
+} from '../../src/catalog/schema';
 import {
   getCanonicalPromptPool,
   getCanonicalPromptRecords,
@@ -70,45 +71,74 @@ describe('catalog loader', () => {
     expect(rawCatalogSource).not.toContain('createSelectPrompt');
     expect(rawCatalogSource).not.toContain('createOpenTextPrompt');
   });
-});
 
-describe('prompt builders', () => {
-  it('builds select prompts and clones options defensively', () => {
-    const options = ['Blue', 'Red'];
+  it('defensively clones mutable raw prompt fields during loading', () => {
+    const selectRawPrompt: RawSelectPrompt = {
+      id: 2001,
+      text: 'Pick a colour.',
+      type: 'select',
+      category: 'aesthetics',
+      options: ['Blue', 'Red'],
+    };
+    const selectRawRecord: RawPromptCatalogRecord = {
+      root: 'colour',
+      calibration: false,
+      aiBackfill: { promptHints: ['colour hint'] },
+      prompt: selectRawPrompt,
+    };
+    const openTextRawPrompt: RawOpenTextPrompt = {
+      id: 2002,
+      text: 'Pick a number from 1 to 10.',
+      type: 'open_text',
+      category: 'number',
+      maxLength: 16,
+      placeholder: 'Type a number',
+      answerSpec: {
+        kind: 'integer_range',
+        min: 1,
+        max: 10,
+        allowWords: true,
+      },
+      canonicalExamples: ['Seven'],
+    };
+    const openTextRawRecord: RawPromptCatalogRecord = {
+      root: 'number_1_to_10',
+      calibration: true,
+      aiBackfill: { promptHints: ['number hint'] },
+      prompt: openTextRawPrompt,
+    };
+    const rawRecords: RawPromptCatalogRecord[] = [
+      selectRawRecord,
+      openTextRawRecord,
+    ];
 
-    const prompt = createSelectPrompt(
-      2001,
-      'Pick a colour.',
-      'aesthetics',
-      options,
-    );
+    const loadedRecords = loadPromptCatalogRecords(rawRecords);
+    const loadedSelectPrompt = loadedRecords[0]?.prompt;
+    const loadedOpenTextPrompt = loadedRecords[1]?.prompt;
+    if (!loadedSelectPrompt || !loadedOpenTextPrompt) {
+      throw new Error('Expected loaded prompt records');
+    }
+    if (loadedOpenTextPrompt.type !== 'open_text') {
+      throw new Error('Expected open-text prompt record');
+    }
 
-    expect(prompt).toEqual({
+    selectRawPrompt.options.push('Green');
+    selectRawRecord.aiBackfill.promptHints.push('second hint');
+    if (openTextRawPrompt.answerSpec.kind !== 'integer_range') {
+      throw new Error('Expected integer-range answer spec');
+    }
+    openTextRawPrompt.answerSpec.allowWords = false;
+    openTextRawPrompt.canonicalExamples.push('Eight');
+
+    expect(loadedSelectPrompt).toEqual({
       id: 2001,
       text: 'Pick a colour.',
       type: 'select',
       category: 'aesthetics',
       options: ['Blue', 'Red'],
     });
-
-    options.push('Green');
-    expect(prompt.options).toEqual(['Blue', 'Red']);
-  });
-
-  it('builds open-text prompts with required normalization and cloned examples', () => {
-    const examples = ['Seven'];
-
-    const prompt = createOpenTextPrompt(
-      2002,
-      'Pick a number from 1 to 10.',
-      'number',
-      16,
-      'Type a number',
-      { kind: 'integer_range', min: 1, max: 10, allowWords: true },
-      examples,
-    );
-
-    expect(prompt).toEqual({
+    expect(loadedRecords[0]?.aiBackfill.promptHints).toEqual(['colour hint']);
+    expect(loadedOpenTextPrompt).toEqual({
       id: 2002,
       text: 'Pick a number from 1 to 10.',
       type: 'open_text',
@@ -124,9 +154,6 @@ describe('prompt builders', () => {
       aiNormalization: 'required',
       canonicalExamples: ['Seven'],
     });
-
-    examples.push('Eight');
-    expect(prompt.canonicalExamples).toEqual(['Seven']);
   });
 });
 
