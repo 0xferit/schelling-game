@@ -3296,7 +3296,8 @@ export class GameRoom {
       `)
         .bind(promptId, accountId, matchId, match.currentGame, rating)
         .run();
-    } catch {
+    } catch (e) {
+      console.error('D1: prompt_ratings write failed', matchId, accountId, e);
       return;
     }
 
