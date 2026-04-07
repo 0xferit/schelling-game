@@ -1315,7 +1315,13 @@ export class GameRoom {
       }
       await this.env.DB.batch(createStmts);
     } catch (e) {
-      console.error('D1: insert match/match_players for', matchId, e);
+      const humanCount = [...playersMap.keys()].filter(
+        (id) => !this._isAiBot(id),
+      ).length;
+      console.error(
+        `D1: failed to insert match/match_players for ${matchId} (${humanCount} humans, ${playersMap.size} total)`,
+        e,
+      );
     }
 
     // Broadcast match_started
