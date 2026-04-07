@@ -137,6 +137,7 @@ function createMatch() {
     commitTimer: null,
     revealTimer: null,
     resultsTimer: null,
+    retryTimer: null,
     normalizingInFlight: false,
     lastGameResult: null,
     aiAssisted: false,
@@ -2980,7 +2981,7 @@ describe('GameRoom async task tracking', () => {
           ([, payload]) => payload?.type === 'game_result',
         ),
       ).toBe(false);
-      expect(match.resultsTimer).not.toBeNull();
+      expect(match.retryTimer).not.toBeNull();
 
       await vi.advanceTimersByTimeAsync(2_000);
       expect(waitUntil).toHaveBeenCalledTimes(1);
@@ -3271,7 +3272,7 @@ describe('GameRoom async task tracking', () => {
       expect(match.phase).toBe('settling');
       expect(match.lastSettledGame).toBe(0);
       expect(match.lastGameResult).toBeNull();
-      expect(match.resultsTimer).not.toBeNull();
+      expect(match.retryTimer).not.toBeNull();
       expect(
         broadcastToMatch.mock.calls.some(
           ([, payload]) => payload?.type === 'game_result',
@@ -3395,7 +3396,7 @@ describe('GameRoom async task tracking', () => {
           ([, payload]) => payload?.type === 'match_over',
         ),
       ).toBe(false);
-      expect(match.resultsTimer).not.toBeNull();
+      expect(match.retryTimer).not.toBeNull();
 
       await vi.advanceTimersByTimeAsync(2_000);
       expect(waitUntil).toHaveBeenCalledTimes(1);
@@ -3472,7 +3473,7 @@ describe('GameRoom async task tracking', () => {
       expect(statusFirst).toHaveBeenCalledTimes(1);
       expect(batch).not.toHaveBeenCalled();
       expect(match.phase).toBe('ending');
-      expect(match.resultsTimer).not.toBeNull();
+      expect(match.retryTimer).not.toBeNull();
       expect(deleteMatchCheckpoint).not.toHaveBeenCalled();
       expect(
         broadcastToMatch.mock.calls.some(
@@ -3594,13 +3595,13 @@ describe('GameRoom async task tracking', () => {
         must(
           room.activeMatches.get('match-settling'),
           'Expected restored settling match',
-        ).resultsTimer,
+        ).retryTimer,
       ).not.toBeNull();
       expect(
         must(
           room.activeMatches.get('match-ending'),
           'Expected restored ending match',
-        ).resultsTimer,
+        ).retryTimer,
       ).not.toBeNull();
 
       expect(waitUntil).toHaveBeenCalledTimes(1);
