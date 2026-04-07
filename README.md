@@ -82,12 +82,14 @@ If you change D1 schema, re-apply the local migrations before restarting or re-t
 | `npm run typecheck` | Type-check the Node-side domain/test code with `tsconfig.json`. |
 | `npm run typecheck:worker` | Type-check Worker code with `tsconfig.worker.json`. |
 | `npm run lint` | Run Biome checks across the repo. |
+| `npm run check:max-lines` | Fail if the current branch causes any changed text file to cross above 1000 lines relative to `origin/main`. Override the base with `MAX_LINES_BASE_REF` and the limit with `MAX_LINES_LIMIT`. |
 | `npm run smoke:remote` | Run the deployed remote smoke test. Requires `SMOKE_BASE_URL`. |
 | `npm run deploy` | Stamp build metadata, deploy the Worker, and restore checked-in HTML files. |
 
 CI runs:
 
 - Biome linting
+- a changed-file line-count gate that blocks new crossings above 1000 lines while grandfathering already-oversized files
 - both TypeScript configs
 - domain tests with coverage
 - Worker tests
@@ -160,7 +162,7 @@ CLOUDFLARE_API_TOKEN=... npm run deploy
 
 GitHub Actions workflows currently do the following:
 
-- pull requests to `main`: run lint, both typechecks, domain tests, and Worker tests
+- pull requests to `main`: run lint, the changed-file line-count gate, both typechecks, domain tests, and Worker tests
 - eligible pull requests from the same repository: deploy a PR-scoped preview Worker plus D1 database, then run the smoke script against that preview URL
 - pushes to `main`: apply next D1 migrations, deploy `schelling-games-next`, and smoke-test `https://next.schelling.games`
 - manual `Deploy production to Cloudflare Workers` runs: apply production D1 migrations and deploy `schelling.games`

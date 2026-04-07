@@ -25,6 +25,27 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  max-lines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Check changed file line counts
+        env:
+          MAX_LINES_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: npm run check:max-lines
+
   typecheck-node:
     runs-on: ubuntu-latest
     steps:
@@ -96,6 +117,7 @@ jobs:
       url: ${{ steps.deploy.outputs.url }}
     needs:
       - lint
+      - max-lines
       - typecheck-node
       - typecheck-worker
       - domain-tests
@@ -249,6 +271,7 @@ jobs:
     if: always()
     needs:
       - lint
+      - max-lines
       - typecheck-node
       - typecheck-worker
       - domain-tests
@@ -325,7 +348,7 @@ jobs:
 
             let statusLine = '- PR preview: pending';
             let nextStepLine =
-              '- Next step: wait for lint, typechecks, tests, deployment, and smoke validation to finish.';
+              '- Next step: wait for lint, the line-count gate, typechecks, tests, deployment, and smoke validation to finish.';
 
             if (previewResult === 'success' && previewUrl) {
               statusLine = `- PR preview: [${previewUrl}](${previewUrl})`;
