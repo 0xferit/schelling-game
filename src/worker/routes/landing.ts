@@ -1,17 +1,144 @@
 import { COMMIT_DURATION, REVEAL_DURATION } from '../../domain/constants';
 import type { Env } from '../../types/worker-env';
 import {
-  type CacheStorageWithDefault,
   EXAMPLE_VOTE_LIMIT,
   errorResponse,
-  getConfiguredTurnstileSiteKey,
+  getClientIdentifier,
   getRequiredString,
   isRateLimited,
   jsonResponse,
   rateLimitResponse,
   readJsonObjectBody,
-  verifyExampleVoteTurnstileToken,
 } from './_helpers';
+
+interface CacheStorageWithDefault extends CacheStorage {
+  default?: Cache;
+}
+
+interface TurnstileVerificationResult {
+  success: boolean;
+  action?: string;
+  hostname?: string;
+  'error-codes'?: string[];
+}
+
+const TURNSTILE_VERIFY_URL =
+  'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const EXAMPLE_VOTE_TURNSTILE_ACTION = 'landing_example_vote';
+const TURNSTILE_TEST_SITE_KEY = '1x00000000000000000000AA';
+const TURNSTILE_TEST_SECRET_KEY = '1x0000000000000000000000000000000AA';
+
+function getConfiguredTurnstileSiteKey(env: Env): string | null {
+  const siteKey = env.TURNSTILE_SITE_KEY?.trim();
+  return siteKey ? siteKey : null;
+}
+
+function getConfiguredTurnstileSecretKey(env: Env): string | null {
+  const secretKey = env.TURNSTILE_SECRET_KEY?.trim();
+  return secretKey ? secretKey : null;
+}
+
+function normalizeBracketedIpv6Hostname(hostname: string): string {
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    return hostname.slice(1, -1);
+  }
+  return hostname;
+}
+
+function isLocalHostname(hostname: string): boolean {
+  const normalizedHostname = normalizeBracketedIpv6Hostname(hostname);
+  return (
+    normalizedHostname === 'localhost' ||
+    normalizedHostname === '127.0.0.1' ||
+    normalizedHostname === '::1' ||
+    normalizedHostname.endsWith('.localhost')
+  );
+}
+
+function isCloudflareTurnstileTestMode(
+  siteKey: string,
+  secretKey: string,
+  hostname: string,
+): boolean {
+  return (
+    siteKey === TURNSTILE_TEST_SITE_KEY &&
+    secretKey === TURNSTILE_TEST_SECRET_KEY &&
+    isLocalHostname(hostname)
+  );
+}
+
+async function verifyExampleVoteTurnstileToken(
+  request: Request,
+  env: Env,
+  token: string,
+): Promise<Response | null> {
+  const siteKey = getConfiguredTurnstileSiteKey(env);
+  const secretKey = getConfiguredTurnstileSecretKey(env);
+  if (!siteKey || !secretKey) {
+    return errorResponse('Demo voting is temporarily unavailable.', 503);
+  }
+
+  const body = new URLSearchParams();
+  body.set('secret', secretKey);
+  body.set('response', token);
+
+  const clientIdentifier = getClientIdentifier(request);
+  if (clientIdentifier !== 'unknown') {
+    body.set('remoteip', clientIdentifier);
+  }
+
+  let verificationResponse: Response;
+  try {
+    verificationResponse = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+  } catch (error) {
+    console.error('Turnstile siteverify request failed', error);
+    return errorResponse('Human verification is temporarily unavailable.', 503);
+  }
+
+  if (!verificationResponse.ok) {
+    console.error(
+      'Turnstile siteverify request returned non-OK status',
+      verificationResponse.status,
+    );
+    return errorResponse('Human verification is temporarily unavailable.', 503);
+  }
+
+  let verificationResult: TurnstileVerificationResult;
+  try {
+    verificationResult =
+      (await verificationResponse.json()) as TurnstileVerificationResult;
+  } catch (error) {
+    console.error('Turnstile siteverify response was not valid JSON', error);
+    return errorResponse('Human verification is temporarily unavailable.', 503);
+  }
+
+  const expectedHostname = normalizeBracketedIpv6Hostname(
+    new URL(request.url).hostname,
+  );
+  const verifiedHostname = verificationResult.hostname
+    ? normalizeBracketedIpv6Hostname(verificationResult.hostname)
+    : null;
+  if (
+    verificationResult.success &&
+    isCloudflareTurnstileTestMode(siteKey, secretKey, expectedHostname)
+  ) {
+    return null;
+  }
+
+  if (
+    !verificationResult.success ||
+    verificationResult.action !== EXAMPLE_VOTE_TURNSTILE_ACTION ||
+    verifiedHostname !== expectedHostname
+  ) {
+    return errorResponse('Human verification failed.', 403);
+  }
+
+  return null;
+}
 
 const LANDING_STATS_CACHE_TTL_SECONDS = 60;
 const LANDING_STATS_CACHE_CONTROL = `public, max-age=${LANDING_STATS_CACHE_TTL_SECONDS}, s-maxage=${LANDING_STATS_CACHE_TTL_SECONDS}`;

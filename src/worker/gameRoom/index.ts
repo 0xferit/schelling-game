@@ -1315,7 +1315,13 @@ export class GameRoom {
       }
       await this.env.DB.batch(createStmts);
     } catch (e) {
-      console.error('D1: insert match/match_players for', matchId, e);
+      const humanCount = [...playersMap.keys()].filter(
+        (id) => !this._isAiBot(id),
+      ).length;
+      console.error(
+        `D1: failed to insert match/match_players for ${matchId} (${humanCount} humans, ${playersMap.size} total)`,
+        e,
+      );
     }
 
     // Broadcast match_started
@@ -2935,7 +2941,7 @@ export class GameRoom {
         attemptLog.push({
           attempt: attemptNumber,
           status: 'error',
-          error: (error as Error).message,
+          error: error instanceof Error ? error.message : String(error),
         });
       }
 
@@ -3296,7 +3302,8 @@ export class GameRoom {
       `)
         .bind(promptId, accountId, matchId, match.currentGame, rating)
         .run();
-    } catch {
+    } catch (e) {
+      console.error('D1: prompt_ratings write failed', matchId, accountId, e);
       return;
     }
 
