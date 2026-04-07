@@ -2,13 +2,14 @@ import type { Env } from '../../types/worker-env';
 import { fetchPlayerDOStatus } from '../accountRepo';
 import { getAuthenticatedAccountId } from '../session';
 import {
-  DISPLAY_NAME_REGEX,
   ensureAccountWithStats,
   errorResponse,
   getRequiredString,
   jsonResponse,
   readJsonObjectBody,
 } from './_helpers';
+
+const DISPLAY_NAME_REGEX = /^[A-Za-z0-9_-]{1,20}$/;
 
 export async function handleGetMe(
   request: Request,

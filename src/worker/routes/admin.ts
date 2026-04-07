@@ -1,13 +1,50 @@
 import type { Env } from '../../types/worker-env';
 import {
   errorResponse,
-  escapeCsvField,
   getRequiredString,
   jsonResponse,
   normalizeWalletAddress,
   readJsonObjectBody,
-  requireAdmin,
 } from './_helpers';
+
+function escapeCsvField(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (
+    s.includes(',') ||
+    s.includes('"') ||
+    s.includes('\n') ||
+    s.includes('\r')
+  ) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+async function requireAdmin(
+  request: Request,
+  env: Env,
+): Promise<Response | null> {
+  if (!env.ADMIN_KEY) return errorResponse('ADMIN_KEY not configured', 503);
+
+  const subtle = crypto.subtle as unknown as {
+    timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean;
+  };
+  const enc = new TextEncoder();
+  const auth = request.headers.get('Authorization') ?? '';
+  const [digestA, digestB] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(auth)),
+    crypto.subtle.digest('SHA-256', enc.encode(`Bearer ${env.ADMIN_KEY}`)),
+  ]);
+  if (!subtle.timingSafeEqual(digestA, digestB)) {
+    await new Promise((r) => setTimeout(r, 1000));
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  return null;
+}
 
 export async function handleExportVotesCsv(
   request: Request,
