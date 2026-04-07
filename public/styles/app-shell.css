@@ -1,0 +1,12 @@
+.header-home-link{color:inherit;text-decoration:none}
+.phase-timer-label{min-width:3.5rem;font-size:.86rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.timer-bar-fill{width:100%}
+.banner-spaced{margin-bottom:1rem}
+.void-banner{color:var(--orange);margin-bottom:.5rem;font-weight:600}
+.result-note{font-size:.88rem;color:var(--muted);margin-top:.5rem}
+.rating-button-compact{padding:.3rem .7rem;font-size:.9rem}
+.summary-off-record-banner{margin-top:1rem}
+.leaderboard-empty-state{text-align:center;padding:2rem;color:var(--muted)}
+.dialog-title-reset{margin:0}
+.dialog-actions-inline{display:flex;gap:.5rem}
+.rules-example-spaced{margin-bottom:.5rem}

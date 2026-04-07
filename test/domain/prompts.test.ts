@@ -1,4 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import {
+  CANONICAL_PROMPT_RECORDS,
+  loadPromptCatalogRecords,
+} from '../../src/catalog/loader';
+import { RAW_CANONICAL_PROMPT_RECORDS } from '../../src/catalog/records';
 import {
   getCanonicalPromptPool,
   getCanonicalPromptRecords,
@@ -8,6 +14,11 @@ import {
   validatePromptPool,
 } from '../../src/domain/prompts';
 import type { OpenTextPrompt, SchellingPrompt } from '../../src/types/domain';
+
+const rawCatalogSource = readFileSync(
+  new URL('../../src/catalog/records.ts', import.meta.url),
+  'utf8',
+);
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -28,6 +39,34 @@ function getMutableRecord(id: number) {
   }
   return record;
 }
+
+describe('catalog loader', () => {
+  it('materializes raw catalog data into the canonical runtime records', () => {
+    expect(loadPromptCatalogRecords()).toEqual(CANONICAL_PROMPT_RECORDS);
+
+    const rawOpenTextRecord = RAW_CANONICAL_PROMPT_RECORDS.find(
+      (record) => record.prompt.type === 'open_text',
+    );
+    const loadedOpenTextRecord = CANONICAL_PROMPT_RECORDS.find(
+      (record) => record.prompt.type === 'open_text',
+    );
+    if (!rawOpenTextRecord || !loadedOpenTextRecord) {
+      throw new Error('Expected open-text prompt records to exist');
+    }
+    if (loadedOpenTextRecord.prompt.type !== 'open_text') {
+      throw new Error('Expected loaded open-text prompt record');
+    }
+
+    expect('aiNormalization' in rawOpenTextRecord.prompt).toBe(false);
+    expect(loadedOpenTextRecord.prompt.aiNormalization).toBe('required');
+  });
+
+  it('keeps raw researcher-owned catalog data free of domain-builder imports', () => {
+    expect(rawCatalogSource).not.toContain('../domain/');
+    expect(rawCatalogSource).not.toContain('createSelectPrompt');
+    expect(rawCatalogSource).not.toContain('createOpenTextPrompt');
+  });
+});
 
 describe('prompt pool', () => {
   const pool = getCanonicalPromptPool();

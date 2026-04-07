@@ -1,4 +1,4 @@
-import { CANONICAL_PROMPT_RECORDS } from '../catalog/records';
+import { CANONICAL_PROMPT_RECORDS } from '../catalog/loader';
 import type { PromptCatalogRecord, SchellingPrompt } from '../types/domain';
 import { validateAnswerText } from './commitReveal';
 import { MATCH_GAME_COUNT } from './constants';
