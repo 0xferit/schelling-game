@@ -43,7 +43,10 @@ function getPoolSize() {
 function parseCreatedAt(value) {
   const normalized = value?.trim().replace(' ', 'T');
   if (!normalized) return 0;
-  const timestamp = Date.parse(`${normalized}Z`);
+  const withTimezone = /[zZ]$/.test(normalized)
+    ? normalized
+    : `${normalized}Z`;
+  const timestamp = Date.parse(withTimezone);
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
@@ -63,7 +66,15 @@ function loadCatalog() {
     env: process.env,
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const preview = raw.slice(0, 200).trim();
+    throw new Error(
+      `Failed to parse Wrangler AI catalog JSON. Output preview: ${preview || '<empty>'}`,
+      { cause: error },
+    );
+  }
 }
 
 function selectCompatibleModels(catalog, targetTasks, poolSize) {

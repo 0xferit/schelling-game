@@ -172,15 +172,13 @@ const DEFAULT_AI_BOT_MODELS = [
   '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
 ];
-const GUIDED_JSON_AI_BOT_MODELS = new Set([
-  '@cf/meta/llama-3-8b-instruct',
-  '@cf/meta/llama-3.1-8b-instruct-fast',
-  '@cf/meta/llama-3.1-70b-instruct',
-  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-  '@cf/qwen/qwq-32b',
-]);
-const RESPONSE_FORMAT_AI_BOT_MODELS = new Set([
-  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+const KNOWN_AI_BOT_OUTPUT_MODES = new Map<string, AiBotStructuredOutputMode>([
+  ['@cf/meta/llama-3-8b-instruct', 'guided_json'],
+  ['@cf/meta/llama-3.1-8b-instruct-fast', 'guided_json'],
+  ['@cf/meta/llama-3.1-70b-instruct', 'guided_json'],
+  ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', 'guided_json'],
+  ['@cf/qwen/qwq-32b', 'guided_json'],
+  ['@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', 'response_format'],
 ]);
 const DEFAULT_AI_BOT_TIMEOUT_MS = 20_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
@@ -655,13 +653,7 @@ export class GameRoom {
     if (configuredMode) {
       return configuredMode;
     }
-    if (GUIDED_JSON_AI_BOT_MODELS.has(model)) {
-      return 'guided_json';
-    }
-    if (RESPONSE_FORMAT_AI_BOT_MODELS.has(model)) {
-      return 'response_format';
-    }
-    return 'prompt_only';
+    return KNOWN_AI_BOT_OUTPUT_MODES.get(model) ?? 'prompt_only';
   }
 
   _getConfiguredAiBotStructuredOutputModes(): Map<
@@ -684,16 +676,33 @@ export class GameRoom {
       if (!trimmed) continue;
       const separatorIndex = trimmed.lastIndexOf('=');
       if (separatorIndex <= 0 || separatorIndex >= trimmed.length - 1) {
+        console.warn('Ignoring malformed AI_BOT_MODEL_OUTPUT_MODES entry', {
+          entry: trimmed,
+        });
         continue;
       }
       const model = trimmed.slice(0, separatorIndex).trim();
       const mode = trimmed.slice(separatorIndex + 1).trim();
+      if (!model) {
+        console.warn(
+          'Ignoring AI_BOT_MODEL_OUTPUT_MODES entry with empty model',
+          { entry: trimmed },
+        );
+        continue;
+      }
       if (
-        !model ||
-        (mode !== 'guided_json' &&
-          mode !== 'response_format' &&
-          mode !== 'prompt_only')
+        mode !== 'guided_json' &&
+        mode !== 'response_format' &&
+        mode !== 'prompt_only'
       ) {
+        console.warn(
+          'Ignoring AI_BOT_MODEL_OUTPUT_MODES entry with invalid mode',
+          {
+            entry: trimmed,
+            model,
+            mode,
+          },
+        );
         continue;
       }
       configuredModes.set(model, mode);
@@ -757,6 +766,25 @@ export class GameRoom {
         clearTimeout(timeoutHandle);
       }
     }
+  }
+
+  _previewAiOutput(output: unknown, maxLength = 240): string | null {
+    const raw =
+      this._extractAiResponseText(output) ??
+      (() => {
+        try {
+          return JSON.stringify(output);
+        } catch {
+          return null;
+        }
+      })();
+    if (!raw) {
+      return null;
+    }
+    if (raw.length <= maxLength) {
+      return raw;
+    }
+    return `${raw.slice(0, maxLength)}...`;
   }
 
   _getDisplayName(accountId: string): string {
@@ -2088,6 +2116,13 @@ export class GameRoom {
       if (parsedIndex !== null) {
         return parsedIndex;
       }
+      const outputPreview = this._previewAiOutput(output);
+      if (outputPreview) {
+        console.warn('Workers AI bot option output was unparseable', {
+          model,
+          outputPreview,
+        });
+      }
     } catch (error) {
       console.error('Workers AI bot inference failed', error);
     }
@@ -2126,6 +2161,13 @@ export class GameRoom {
       const parsedAnswer = this._parseAiBotAnswerText(output, prompt);
       if (parsedAnswer !== null) {
         return parsedAnswer;
+      }
+      const outputPreview = this._previewAiOutput(output);
+      if (outputPreview) {
+        console.warn('Workers AI bot open-text output was unparseable', {
+          model,
+          outputPreview,
+        });
       }
     } catch (error) {
       console.error('Workers AI bot inference failed', error);

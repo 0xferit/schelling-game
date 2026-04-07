@@ -2095,6 +2095,47 @@ describe('GameRoom async task tracking', () => {
     expect(parsed).toBe('New York');
   });
 
+  it('parses OpenAI chat-completion string envelopes for open-text bot decisions', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotAnswerText(
+      {
+        choices: [
+          {
+            message: {
+              content: '{"answerText":"New York"}',
+            },
+          },
+        ],
+      },
+      CITY_PROMPT,
+    );
+
+    expect(parsed).toBe('New York');
+  });
+
+  it('parses OpenAI chat-completion content arrays for open-text bot decisions', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotAnswerText(
+      {
+        choices: [
+          {
+            message: {
+              content: [
+                {
+                  type: 'output_text',
+                  text: '{"answerText":"New York"}',
+                },
+              ],
+            },
+          },
+        ],
+      },
+      CITY_PROMPT,
+    );
+
+    expect(parsed).toBe('New York');
+  });
+
   it('uses response_format for the known JSON-mode bot models', () => {
     const { room } = createRoom();
 
@@ -2102,6 +2143,17 @@ describe('GameRoom async task tracking', () => {
       room._buildAiBotOptionRequest(
         '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
         TEST_SELECT_PROMPT,
+      ),
+    ).toHaveProperty('response_format');
+  });
+
+  it('uses response_format for open-text requests on the known JSON-mode bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOpenTextRequest(
+        '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+        CITY_PROMPT,
       ),
     ).toHaveProperty('response_format');
   });
@@ -2149,22 +2201,28 @@ describe('GameRoom async task tracking', () => {
   });
 
   it('ignores malformed structured-output mode entries from env', () => {
-    const { room } = createRoom({
-      AI_BOT_MODEL_OUTPUT_MODES: [
-        'garbage',
-        '@cf/test/x=invalid_mode',
-        '=response_format',
-        '@cf/test/y=',
-      ].join(','),
-    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { room } = createRoom({
+        AI_BOT_MODEL_OUTPUT_MODES: [
+          'garbage',
+          '@cf/test/x=invalid_mode',
+          '=response_format',
+          '@cf/test/y=',
+        ].join(','),
+      });
 
-    expect(room._getConfiguredAiBotStructuredOutputModes().size).toBe(0);
-    expect(
-      room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
-    ).not.toHaveProperty('guided_json');
-    expect(
-      room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
-    ).not.toHaveProperty('response_format');
+      expect(room._getConfiguredAiBotStructuredOutputModes().size).toBe(0);
+      expect(
+        room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+      ).not.toHaveProperty('guided_json');
+      expect(
+        room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+      ).not.toHaveProperty('response_format');
+      expect(warn).toHaveBeenCalledTimes(4);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('uses guided_json for the known guided-json bot models', () => {
@@ -2222,6 +2280,17 @@ describe('GameRoom async task tracking', () => {
     ).not.toHaveProperty('response_format');
   });
 
+  it('keeps open-text requests prompt-only for prompt-only bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOpenTextRequest('@cf/openai/gpt-oss-20b', CITY_PROMPT),
+    ).not.toHaveProperty('guided_json');
+    expect(
+      room._buildAiBotOpenTextRequest('@cf/openai/gpt-oss-20b', CITY_PROMPT),
+    ).not.toHaveProperty('response_format');
+  });
+
   it('keeps the open-text structured-output schema bounded by prompt length', () => {
     const { room } = createRoom();
     const request = room._buildAiBotOpenTextRequest(
@@ -2253,6 +2322,27 @@ describe('GameRoom async task tracking', () => {
       await expect(
         room._runWithTimeout(Promise.resolve('ok'), 20_000, 'timed out'),
       ).resolves.toBe('ok');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects when timed AI work exceeds the timeout budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const { room } = createRoom();
+      const timed = room._runWithTimeout(
+        new Promise<string>(() => {}),
+        250,
+        'timed out',
+      );
+      const rejection = expect(timed).rejects.toThrow('timed out');
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      await rejection;
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.clearAllTimers();
