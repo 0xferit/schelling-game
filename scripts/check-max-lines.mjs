@@ -36,14 +36,14 @@ function parseLimit(rawLimit) {
     return DEFAULT_LIMIT;
   }
 
-  const parsed = Number.parseInt(rawLimit, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  const normalized = String(rawLimit).trim();
+  if (!/^[1-9]\d*$/.test(normalized)) {
     throw new Error(
       `MAX_LINES_LIMIT must be a positive integer; received ${JSON.stringify(rawLimit)}.`,
     );
   }
 
-  return parsed;
+  return Number(normalized);
 }
 
 function parseChangedFiles(baseRevision) {

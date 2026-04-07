@@ -77,6 +77,7 @@ function writeBinaryFile(
 function runCheck(
   directory: string,
   baseRef: string,
+  extraEnv: Record<string, string> = {},
 ): SpawnSyncReturns<string> {
   return spawnSync(process.execPath, [scriptPath], {
     cwd: directory,
@@ -84,6 +85,7 @@ function runCheck(
     env: {
       ...process.env,
       MAX_LINES_BASE_REF: baseRef,
+      ...extraEnv,
     },
     stdio: 'pipe',
   });
@@ -161,6 +163,50 @@ describe('check-max-lines script', () => {
     expect(combinedOutput(result)).toContain(
       'src/renamed.ts: 1000 -> 1001 lines',
     );
+  });
+
+  it('honors MAX_LINES_LIMIT when provided', () => {
+    const directory = createRepository();
+    writeTextFile(directory, 'src/custom-limit.ts', 900);
+    commitAll(directory, 'chore: create base');
+    const baseRef = git(directory, ['rev-parse', 'HEAD']);
+
+    writeTextFile(directory, 'src/custom-limit.ts', 951);
+    commitAll(directory, 'feat: cross custom limit');
+
+    const passingResult = runCheck(directory, baseRef, {
+      MAX_LINES_LIMIT: '951',
+    });
+    const failingResult = runCheck(directory, baseRef, {
+      MAX_LINES_LIMIT: '950',
+    });
+
+    expect(passingResult.status).toBe(0);
+    expect(combinedOutput(passingResult)).toContain(
+      'No files crossed above 951 lines.',
+    );
+    expect(failingResult.status).toBe(1);
+    expect(combinedOutput(failingResult)).toContain(
+      'src/custom-limit.ts: 900 -> 951 lines',
+    );
+  });
+
+  it('rejects invalid MAX_LINES_LIMIT values with a clear error', () => {
+    const directory = createRepository();
+    writeTextFile(directory, 'README.md', 1);
+    commitAll(directory, 'chore: create base');
+    const baseRef = git(directory, ['rev-parse', 'HEAD']);
+
+    for (const rawLimit of ['0', '-1', 'abc', '1000abc', '1000.5']) {
+      const result = runCheck(directory, baseRef, {
+        MAX_LINES_LIMIT: rawLimit,
+      });
+
+      expect(result.status).toBe(1);
+      expect(combinedOutput(result)).toContain(
+        `MAX_LINES_LIMIT must be a positive integer; received ${JSON.stringify(rawLimit)}.`,
+      );
+    }
   });
 
   it('ignores binary changes and deletions', () => {
