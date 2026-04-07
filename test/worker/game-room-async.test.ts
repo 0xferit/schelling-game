@@ -1996,7 +1996,7 @@ describe('GameRoom async task tracking', () => {
     expect(prompt).not.toContain('Chain-of-thought');
   });
 
-  it('uses prompt-only bot requests for mixed-pool models without guided_json support', async () => {
+  it('uses prompt-only bot requests for models without structured-output support', async () => {
     const aiRun = vi.fn().mockResolvedValue({
       choices: [{ text: '\n\n{"optionIndex": 1}' }],
     });
@@ -2060,6 +2060,7 @@ describe('GameRoom async task tracking', () => {
     expect(aiRun).toHaveBeenCalledTimes(1);
     expect(aiRun.mock.calls[0]?.[0]).toBe('@cf/openai/gpt-oss-20b');
     expect(aiRun.mock.calls[0]?.[1]).not.toHaveProperty('guided_json');
+    expect(aiRun.mock.calls[0]?.[1]).not.toHaveProperty('response_format');
     expect(bot.committed).toBe(true);
     expect(bot.optionIndex).toBe(1);
 
@@ -2094,7 +2095,18 @@ describe('GameRoom async task tracking', () => {
     expect(parsed).toBe('New York');
   });
 
-  it('uses guided_json only for the known structured-output bot models', () => {
+  it('uses response_format for the known JSON-mode bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).toHaveProperty('response_format');
+  });
+
+  it('uses guided_json for the known guided-json bot models', () => {
     const { room } = createRoom();
 
     expect(
@@ -2105,11 +2117,28 @@ describe('GameRoom async task tracking', () => {
     ).toHaveProperty('guided_json');
 
     expect(
+      room._buildAiBotOptionRequest('@cf/qwen/qwq-32b', TEST_SELECT_PROMPT),
+    ).toHaveProperty('guided_json');
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('guided_json');
+
+    expect(
       room._buildAiBotOptionRequest(
         '@cf/openai/gpt-oss-20b',
         TEST_SELECT_PROMPT,
       ),
     ).not.toHaveProperty('guided_json');
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/openai/gpt-oss-20b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('response_format');
   });
 
   it('does not commit a synthetic AI player when the model output is unusable', async () => {

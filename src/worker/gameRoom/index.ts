@@ -162,20 +162,26 @@ const AI_BOT_TARGET_MATCH_SIZE = 5;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
-  '@cf/openai/gpt-oss-20b',
-  '@cf/mistralai/mistral-small-3.1-24b-instruct',
-  '@hf/nousresearch/hermes-2-pro-mistral-7b',
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+  '@cf/qwen/qwq-32b',
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/openai/gpt-oss-20b',
 ];
 const GUIDED_JSON_AI_BOT_MODELS = new Set([
   '@cf/meta/llama-3-8b-instruct',
   '@cf/meta/llama-3.1-8b-instruct-fast',
   '@cf/meta/llama-3.1-70b-instruct',
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/qwen/qwq-32b',
 ]);
-const DEFAULT_AI_BOT_TIMEOUT_MS = 10_000;
+const RESPONSE_FORMAT_AI_BOT_MODELS = new Set([
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+]);
+const DEFAULT_AI_BOT_TIMEOUT_MS = 20_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const AI_BOT_TEMPERATURE = 0.05;
+const AI_BOT_SELECT_MAX_TOKENS = 24;
+const AI_BOT_OPEN_TEXT_MAX_TOKENS = 40;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 10_000;
@@ -633,8 +639,16 @@ export class GameRoom {
     return models[0] as string;
   }
 
-  _aiBotModelUsesGuidedJson(model: string): boolean {
-    return GUIDED_JSON_AI_BOT_MODELS.has(model);
+  _getAiBotStructuredOutputMode(
+    model: string,
+  ): 'guided_json' | 'response_format' | null {
+    if (GUIDED_JSON_AI_BOT_MODELS.has(model)) {
+      return 'guided_json';
+    }
+    if (RESPONSE_FORMAT_AI_BOT_MODELS.has(model)) {
+      return 'response_format';
+    }
+    return null;
   }
 
   _openTextPromptsEnabled(): boolean {
@@ -2056,52 +2070,64 @@ export class GameRoom {
   _buildAiBotOptionRequest(model: string, prompt: SelectPrompt) {
     const basePayload: Record<string, unknown> = {
       prompt: this._buildAiBotPrompt(prompt),
-      max_tokens: 16,
+      max_tokens: AI_BOT_SELECT_MAX_TOKENS,
       temperature: AI_BOT_TEMPERATURE,
     };
-    if (!this._aiBotModelUsesGuidedJson(model)) {
+    const structuredOutputMode = this._getAiBotStructuredOutputMode(model);
+    if (structuredOutputMode === null) {
       return basePayload;
     }
-    return {
-      ...basePayload,
-      guided_json: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['optionIndex'],
-        properties: {
-          optionIndex: {
-            type: 'integer',
-            minimum: 0,
-            maximum: prompt.options.length - 1,
-          },
+    const schema = {
+      type: 'object',
+      required: ['optionIndex'],
+      properties: {
+        optionIndex: {
+          type: 'integer',
         },
       },
+    };
+    return {
+      ...basePayload,
+      ...(structuredOutputMode === 'guided_json'
+        ? { guided_json: schema }
+        : {
+            response_format: {
+              type: 'json_schema',
+              json_schema: schema,
+            },
+          }),
     };
   }
 
   _buildAiBotOpenTextRequest(model: string, prompt: OpenTextPrompt) {
     const basePayload: Record<string, unknown> = {
       prompt: this._buildAiBotPrompt(prompt),
-      max_tokens: 32,
+      max_tokens: AI_BOT_OPEN_TEXT_MAX_TOKENS,
       temperature: AI_BOT_TEMPERATURE,
     };
-    if (!this._aiBotModelUsesGuidedJson(model)) {
+    const structuredOutputMode = this._getAiBotStructuredOutputMode(model);
+    if (structuredOutputMode === null) {
       return basePayload;
     }
-    return {
-      ...basePayload,
-      guided_json: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['answerText'],
-        properties: {
-          answerText: {
-            type: 'string',
-            minLength: 1,
-            maxLength: prompt.maxLength,
-          },
+    const schema = {
+      type: 'object',
+      required: ['answerText'],
+      properties: {
+        answerText: {
+          type: 'string',
         },
       },
+    };
+    return {
+      ...basePayload,
+      ...(structuredOutputMode === 'guided_json'
+        ? { guided_json: schema }
+        : {
+            response_format: {
+              type: 'json_schema',
+              json_schema: schema,
+            },
+          }),
     };
   }
 
