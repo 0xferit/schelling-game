@@ -50,9 +50,14 @@ export function cookieAttrs(request: Request): string {
   return `Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
 }
 
+const CSV_FORMULA_PREFIX = /^[=+\-@]/;
+
 export function escapeCsvField(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const s = String(value);
+  let s = String(value);
+  if (CSV_FORMULA_PREFIX.test(s)) {
+    s = `\t${s}`;
+  }
   if (
     s.includes(',') ||
     s.includes('"') ||
