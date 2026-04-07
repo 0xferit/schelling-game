@@ -13,6 +13,7 @@
     "smoke:remote": "node scripts/smoke-remote.mjs",
     "sync:ai-bot-pool": "node scripts/sync-ai-bot-model-pool.mjs",
     "lint": "biome check .",
+    "check:max-lines": "node scripts/check-max-lines.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "stamp-build": "sed -i.bak -e \"s/__BUILD_HASH__/$(git rev-parse --short HEAD)/\" -e \"s/__BUILD_DATE__/$(date -u +%Y-%m-%dT%H:%MZ)/\" public/index.html public/app.html",
