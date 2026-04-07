@@ -647,19 +647,34 @@ export async function handleHttpRequest(
       );
     }
 
-    // Check uniqueness
-    const existing = (await env.DB.prepare(
-      'SELECT account_id FROM accounts WHERE display_name = ? COLLATE NOCASE AND account_id != ?',
-    )
-      .bind(displayName, accountId)
-      .first()) as { account_id: string } | null;
-    if (existing) return errorResponse('Display name already claimed', 409);
+    // Single atomic UPDATE. The NOT EXISTS predicate with COLLATE NOCASE
+    // enforces case-insensitive uniqueness; the DB UNIQUE constraint only
+    // catches exact-case duplicates, not the full NOCASE invariant.
+    try {
+      const result = await env.DB.prepare(
+        'UPDATE accounts SET display_name = ? WHERE account_id = ? AND NOT EXISTS (SELECT 1 FROM accounts WHERE display_name = ? COLLATE NOCASE AND account_id != ?)',
+      )
+        .bind(displayName, accountId, displayName, accountId)
+        .run();
 
-    await env.DB.prepare(
-      'UPDATE accounts SET display_name = ? WHERE account_id = ?',
-    )
-      .bind(displayName, accountId)
-      .run();
+      if (result.meta.changes === 0) {
+        const existing = await env.DB.prepare(
+          'SELECT display_name FROM accounts WHERE account_id = ?',
+        )
+          .bind(accountId)
+          .first<{ display_name: string | null }>();
+        if (existing?.display_name === displayName) {
+          return jsonResponse({ displayName });
+        }
+        return errorResponse('Display name already claimed', 409);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('UNIQUE constraint')) {
+        return errorResponse('Display name already claimed', 409);
+      }
+      throw err;
+    }
 
     return jsonResponse({ displayName });
   }
