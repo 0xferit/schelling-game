@@ -287,7 +287,7 @@ var gameConfigPromise = fetch('/api/game-config')
     turnstileContainer.hidden = true;
     opts.forEach(function(o) { o.style.cursor = 'default'; });
     fetch('/api/example-tally')
-      .then(function(r) { return r.json(); })
+      .then(function(r) { if (!r.ok) return; return r.json(); })
       .then(renderTally)
       .catch(function() {});
   }
@@ -372,7 +372,8 @@ gameConfigPromise.then(function(cfg) {
     return new Intl.NumberFormat().format(value);
   }
 
-  fetch('/api/landing-stats').then(function(r) { return r.json(); }).then(function(stats) {
+  fetch('/api/landing-stats').then(function(r) { if (!r.ok) return; return r.json(); }).then(function(stats) {
+    if (!stats) return;
     document.getElementById('stat-players-24h').textContent = formatInt(stats.playersLast24h || 0);
     document.getElementById('stat-completed-matches').textContent = formatInt(stats.completedMatches || 0);
     document.getElementById('stat-longest-streak').textContent = formatInt(stats.longestStreak || 0);
