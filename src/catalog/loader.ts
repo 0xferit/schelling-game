@@ -9,7 +9,7 @@ import { RAW_CANONICAL_PROMPT_RECORDS } from './records';
 import type { RawCatalogPrompt, RawPromptCatalogRecord } from './schema';
 
 function cloneAnswerSpec(spec: OpenTextAnswerSpec): OpenTextAnswerSpec {
-  return { ...spec };
+  return structuredClone(spec);
 }
 
 function buildPrompt(rawPrompt: RawCatalogPrompt): SchellingPrompt {

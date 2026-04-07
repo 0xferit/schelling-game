@@ -1,7 +1,7 @@
 import { CANONICAL_PROMPT_RECORDS } from '../catalog/loader';
 import type { PromptCatalogRecord, SchellingPrompt } from '../types/domain';
 import { validateAnswerText } from './commitReveal';
-import { MATCH_GAME_COUNT } from './constants';
+import { MATCH_GAME_COUNT, MIN_PROMPTS_PER_TYPE } from './constants';
 import { canonicalizeOpenTextAnswer } from './openText';
 
 function normalizeOptionIdentity(value: string): string {
@@ -73,15 +73,14 @@ function getPromptIssues(pool: readonly SchellingPrompt[]): string[] {
     }
   }
 
-  const minPerType = Math.ceil(MATCH_GAME_COUNT / 2);
-  if (selectCount < minPerType) {
+  if (selectCount < MIN_PROMPTS_PER_TYPE) {
     issues.push(
-      `Prompt pool must contain at least ${minPerType} select prompts; found ${selectCount}.`,
+      `Prompt pool must contain at least ${MIN_PROMPTS_PER_TYPE} select prompts; found ${selectCount}.`,
     );
   }
-  if (openTextCount < minPerType) {
+  if (openTextCount < MIN_PROMPTS_PER_TYPE) {
     issues.push(
-      `Prompt pool must contain at least ${minPerType} open_text prompts; found ${openTextCount}.`,
+      `Prompt pool must contain at least ${MIN_PROMPTS_PER_TYPE} open_text prompts; found ${openTextCount}.`,
     );
   }
 

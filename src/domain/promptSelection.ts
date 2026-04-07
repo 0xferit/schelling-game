@@ -46,7 +46,8 @@ export function getCanonicalPromptRecords(): PromptCatalogRecord[] {
 export function getPromptRecordById(
   promptId: number,
 ): PromptCatalogRecord | undefined {
-  return PROMPT_RECORDS_BY_ID.get(promptId);
+  const record = PROMPT_RECORDS_BY_ID.get(promptId);
+  return record ? cloneJson(record) : undefined;
 }
 
 export function selectPromptsForMatch(

@@ -4,6 +4,9 @@ export const MIN_ESTABLISHED_MATCHES = 5;
 /** Fixed number of games in a public match. */
 export const MATCH_GAME_COUNT = 10;
 
+/** Minimum prompts required per type (select / open_text) in a balanced match. */
+export const MIN_PROMPTS_PER_TYPE = Math.floor(MATCH_GAME_COUNT / 2);
+
 /** Token ante charged per player per game. */
 export const GAME_ANTE = 2520;
 
