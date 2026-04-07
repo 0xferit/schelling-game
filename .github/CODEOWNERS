@@ -9,12 +9,12 @@
 /src/catalog/schema.ts @0xferit
 /src/catalog/loader.ts @0xferit
 
-# Designer-owned visual assets and styles
-/public/styles/ @0xferit @mnvvr
-/public/favicon.svg @0xferit @mnvvr
+# Frontend paths (unlocked)
+/public/styles/
+/public/favicon.svg
+/public/index.html
+/public/app.html
+/public/site.webmanifest
+/public/scripts/
 
-# Multi-owner integration surfaces
-/public/index.html @0xferit @mnvvr
-/public/app.html @0xferit @mnvvr
-/public/site.webmanifest @0xferit @mnvvr
 /README.md @0xferit
