@@ -179,8 +179,8 @@ function uniqueDisplayName() {
 
 await waitForReady();
 
-await expectHtmlEventually('/', 'The Schelling Game');
-await expectHtmlEventually('/app', 'The Schelling Game');
+await expectHtmlEventually('/', 'Schelling Games');
+await expectHtmlEventually('/app', 'Schelling Games');
 
 await expectJson('/api/game-config', undefined, (payload) => {
   assert(payload.commitDuration === 60, 'unexpected commitDuration');

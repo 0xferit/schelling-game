@@ -9,7 +9,7 @@ import {
 import { getDisplayNameEditBlockMessage as getDisplayNameEditBlockMessageForState } from './displayNameEdit.js';
 
 /* ═══════════════════════════════════════════════════════════════════
-   The Schelling Game client
+   Schelling Games client
    Vanilla JS, single-file. Connects via REST + WebSocket.
    ═══════════════════════════════════════════════════════════════════ */
 (function () {

@@ -55,7 +55,7 @@ describe('feedback entry points', () => {
   it('app shell no longer embeds the application style block, runtime script, or inline styles', () => {
     expect(appHtml).not.toContain('<style>');
     expect(appHtml).not.toContain('style=');
-    expect(appHtml).not.toContain('The Schelling Game client');
+    expect(appHtml).not.toContain('Schelling Games client');
     expect(appHtml).not.toContain("window.addEventListener('error'");
   });
 

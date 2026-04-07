@@ -1,4 +1,4 @@
--- Base D1 schema for Schelling Game.
+-- Base D1 schema for Schelling Games.
 -- Together with subsequent migrations, this mirrors the production schema.
 
 CREATE TABLE IF NOT EXISTS accounts (
