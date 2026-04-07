@@ -79,6 +79,7 @@ interface WorkerMatchState extends PersistedMatchFields {
   commitTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
   resultsTimer: ReturnType<typeof setTimeout> | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
   normalizingInFlight: boolean;
 }
 
@@ -1273,6 +1274,7 @@ export class GameRoom {
       commitTimer: null,
       revealTimer: null,
       resultsTimer: null,
+      retryTimer: null,
       normalizingInFlight: false,
       lastGameResult: null,
       aiAssisted,
@@ -1441,6 +1443,10 @@ export class GameRoom {
     if (match.resultsTimer) {
       clearTimeout(match.resultsTimer);
       match.resultsTimer = null;
+    }
+    if (match.retryTimer) {
+      clearTimeout(match.retryTimer);
+      match.retryTimer = null;
     }
     const prompt = this._getPromptForGame(match, match.currentGame);
     const recoveringSettlingWrite =
@@ -1816,6 +1822,10 @@ export class GameRoom {
     if (match.resultsTimer) {
       clearTimeout(match.resultsTimer);
       match.resultsTimer = null;
+    }
+    if (match.retryTimer) {
+      clearTimeout(match.retryTimer);
+      match.retryTimer = null;
     }
     if (match.commitTimer) {
       clearTimeout(match.commitTimer);
@@ -3632,6 +3642,7 @@ export class GameRoom {
         commitTimer: null,
         revealTimer: null,
         resultsTimer: null,
+        retryTimer: null,
         normalizingInFlight: false,
         lastGameResult: rm.lastGameResult,
       };
@@ -3652,12 +3663,12 @@ export class GameRoom {
     match: WorkerMatchState,
     delayMs = D1_RETRY_DELAY_MS,
   ): void {
-    if (match.resultsTimer) {
-      clearTimeout(match.resultsTimer);
-      match.resultsTimer = null;
+    if (match.retryTimer) {
+      clearTimeout(match.retryTimer);
+      match.retryTimer = null;
     }
-    match.resultsTimer = setTimeout(() => {
-      match.resultsTimer = null;
+    match.retryTimer = setTimeout(() => {
+      match.retryTimer = null;
       if (!this.activeMatches.has(match.matchId)) return;
       this._waitUntil(
         this._finalizeGame(match),
@@ -3670,12 +3681,12 @@ export class GameRoom {
     match: WorkerMatchState,
     delayMs = D1_RETRY_DELAY_MS,
   ): void {
-    if (match.resultsTimer) {
-      clearTimeout(match.resultsTimer);
-      match.resultsTimer = null;
+    if (match.retryTimer) {
+      clearTimeout(match.retryTimer);
+      match.retryTimer = null;
     }
-    match.resultsTimer = setTimeout(() => {
-      match.resultsTimer = null;
+    match.retryTimer = setTimeout(() => {
+      match.retryTimer = null;
       if (!this.activeMatches.has(match.matchId)) return;
       this._waitUntil(
         this._endMatch(match),
@@ -3718,9 +3729,9 @@ export class GameRoom {
         this._normalizeAndFinalizeOpenTextGame(match),
         `resume normalization for game ${match.currentGame} in ${match.matchId}`,
       );
-    } else if (match.phase === 'settling' && !match.resultsTimer) {
+    } else if (match.phase === 'settling' && !match.retryTimer) {
       this._scheduleFinalizeRetry(match, 0);
-    } else if (match.phase === 'ending' && !match.resultsTimer) {
+    } else if (match.phase === 'ending' && !match.retryTimer) {
       this._scheduleEndMatchRetry(match, 0);
     } else if (match.phase === 'results' && !match.resultsTimer) {
       const remaining = Math.max(0, RESULTS_DURATION * 1000 - elapsed);
