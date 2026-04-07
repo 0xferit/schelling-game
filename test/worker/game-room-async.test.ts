@@ -1996,6 +1996,122 @@ describe('GameRoom async task tracking', () => {
     expect(prompt).not.toContain('Chain-of-thought');
   });
 
+  it('uses prompt-only bot requests for mixed-pool models without guided_json support', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      choices: [{ text: '\n\n{"optionIndex": 1}' }],
+    });
+    const { room, waitUntil } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: '@cf/openai/gpt-oss-20b',
+      AI_BOT_TIMEOUT_MS: '250',
+      AI: {
+        run: aiRun,
+      },
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastCommitStatus').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastRevealStatus').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.currentGame = 0;
+    match.phase = 'starting';
+
+    const human = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    const bot = {
+      accountId: 'ai-bot:0:test',
+      displayName: 'AI Backfill',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    match.players.set(human.accountId, human);
+    match.players.set(bot.accountId, bot);
+
+    room._startCommitPhase(match);
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected AI bot waitUntil call')[0];
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(aiRun.mock.calls[0]?.[0]).toBe('@cf/openai/gpt-oss-20b');
+    expect(aiRun.mock.calls[0]?.[1]).not.toHaveProperty('guided_json');
+    expect(bot.committed).toBe(true);
+    expect(bot.optionIndex).toBe(1);
+
+    if (match.commitTimer) clearTimeout(match.commitTimer);
+  });
+
+  it('parses OpenAI-style text completion envelopes for select bot decisions', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotOptionIndex(
+      {
+        choices: [{ text: '\n\n{"optionIndex": 1}' }],
+      },
+      TEST_SELECT_PROMPT,
+    );
+
+    expect(parsed).toBe(1);
+  });
+
+  it('parses the first JSON object from noisy open-text bot responses', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotAnswerText(
+      {
+        choices: [
+          {
+            text: '\n\n{"answerText":"New York"}\n\nRespond with JSON only: {"answerText":"<answer>"}',
+          },
+        ],
+      },
+      CITY_PROMPT,
+    );
+
+    expect(parsed).toBe('New York');
+  });
+
+  it('uses guided_json only for the known structured-output bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        TEST_SELECT_PROMPT,
+      ),
+    ).toHaveProperty('guided_json');
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/openai/gpt-oss-20b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('guided_json');
+  });
+
   it('does not commit a synthetic AI player when the model output is unusable', async () => {
     const aiRun = vi.fn().mockResolvedValue({
       response: 'not valid json',

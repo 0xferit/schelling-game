@@ -33,6 +33,7 @@ import type {
   PlayerResultWithBalance,
   PlayerSettlementInput,
   SchellingPrompt,
+  SelectPrompt,
 } from '../../types/domain';
 import type {
   ClientMessage,
@@ -161,11 +162,17 @@ const AI_BOT_TARGET_MATCH_SIZE = 5;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
+  '@cf/openai/gpt-oss-20b',
+  '@cf/mistralai/mistral-small-3.1-24b-instruct',
+  '@hf/nousresearch/hermes-2-pro-mistral-7b',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+];
+const GUIDED_JSON_AI_BOT_MODELS = new Set([
   '@cf/meta/llama-3-8b-instruct',
   '@cf/meta/llama-3.1-8b-instruct-fast',
   '@cf/meta/llama-3.1-70b-instruct',
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-];
+]);
 const DEFAULT_AI_BOT_TIMEOUT_MS = 10_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const AI_BOT_TEMPERATURE = 0.05;
@@ -624,6 +631,10 @@ export class GameRoom {
       return models[index] as string;
     }
     return models[0] as string;
+  }
+
+  _aiBotModelUsesGuidedJson(model: string): boolean {
+    return GUIDED_JSON_AI_BOT_MODELS.has(model);
   }
 
   _openTextPromptsEnabled(): boolean {
@@ -1975,25 +1986,11 @@ export class GameRoom {
       return null;
     }
 
+    const model = this._getAiBotModel(accountId);
+
     try {
       const output = await Promise.race([
-        ai.run(this._getAiBotModel(accountId), {
-          prompt: this._buildAiBotPrompt(prompt),
-          guided_json: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['optionIndex'],
-            properties: {
-              optionIndex: {
-                type: 'integer',
-                minimum: 0,
-                maximum: prompt.options.length - 1,
-              },
-            },
-          },
-          max_tokens: 16,
-          temperature: AI_BOT_TEMPERATURE,
-        }),
+        ai.run(model, this._buildAiBotOptionRequest(model, prompt)),
         new Promise<never>((_, reject) => {
           setTimeout(
             () => reject(new Error('AI bot commit timed out')),
@@ -2032,25 +2029,11 @@ export class GameRoom {
       return null;
     }
 
+    const model = this._getAiBotModel(accountId);
+
     try {
       const output = await Promise.race([
-        ai.run(this._getAiBotModel(accountId), {
-          prompt: this._buildAiBotPrompt(prompt),
-          guided_json: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['answerText'],
-            properties: {
-              answerText: {
-                type: 'string',
-                minLength: 1,
-                maxLength: prompt.maxLength,
-              },
-            },
-          },
-          max_tokens: 32,
-          temperature: AI_BOT_TEMPERATURE,
-        }),
+        ai.run(model, this._buildAiBotOpenTextRequest(model, prompt)),
         new Promise<never>((_, reject) => {
           setTimeout(
             () => reject(new Error('AI bot commit timed out')),
@@ -2068,6 +2051,58 @@ export class GameRoom {
     }
 
     return null;
+  }
+
+  _buildAiBotOptionRequest(model: string, prompt: SelectPrompt) {
+    const basePayload: Record<string, unknown> = {
+      prompt: this._buildAiBotPrompt(prompt),
+      max_tokens: 16,
+      temperature: AI_BOT_TEMPERATURE,
+    };
+    if (!this._aiBotModelUsesGuidedJson(model)) {
+      return basePayload;
+    }
+    return {
+      ...basePayload,
+      guided_json: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['optionIndex'],
+        properties: {
+          optionIndex: {
+            type: 'integer',
+            minimum: 0,
+            maximum: prompt.options.length - 1,
+          },
+        },
+      },
+    };
+  }
+
+  _buildAiBotOpenTextRequest(model: string, prompt: OpenTextPrompt) {
+    const basePayload: Record<string, unknown> = {
+      prompt: this._buildAiBotPrompt(prompt),
+      max_tokens: 32,
+      temperature: AI_BOT_TEMPERATURE,
+    };
+    if (!this._aiBotModelUsesGuidedJson(model)) {
+      return basePayload;
+    }
+    return {
+      ...basePayload,
+      guided_json: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['answerText'],
+        properties: {
+          answerText: {
+            type: 'string',
+            minLength: 1,
+            maxLength: prompt.maxLength,
+          },
+        },
+      },
+    };
   }
 
   _buildAiBotPrompt(prompt: SchellingPrompt): string {
@@ -2115,7 +2150,7 @@ export class GameRoom {
         ...hintLines,
         ...exampleLines,
         '',
-        'Respond with JSON: {"answerText": "<answer>"}',
+        'Respond with JSON only: {"answerText": "<answer>"}',
       ].join('\n');
     }
 
@@ -2135,7 +2170,7 @@ export class GameRoom {
       options,
       ...hintLines,
       '',
-      'Respond with JSON: {"optionIndex": <zero-based index>}',
+      'Respond with JSON only: {"optionIndex": <zero-based index>}',
     ].join('\n');
   }
 
@@ -2254,6 +2289,83 @@ export class GameRoom {
         return response;
       }
     }
+    if (
+      typeof output === 'object' &&
+      output !== null &&
+      'choices' in output &&
+      Array.isArray(output.choices)
+    ) {
+      const firstChoice = output.choices[0];
+      if (typeof firstChoice === 'object' && firstChoice !== null) {
+        if ('text' in firstChoice && typeof firstChoice.text === 'string') {
+          return firstChoice.text.trim() || null;
+        }
+        if (
+          'message' in firstChoice &&
+          typeof firstChoice.message === 'object' &&
+          firstChoice.message !== null &&
+          'content' in firstChoice.message
+        ) {
+          const content = firstChoice.message.content;
+          if (typeof content === 'string') {
+            return content.trim() || null;
+          }
+          if (Array.isArray(content)) {
+            const joined = content
+              .map((part) =>
+                typeof part === 'object' &&
+                part !== null &&
+                'text' in part &&
+                typeof part.text === 'string'
+                  ? part.text
+                  : '',
+              )
+              .join('')
+              .trim();
+            return joined || null;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  _extractFirstJsonObject(response: string): string | null {
+    let start = response.indexOf('{');
+    while (start !== -1) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let index = start; index < response.length; index += 1) {
+        const char = response[index];
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+        if (inString) {
+          continue;
+        }
+        if (char === '{') {
+          depth += 1;
+          continue;
+        }
+        if (char === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            return response.slice(start, index + 1);
+          }
+        }
+      }
+      start = response.indexOf('{', start + 1);
+    }
     return null;
   }
 
@@ -2279,6 +2391,21 @@ export class GameRoom {
 
     try {
       const parsed = JSON.parse(strippedResponse);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        !Array.isArray(parsed)
+      ) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {}
+
+    const jsonObject = this._extractFirstJsonObject(strippedResponse);
+    if (!jsonObject) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(jsonObject);
       if (
         typeof parsed === 'object' &&
         parsed !== null &&

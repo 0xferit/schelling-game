@@ -20,7 +20,7 @@ remote = true
 
 [vars]
 AI_BOT_ENABLED = "true"
-AI_BOT_MODELS = "@cf/meta/llama-3-8b-instruct,@cf/meta/llama-3.1-8b-instruct-fast,@cf/meta/llama-3.1-70b-instruct,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+AI_BOT_MODELS = "@cf/openai/gpt-oss-20b,@cf/mistralai/mistral-small-3.1-24b-instruct,@hf/nousresearch/hermes-2-pro-mistral-7b,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "10000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
 OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
@@ -46,7 +46,7 @@ remote = true
 
 [env.next.vars]
 AI_BOT_ENABLED = "true"
-AI_BOT_MODELS = "@cf/meta/llama-3-8b-instruct,@cf/meta/llama-3.1-8b-instruct-fast,@cf/meta/llama-3.1-70b-instruct,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+AI_BOT_MODELS = "@cf/openai/gpt-oss-20b,@cf/mistralai/mistral-small-3.1-24b-instruct,@hf/nousresearch/hermes-2-pro-mistral-7b,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 AI_BOT_TIMEOUT_MS = "10000"
 OPEN_TEXT_PROMPTS_ENABLED = "true"
 OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
