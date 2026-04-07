@@ -2,7 +2,7 @@
 (function() {
   const canvas = document.getElementById('convergence');
   const ctx = canvas.getContext('2d');
-  let w, h, particles, center, mouse;
+  let w, h, particles, center;
   const PARTICLE_COUNT = 80;
 
   function resize() {
@@ -14,7 +14,6 @@
 
   function init() {
     resize();
-    mouse = { x: center.x, y: center.y };
     particles = [];
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       particles.push({
@@ -38,7 +37,6 @@
       // gentle pull toward focal point
       const dx = focal.x - p.x;
       const dy = focal.y - p.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
       const pull = 0.00015;
       p.vx += dx * pull;
       p.vy += dy * pull;
