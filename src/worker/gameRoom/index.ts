@@ -1208,6 +1208,16 @@ export class GameRoom {
       return;
     }
 
+    const connectedHumanIds = playerIds.filter(
+      (id) => !this._isAiBot(id) && this.connections.has(id),
+    );
+    const balances = await Promise.all(
+      connectedHumanIds.map((id) => this._fetchAccountBalance(id)),
+    );
+    const balanceByAccount = new Map(
+      connectedHumanIds.map((id, i) => [id, balances[i]]),
+    );
+
     const playersMap = new Map<string, WorkerPlayerState>();
     for (const accountId of playerIds) {
       let balance = 0;
@@ -1220,8 +1230,7 @@ export class GameRoom {
         displayName = conn.displayName;
         ws = conn.ws;
 
-        const persistedBalance = await this._fetchAccountBalance(accountId);
-        if (persistedBalance !== null) balance = persistedBalance;
+        balance = balanceByAccount.get(accountId) ?? 0;
       }
 
       playersMap.set(accountId, {

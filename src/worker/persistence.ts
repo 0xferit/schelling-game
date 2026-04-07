@@ -4,6 +4,7 @@
 
 import type { SchellingPrompt } from '../types/domain';
 import type { GameResultMessage } from '../types/messages';
+import type { WorkerMatchPhase } from '../types/worker';
 
 // ---------------------------------------------------------------------------
 // Persisted state: single source of truth for checkpointable fields.
@@ -29,7 +30,7 @@ export interface PersistedPlayerState {
 
 export interface PersistedMatchFields {
   matchId: string;
-  phase: string;
+  phase: WorkerMatchPhase;
   currentGame: number;
   totalGames: number;
   prompts: SchellingPrompt[];
@@ -231,14 +232,16 @@ function isSchellingPromptArray(value: unknown): value is SchellingPrompt[] {
   return Array.isArray(value) && value.every(isSchellingPrompt);
 }
 
-function isMatchPhase(value: unknown): value is PersistedMatchFields['phase'] {
+function isMatchPhase(value: unknown): value is WorkerMatchPhase {
   return (
     value === 'commit' ||
     value === 'reveal' ||
     value === 'normalizing' ||
     value === 'results' ||
+    value === 'starting' ||
     value === 'settling' ||
-    value === 'ending'
+    value === 'ending' ||
+    value === 'ended'
   );
 }
 
@@ -294,7 +297,7 @@ function isGameResult(value: unknown): value is GameResultMessage['result'] {
 
 function readMatchRow(row: SqlRow): {
   matchId: string;
-  phase: string;
+  phase: WorkerMatchPhase;
   currentGame: number;
   totalGames: number;
   prompts: SchellingPrompt[];
@@ -307,7 +310,7 @@ function readMatchRow(row: SqlRow): {
   const phase = readString(row, 'phase');
   if (!isMatchPhase(phase)) {
     throw new Error(
-      `Invalid checkpoint data: phase must be commit, reveal, normalizing, results, settling, or ending`,
+      `Invalid checkpoint data: phase '${phase}' is not a valid WorkerMatchPhase`,
     );
   }
   const currentGame = readNumberField(row, 'current_game', 'current_round');
@@ -349,11 +352,7 @@ function readMatchRow(row: SqlRow): {
   };
 }
 
-function readPlayerRow(
-  row: SqlRow,
-  currentGame: number,
-  _now: number,
-): PersistedPlayerState {
+function readPlayerRow(row: SqlRow, currentGame: number): PersistedPlayerState {
   return {
     accountId: readString(row, 'account_id'),
     displayName: readString(row, 'display_name'),
@@ -638,7 +637,7 @@ export function restoreMatchesFromStorage(
 
       const players = new Map<string, PersistedPlayerState>();
       for (const pr of playerRows) {
-        const player = readPlayerRow(pr, matchRow.currentGame, now);
+        const player = readPlayerRow(pr, matchRow.currentGame);
         players.set(player.accountId, player);
       }
 
