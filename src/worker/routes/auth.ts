@@ -4,21 +4,98 @@ import { buildChallengeMessage, createSessionCookie } from '../session';
 import {
   AUTH_CHALLENGE_LIMIT,
   AUTH_VERIFY_LIMIT,
-  type AuthChallengeRow,
-  cookieAttrs,
   ensureAccountWithStats,
   errorResponse,
   getRequiredString,
-  insertAuthChallenge,
   isRateLimited,
   jsonResponse,
-  maybeCleanupExpiredAuthChallenges,
   normalizeWalletAddress,
-  parseIssuedAtFromChallengeMessage,
   rateLimitResponse,
   readJsonObjectBody,
-  SIGNATURE_REGEX,
 } from './_helpers';
+
+const SIGNATURE_REGEX = /^0x[a-fA-F0-9]{130}$/;
+
+interface AuthChallengeRow {
+  challenge_id: string;
+  wallet_address: string;
+  nonce: string;
+  message: string;
+  expires_at: string;
+  issued_at?: number | null;
+}
+
+function cookieAttrs(request: Request): string {
+  const secure = new URL(request.url).protocol === 'https:';
+  return `Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+}
+
+const AUTH_CHALLENGE_CLEANUP_INTERVAL_MS = 60 * 1000;
+
+// Per-isolate state; each isolate gets its own timestamp.
+let nextAuthChallengeCleanupAt = 0;
+
+async function maybeCleanupExpiredAuthChallenges(
+  db: D1Database,
+): Promise<void> {
+  const now = Date.now();
+  if (now < nextAuthChallengeCleanupAt) return;
+  nextAuthChallengeCleanupAt = now + AUTH_CHALLENGE_CLEANUP_INTERVAL_MS;
+
+  try {
+    await db
+      .prepare('DELETE FROM auth_challenges WHERE expires_at < ?')
+      .bind(new Date(now).toISOString())
+      .run();
+  } catch (error) {
+    console.error('D1: auth challenge cleanup failed', error);
+  }
+}
+
+function isMissingIssuedAtColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('no such column: issued_at') ||
+    message.includes('no column named issued_at')
+  );
+}
+
+async function insertAuthChallenge(
+  db: D1Database,
+  challengeId: string,
+  walletAddress: string,
+  nonce: string,
+  message: string,
+  expiresAt: string,
+  issuedAt: number,
+): Promise<void> {
+  try {
+    await db
+      .prepare(
+        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at, issued_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .bind(challengeId, walletAddress, nonce, message, expiresAt, issuedAt)
+      .run();
+  } catch (error) {
+    if (!isMissingIssuedAtColumnError(error)) throw error;
+
+    await db
+      .prepare(
+        'INSERT INTO auth_challenges (challenge_id, wallet_address, nonce, message, expires_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(challengeId, walletAddress, nonce, message, expiresAt)
+      .run();
+  }
+}
+
+function parseIssuedAtFromChallengeMessage(message: string): number | null {
+  const match = /\nIssued: (\d+)$/.exec(message);
+  if (!match) return null;
+
+  const issuedAt = Number(match[1]);
+  if (!Number.isSafeInteger(issuedAt)) return null;
+  return issuedAt;
+}
 
 export async function handleChallenge(
   request: Request,

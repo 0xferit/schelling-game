@@ -1071,7 +1071,7 @@ describe('escapeCsvField — formula injection defense', () => {
   let escapeCsvField: (value: unknown) => string;
 
   beforeAll(async () => {
-    const mod = await import('../../src/worker/routes/_helpers');
+    const mod = await import('../../src/worker/routes/admin');
     escapeCsvField = mod.escapeCsvField;
   });
 
