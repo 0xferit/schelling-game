@@ -7,9 +7,14 @@ import {
   readJsonObjectBody,
 } from './_helpers';
 
-function escapeCsvField(value: unknown): string {
+const CSV_FORMULA_PREFIX = /^[=+\-@]/;
+
+export function escapeCsvField(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const s = String(value);
+  let s = String(value);
+  if (CSV_FORMULA_PREFIX.test(s)) {
+    s = `\t${s}`;
+  }
   if (
     s.includes(',') ||
     s.includes('"') ||
