@@ -807,7 +807,7 @@ describe('GameRoom async task tracking', () => {
 
   it('uses a longer default timeout budget for open-text normalization', () => {
     const { room } = createRoom();
-    expect(room._getOpenTextNormalizerTimeoutMs()).toBe(10000);
+    expect(room._getOpenTextNormalizerTimeoutMs()).toBe(30_000);
   });
 
   it('skips Workers AI normalization when only one candidate remains', async () => {
@@ -895,7 +895,7 @@ describe('GameRoom async task tracking', () => {
       );
       expect(responsePayload.attempts).toHaveLength(4);
       expect(recordedDelays.filter((delay) => delay > 0)).toEqual([
-        2000, 5000, 10000,
+        2000, 5000, 10_000,
       ]);
     } finally {
       setTimeoutSpy.mockRestore();
@@ -2983,7 +2983,7 @@ describe('GameRoom async task tracking', () => {
       ).toBe(false);
       expect(match.retryTimer).not.toBeNull();
 
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(2000);
       expect(waitUntil).toHaveBeenCalledTimes(1);
       await must(waitUntil.mock.calls[0], 'Expected retry waitUntil call')[0];
 
@@ -3109,8 +3109,8 @@ describe('GameRoom async task tracking', () => {
       accountId: 'acct-1',
       displayName: 'Alice',
       ws: null,
-      startingBalance: 5_000,
-      currentBalance: 5_000,
+      startingBalance: 5000,
+      currentBalance: 5000,
       committed: true,
       revealed: true,
       hash: createOpenTextCommitHash('Paris', 'a'.repeat(64), CITY_PROMPT),
@@ -3128,8 +3128,8 @@ describe('GameRoom async task tracking', () => {
       accountId: 'acct-2',
       displayName: 'Bob',
       ws: null,
-      startingBalance: 5_000,
-      currentBalance: 5_000,
+      startingBalance: 5000,
+      currentBalance: 5000,
       committed: true,
       revealed: true,
       hash: createOpenTextCommitHash('paris', 'b'.repeat(64), CITY_PROMPT),
@@ -3147,8 +3147,8 @@ describe('GameRoom async task tracking', () => {
       accountId: 'acct-3',
       displayName: 'Carol',
       ws: null,
-      startingBalance: 5_000,
-      currentBalance: 5_000,
+      startingBalance: 5000,
+      currentBalance: 5000,
       committed: true,
       revealed: true,
       hash: createOpenTextCommitHash('London', 'c'.repeat(64), CITY_PROMPT),
@@ -3171,9 +3171,9 @@ describe('GameRoom async task tracking', () => {
     expect(match.phase).toBe('results');
     expect(match.lastSettledGame).toBe(1);
     expect(match.players.get('acct-1')?.currentBalance).toBe(
-      5_000 + Math.floor(GAME_ANTE / 2),
+      5000 + Math.floor(GAME_ANTE / 2),
     );
-    expect(match.players.get('acct-3')?.currentBalance).toBe(5_000 - GAME_ANTE);
+    expect(match.players.get('acct-3')?.currentBalance).toBe(5000 - GAME_ANTE);
     expect(match.lastGameResult).toMatchObject({
       gameNum: 1,
       normalizationMode: 'llm',
@@ -3191,17 +3191,17 @@ describe('GameRoom async task tracking', () => {
           {
             accountId: 'acct-1',
             revealedBucketKey: 'bucket:paris',
-            newBalance: 5_000 + Math.floor(GAME_ANTE / 2),
+            newBalance: 5000 + Math.floor(GAME_ANTE / 2),
           },
           {
             accountId: 'acct-2',
             revealedBucketKey: 'bucket:paris',
-            newBalance: 5_000 + Math.floor(GAME_ANTE / 2),
+            newBalance: 5000 + Math.floor(GAME_ANTE / 2),
           },
           {
             accountId: 'acct-3',
             revealedBucketKey: 'bucket:london',
-            newBalance: 5_000 - GAME_ANTE,
+            newBalance: 5000 - GAME_ANTE,
           },
         ],
       },
@@ -3248,8 +3248,8 @@ describe('GameRoom async task tracking', () => {
         accountId: 'acct-1',
         displayName: 'Alice',
         ws: null,
-        startingBalance: 5_000,
-        currentBalance: 5_000,
+        startingBalance: 5000,
+        currentBalance: 5000,
         committed: true,
         revealed: true,
         hash: createOpenTextCommitHash('Paris', 'a'.repeat(64), CITY_PROMPT),
@@ -3398,7 +3398,7 @@ describe('GameRoom async task tracking', () => {
       ).toBe(false);
       expect(match.retryTimer).not.toBeNull();
 
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(2000);
       expect(waitUntil).toHaveBeenCalledTimes(1);
       await must(waitUntil.mock.calls[0], 'Expected retry waitUntil call')[0];
 
@@ -3672,7 +3672,7 @@ describe('GameRoom async task tracking', () => {
           normalized_reveal_text: null,
           salt: null,
           forfeited: 0,
-          disconnected_at: restoreMs - 3_000,
+          disconnected_at: restoreMs - 3000,
         },
       ];
 
@@ -3715,7 +3715,7 @@ describe('GameRoom async task tracking', () => {
       expect(alice.graceTimer).not.toBeNull();
 
       expect(bob.ws).toBeNull();
-      expect(bob.disconnectedAt).toBe(restoreMs - 3_000);
+      expect(bob.disconnectedAt).toBe(restoreMs - 3000);
       expect(bob.graceTimer).not.toBeNull();
 
       vi.advanceTimersByTime(11_999);
@@ -3724,7 +3724,7 @@ describe('GameRoom async task tracking', () => {
       vi.advanceTimersByTime(1);
       expect(forfeitPlayer).toHaveBeenCalledWith(match, 'acct-2');
 
-      vi.advanceTimersByTime(3_000);
+      vi.advanceTimersByTime(3000);
       expect(forfeitPlayer).toHaveBeenCalledWith(match, 'acct-1');
     } finally {
       vi.restoreAllMocks();

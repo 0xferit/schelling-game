@@ -181,18 +181,18 @@ const KNOWN_AI_BOT_OUTPUT_MODES = new Map<string, AiBotStructuredOutputMode>([
   ['@cf/qwen/qwq-32b', 'guided_json'],
   ['@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', 'response_format'],
 ]);
-const DEFAULT_AI_BOT_TIMEOUT_MS = 20_000;
-const AI_BOT_COMMIT_BUFFER_MS = 1_500;
+const DEFAULT_AI_BOT_TIMEOUT_MS = 30_000;
+const AI_BOT_COMMIT_BUFFER_MS = 1500;
 const AI_BOT_TEMPERATURE = 0.05;
 const AI_BOT_SELECT_MAX_TOKENS = 24;
 const AI_BOT_OPEN_TEXT_MAX_TOKENS = 40;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
-const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 10_000;
+const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 30_000;
 const OPEN_TEXT_NORMALIZER_TEMPERATURE = 0;
-const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
+const OPEN_TEXT_NORMALIZATION_RETRY_DELAYS_MS = [2000, 5000, 10_000];
 const OPEN_TEXT_NORMALIZING_STATUS = 'Normalizing open-text answers...';
-const D1_RETRY_DELAY_MS = 2_000;
+const D1_RETRY_DELAY_MS = 2000;
 const WS_LIVENESS_CHECK_INTERVAL_MS = 10_000;
 const WS_IDLE_TIMEOUT_MS = 35_000;
 
