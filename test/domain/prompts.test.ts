@@ -6,6 +6,10 @@ import {
 } from '../../src/catalog/loader';
 import { RAW_CANONICAL_PROMPT_RECORDS } from '../../src/catalog/records';
 import {
+  createOpenTextPrompt,
+  createSelectPrompt,
+} from '../../src/domain/promptBuilders';
+import {
   getCanonicalPromptPool,
   getCanonicalPromptRecords,
   getPromptPoolQualityIssues,
@@ -65,6 +69,64 @@ describe('catalog loader', () => {
     expect(rawCatalogSource).not.toContain('../domain/');
     expect(rawCatalogSource).not.toContain('createSelectPrompt');
     expect(rawCatalogSource).not.toContain('createOpenTextPrompt');
+  });
+});
+
+describe('prompt builders', () => {
+  it('builds select prompts and clones options defensively', () => {
+    const options = ['Blue', 'Red'];
+
+    const prompt = createSelectPrompt(
+      2001,
+      'Pick a colour.',
+      'aesthetics',
+      options,
+    );
+
+    expect(prompt).toEqual({
+      id: 2001,
+      text: 'Pick a colour.',
+      type: 'select',
+      category: 'aesthetics',
+      options: ['Blue', 'Red'],
+    });
+
+    options.push('Green');
+    expect(prompt.options).toEqual(['Blue', 'Red']);
+  });
+
+  it('builds open-text prompts with required normalization and cloned examples', () => {
+    const examples = ['Seven'];
+
+    const prompt = createOpenTextPrompt(
+      2002,
+      'Pick a number from 1 to 10.',
+      'number',
+      16,
+      'Type a number',
+      { kind: 'integer_range', min: 1, max: 10, allowWords: true },
+      examples,
+    );
+
+    expect(prompt).toEqual({
+      id: 2002,
+      text: 'Pick a number from 1 to 10.',
+      type: 'open_text',
+      category: 'number',
+      maxLength: 16,
+      placeholder: 'Type a number',
+      answerSpec: {
+        kind: 'integer_range',
+        min: 1,
+        max: 10,
+        allowWords: true,
+      },
+      aiNormalization: 'required',
+      canonicalExamples: ['Seven'],
+    });
+
+    examples.push('Eight');
+    expect(prompt.canonicalExamples).toEqual(['Seven']);
   });
 });
 
