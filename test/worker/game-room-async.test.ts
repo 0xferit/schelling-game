@@ -2106,6 +2106,31 @@ describe('GameRoom async task tracking', () => {
     ).toHaveProperty('response_format');
   });
 
+  it('keeps the select structured-output schema strict and in range', () => {
+    const { room } = createRoom();
+    const request = room._buildAiBotOptionRequest(
+      '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+      TEST_SELECT_PROMPT,
+    ) as {
+      response_format: {
+        json_schema: unknown;
+      };
+    };
+
+    expect(request.response_format.json_schema).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['optionIndex'],
+      properties: {
+        optionIndex: {
+          type: 'integer',
+          minimum: 0,
+          maximum: TEST_SELECT_PROMPT.options.length - 1,
+        },
+      },
+    });
+  });
+
   it('uses configured structured-output modes from env when provided', () => {
     const { room } = createRoom({
       AI_BOT_MODEL_OUTPUT_MODES: [
@@ -2176,6 +2201,44 @@ describe('GameRoom async task tracking', () => {
         TEST_SELECT_PROMPT,
       ),
     ).not.toHaveProperty('response_format');
+  });
+
+  it('keeps the open-text structured-output schema bounded by prompt length', () => {
+    const { room } = createRoom();
+    const request = room._buildAiBotOpenTextRequest(
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+      CITY_PROMPT,
+    ) as {
+      guided_json: unknown;
+    };
+
+    expect(request.guided_json).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['answerText'],
+      properties: {
+        answerText: {
+          type: 'string',
+          minLength: 1,
+          maxLength: CITY_PROMPT.maxLength,
+        },
+      },
+    });
+  });
+
+  it('clears timeout handles once timed AI work resolves', async () => {
+    vi.useFakeTimers();
+    try {
+      const { room } = createRoom();
+
+      await expect(
+        room._runWithTimeout(Promise.resolve('ok'), 20_000, 'timed out'),
+      ).resolves.toBe('ok');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('does not commit a synthetic AI player when the model output is unusable', async () => {

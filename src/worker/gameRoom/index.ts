@@ -725,6 +725,29 @@ export class GameRoom {
     }
   }
 
+  async _runWithTimeout<T>(
+    work: Promise<T>,
+    timeoutMs: number,
+    timeoutMessage: string,
+  ): Promise<T> {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(timeoutMessage)),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle !== null) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
   _getDisplayName(accountId: string): string {
     if (this._isAiBot(accountId)) {
       const model = this._getAiBotModel(accountId);
@@ -2044,15 +2067,11 @@ export class GameRoom {
     const model = this._getAiBotModel(accountId);
 
     try {
-      const output = await Promise.race([
+      const output = await this._runWithTimeout(
         ai.run(model, this._buildAiBotOptionRequest(model, prompt)),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error('AI bot commit timed out')),
-            timeoutMs,
-          );
-        }),
-      ]);
+        timeoutMs,
+        'AI bot commit timed out',
+      );
 
       const parsedIndex = this._parseAiBotOptionIndex(output, prompt);
       if (parsedIndex !== null) {
@@ -2087,15 +2106,11 @@ export class GameRoom {
     const model = this._getAiBotModel(accountId);
 
     try {
-      const output = await Promise.race([
+      const output = await this._runWithTimeout(
         ai.run(model, this._buildAiBotOpenTextRequest(model, prompt)),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error('AI bot commit timed out')),
-            timeoutMs,
-          );
-        }),
-      ]);
+        timeoutMs,
+        'AI bot commit timed out',
+      );
 
       const parsedAnswer = this._parseAiBotAnswerText(output, prompt);
       if (parsedAnswer !== null) {
@@ -2120,10 +2135,13 @@ export class GameRoom {
     }
     const schema = {
       type: 'object',
+      additionalProperties: false,
       required: ['optionIndex'],
       properties: {
         optionIndex: {
           type: 'integer',
+          minimum: 0,
+          maximum: prompt.options.length - 1,
         },
       },
     };
@@ -2152,10 +2170,13 @@ export class GameRoom {
     }
     const schema = {
       type: 'object',
+      additionalProperties: false,
       required: ['answerText'],
       properties: {
         answerText: {
           type: 'string',
+          minLength: 1,
+          maxLength: prompt.maxLength,
         },
       },
     };
@@ -2745,15 +2766,11 @@ export class GameRoom {
           throw new Error('Workers AI binding unavailable');
         }
 
-        const output = await Promise.race([
+        const output = await this._runWithTimeout(
           ai.run(model, requestPayload),
-          new Promise<never>((_, reject) => {
-            setTimeout(
-              () => reject(new Error('Open-text normalization timed out')),
-              this._getOpenTextNormalizerTimeoutMs(),
-            );
-          }),
-        ]);
+          this._getOpenTextNormalizerTimeoutMs(),
+          'Open-text normalization timed out',
+        );
 
         const responseText =
           this._extractAiResponseText(output) ?? JSON.stringify(output);
