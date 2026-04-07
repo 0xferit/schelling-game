@@ -70,5 +70,5 @@ jobs:
 
       - name: Smoke test next
         env:
-          STAGING_BASE_URL: https://next.schelling.games
-        run: npm run smoke:staging
+          SMOKE_BASE_URL: https://next.schelling.games
+        run: npm run smoke:remote
