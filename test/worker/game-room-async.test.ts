@@ -2148,6 +2148,25 @@ describe('GameRoom async task tracking', () => {
     ).toHaveProperty('guided_json');
   });
 
+  it('ignores malformed structured-output mode entries from env', () => {
+    const { room } = createRoom({
+      AI_BOT_MODEL_OUTPUT_MODES: [
+        'garbage',
+        '@cf/test/x=invalid_mode',
+        '=response_format',
+        '@cf/test/y=',
+      ].join(','),
+    });
+
+    expect(room._getConfiguredAiBotStructuredOutputModes().size).toBe(0);
+    expect(
+      room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+    ).not.toHaveProperty('guided_json');
+    expect(
+      room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+    ).not.toHaveProperty('response_format');
+  });
+
   it('uses guided_json for the known guided-json bot models', () => {
     const { room } = createRoom();
 

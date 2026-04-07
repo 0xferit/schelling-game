@@ -217,6 +217,10 @@ function buildAllowedMatchSizes(availablePlayers: number): number[] {
 export class GameRoom {
   state: DurableObjectState;
   env: Env;
+  configuredAiBotStructuredOutputModesCache: Map<
+    string,
+    AiBotStructuredOutputMode
+  > | null;
 
   // accountId -> ConnectionState
   connections: Map<string, ConnectionState>;
@@ -236,6 +240,7 @@ export class GameRoom {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
+    this.configuredAiBotStructuredOutputModesCache = null;
 
     this.connections = new Map();
     this.waitingQueue = [];
@@ -663,9 +668,14 @@ export class GameRoom {
     string,
     AiBotStructuredOutputMode
   > {
+    if (this.configuredAiBotStructuredOutputModesCache) {
+      return this.configuredAiBotStructuredOutputModesCache;
+    }
+
     const configuredModes = new Map<string, AiBotStructuredOutputMode>();
     const raw = this.env.AI_BOT_MODEL_OUTPUT_MODES?.trim();
     if (!raw) {
+      this.configuredAiBotStructuredOutputModesCache = configuredModes;
       return configuredModes;
     }
 
@@ -689,6 +699,7 @@ export class GameRoom {
       configuredModes.set(model, mode);
     }
 
+    this.configuredAiBotStructuredOutputModesCache = configuredModes;
     return configuredModes;
   }
 

@@ -18,6 +18,9 @@ const SUPPORTED_AI_BOT_MODELS = new Map([
   ['@cf/qwen/qwq-32b', 'guided_json'],
   ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', 'guided_json'],
 ]);
+const SECTION_HEADER_PATTERN = /^\s*\[\[?.+\]\]?\s*$/;
+const AI_BOT_ASSIGNMENT_PATTERN =
+  /^(\s*)(AI_BOT_MODELS|AI_BOT_MODEL_OUTPUT_MODES)\s*=\s*(?:"[^"]*"|'[^']*'|[^#]*?)(\s*(?:#.*)?)$/;
 
 function getTargetTasks() {
   const raw = process.env.AI_BOT_CATALOG_TASKS?.trim();
@@ -88,36 +91,77 @@ function selectCompatibleModels(catalog, targetTasks, poolSize) {
     .slice(0, poolSize);
 }
 
+function formatAiBotAssignment(indent, key, value, trailingComment = '') {
+  return `${indent}${key} = "${value}"${trailingComment}`;
+}
+
 function updateWranglerToml(content, modelsValue, modesValue) {
   const lines = content.split('\n');
   const updated = [];
-  let replacements = 0;
+  let modelReplacements = 0;
+  let pendingModesLine = null;
+  let currentSectionHasModels = false;
+  let currentSectionHasModes = false;
+
+  const flushSection = () => {
+    if (currentSectionHasModels && !currentSectionHasModes && pendingModesLine) {
+      updated.push(pendingModesLine);
+    }
+    pendingModesLine = null;
+    currentSectionHasModels = false;
+    currentSectionHasModes = false;
+  };
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-
-    if (line.startsWith('AI_BOT_MODELS = ')) {
-      updated.push(`AI_BOT_MODELS = "${modelsValue}"`);
-      replacements += 1;
-
-      const nextLine = lines[index + 1] || '';
-      if (nextLine.startsWith('AI_BOT_MODEL_OUTPUT_MODES = ')) {
-        updated.push(`AI_BOT_MODEL_OUTPUT_MODES = "${modesValue}"`);
-        index += 1;
-      } else {
-        updated.push(`AI_BOT_MODEL_OUTPUT_MODES = "${modesValue}"`);
-      }
+    if (SECTION_HEADER_PATTERN.test(line)) {
+      flushSection();
+      updated.push(line);
       continue;
     }
 
-    if (line.startsWith('AI_BOT_MODEL_OUTPUT_MODES = ')) {
-      continue;
+    const assignment = line.match(AI_BOT_ASSIGNMENT_PATTERN);
+    if (assignment) {
+      const [, indent, key, trailingComment = ''] = assignment;
+      if (key === 'AI_BOT_MODELS') {
+        updated.push(
+          formatAiBotAssignment(
+            indent,
+            'AI_BOT_MODELS',
+            modelsValue,
+            trailingComment,
+          ),
+        );
+        modelReplacements += 1;
+        currentSectionHasModels = true;
+        pendingModesLine = formatAiBotAssignment(
+          indent,
+          'AI_BOT_MODEL_OUTPUT_MODES',
+          modesValue,
+        );
+        continue;
+      }
+      if (key === 'AI_BOT_MODEL_OUTPUT_MODES') {
+        updated.push(
+          formatAiBotAssignment(
+            indent,
+            'AI_BOT_MODEL_OUTPUT_MODES',
+            modesValue,
+            trailingComment,
+          ),
+        );
+        currentSectionHasModes = true;
+        pendingModesLine = null;
+        continue;
+      }
     }
 
     updated.push(line);
   }
 
-  if (replacements === 0) {
+  flushSection();
+
+  if (modelReplacements === 0) {
     throw new Error('Could not find any AI_BOT_MODELS entries in wrangler.toml');
   }
 
