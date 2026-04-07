@@ -241,8 +241,8 @@ jobs:
 
       - name: Smoke test preview
         env:
-          STAGING_BASE_URL: ${{ steps.deploy.outputs.url }}
-        run: npm run smoke:staging
+          SMOKE_BASE_URL: ${{ steps.deploy.outputs.url }}
+        run: npm run smoke:remote
 
   preview-guide:
     name: Preview guide comment

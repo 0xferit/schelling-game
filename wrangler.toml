@@ -26,31 +26,6 @@ OPEN_TEXT_PROMPTS_ENABLED = "true"
 OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
 TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
 
-[env.staging]
-name = "schelling-games-staging"
-
-[[env.staging.durable_objects.bindings]]
-name = "GAME_ROOM"
-class_name = "GameRoom"
-
-[[env.staging.d1_databases]]
-binding = "DB"
-database_name = "schelling-games-staging"
-database_id = "89517289-ab7f-459c-b9f4-59bd80aa9ffb"
-migrations_dir = "d1-migrations"
-
-[env.staging.ai]
-binding = "AI"
-remote = true
-
-[env.staging.vars]
-AI_BOT_ENABLED = "true"
-AI_BOT_MODELS = "@cf/meta/llama-3-8b-instruct,@cf/meta/llama-3.1-8b-instruct-fast,@cf/meta/llama-3.1-70b-instruct,@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-AI_BOT_TIMEOUT_MS = "10000"
-OPEN_TEXT_PROMPTS_ENABLED = "true"
-OPEN_TEXT_NORMALIZER_TIMEOUT_MS = "10000"
-TURNSTILE_SITE_KEY = "0x4AAAAAACyDgW8MDPcYEH2x"
-
 [env.next]
 name = "schelling-games-next"
 workers_dev = false
