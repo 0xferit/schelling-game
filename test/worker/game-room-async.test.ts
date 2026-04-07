@@ -1996,6 +1996,360 @@ describe('GameRoom async task tracking', () => {
     expect(prompt).not.toContain('Chain-of-thought');
   });
 
+  it('uses prompt-only bot requests for models without structured-output support', async () => {
+    const aiRun = vi.fn().mockResolvedValue({
+      choices: [{ text: '\n\n{"optionIndex": 1}' }],
+    });
+    const { room, waitUntil } = createRoom({
+      AI_BOT_ENABLED: 'true',
+      AI_BOT_MODELS: '@cf/openai/gpt-oss-20b',
+      AI_BOT_TIMEOUT_MS: '250',
+      AI: {
+        run: aiRun,
+      },
+    });
+    vi.spyOn(room, '_checkpointMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_checkpointPlayerAction').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastToMatch').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastCommitStatus').mockImplementation(() => {});
+    vi.spyOn(room, '_broadcastRevealStatus').mockImplementation(() => {});
+
+    const match = createMatch();
+    match.currentGame = 0;
+    match.phase = 'starting';
+
+    const human = {
+      accountId: 'acct-1',
+      displayName: 'Alice',
+      ws: null,
+      startingBalance: 100,
+      currentBalance: 100,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    const bot = {
+      accountId: 'ai-bot:0:test',
+      displayName: 'AI Backfill',
+      ws: null,
+      startingBalance: 0,
+      currentBalance: 0,
+      committed: false,
+      revealed: false,
+      hash: null,
+      optionIndex: null,
+      salt: null,
+      forfeited: false,
+      disconnectedAt: null,
+      graceTimer: null,
+      pendingAiCommit: false,
+    };
+    match.players.set(human.accountId, human);
+    match.players.set(bot.accountId, bot);
+
+    room._startCommitPhase(match);
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await must(waitUntil.mock.calls[0], 'Expected AI bot waitUntil call')[0];
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(aiRun.mock.calls[0]?.[0]).toBe('@cf/openai/gpt-oss-20b');
+    expect(aiRun.mock.calls[0]?.[1]).not.toHaveProperty('guided_json');
+    expect(aiRun.mock.calls[0]?.[1]).not.toHaveProperty('response_format');
+    expect(bot.committed).toBe(true);
+    expect(bot.optionIndex).toBe(1);
+
+    if (match.commitTimer) clearTimeout(match.commitTimer);
+  });
+
+  it('parses OpenAI-style text completion envelopes for select bot decisions', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotOptionIndex(
+      {
+        choices: [{ text: '\n\n{"optionIndex": 1}' }],
+      },
+      TEST_SELECT_PROMPT,
+    );
+
+    expect(parsed).toBe(1);
+  });
+
+  it('parses the first JSON object from noisy open-text bot responses', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotAnswerText(
+      {
+        choices: [
+          {
+            text: '\n\n{"answerText":"New York"}\n\nRespond with JSON only: {"answerText":"<answer>"}',
+          },
+        ],
+      },
+      CITY_PROMPT,
+    );
+
+    expect(parsed).toBe('New York');
+  });
+
+  it('parses OpenAI chat-completion string envelopes for open-text bot decisions', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotAnswerText(
+      {
+        choices: [
+          {
+            message: {
+              content: '{"answerText":"New York"}',
+            },
+          },
+        ],
+      },
+      CITY_PROMPT,
+    );
+
+    expect(parsed).toBe('New York');
+  });
+
+  it('parses OpenAI chat-completion content arrays for open-text bot decisions', () => {
+    const { room } = createRoom();
+    const parsed = room._parseAiBotAnswerText(
+      {
+        choices: [
+          {
+            message: {
+              content: [
+                {
+                  type: 'output_text',
+                  text: '{"answerText":"New York"}',
+                },
+              ],
+            },
+          },
+        ],
+      },
+      CITY_PROMPT,
+    );
+
+    expect(parsed).toBe('New York');
+  });
+
+  it('uses response_format for the known JSON-mode bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).toHaveProperty('response_format');
+  });
+
+  it('uses response_format for open-text requests on the known JSON-mode bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOpenTextRequest(
+        '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+        CITY_PROMPT,
+      ),
+    ).toHaveProperty('response_format');
+  });
+
+  it('keeps the select structured-output schema strict and in range', () => {
+    const { room } = createRoom();
+    const request = room._buildAiBotOptionRequest(
+      '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+      TEST_SELECT_PROMPT,
+    ) as {
+      response_format: {
+        json_schema: unknown;
+      };
+    };
+
+    expect(request.response_format.json_schema).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['optionIndex'],
+      properties: {
+        optionIndex: {
+          type: 'integer',
+          minimum: 0,
+          maximum: TEST_SELECT_PROMPT.options.length - 1,
+        },
+      },
+    });
+  });
+
+  it('uses configured structured-output modes from env when provided', () => {
+    const { room } = createRoom({
+      AI_BOT_MODEL_OUTPUT_MODES: [
+        '@cf/test/model-a=response_format',
+        '@cf/test/model-b=guided_json',
+      ].join(','),
+    });
+
+    expect(
+      room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+    ).toHaveProperty('response_format');
+
+    expect(
+      room._buildAiBotOptionRequest('@cf/test/model-b', TEST_SELECT_PROMPT),
+    ).toHaveProperty('guided_json');
+  });
+
+  it('ignores malformed structured-output mode entries from env', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { room } = createRoom({
+        AI_BOT_MODEL_OUTPUT_MODES: [
+          'garbage',
+          '@cf/test/x=invalid_mode',
+          '=response_format',
+          '@cf/test/y=',
+        ].join(','),
+      });
+
+      expect(room._getConfiguredAiBotStructuredOutputModes().size).toBe(0);
+      expect(
+        room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+      ).not.toHaveProperty('guided_json');
+      expect(
+        room._buildAiBotOptionRequest('@cf/test/model-a', TEST_SELECT_PROMPT),
+      ).not.toHaveProperty('response_format');
+      expect(warn).toHaveBeenCalledTimes(4);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('uses guided_json for the known guided-json bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        TEST_SELECT_PROMPT,
+      ),
+    ).toHaveProperty('guided_json');
+
+    expect(
+      room._buildAiBotOptionRequest('@cf/qwen/qwq-32b', TEST_SELECT_PROMPT),
+    ).toHaveProperty('guided_json');
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('guided_json');
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/openai/gpt-oss-20b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('guided_json');
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/openai/gpt-oss-20b',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('response_format');
+  });
+
+  it('lets env config force prompt-only mode for a structured-output model', () => {
+    const { room } = createRoom({
+      AI_BOT_MODEL_OUTPUT_MODES:
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast=prompt_only',
+    });
+
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('guided_json');
+    expect(
+      room._buildAiBotOptionRequest(
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        TEST_SELECT_PROMPT,
+      ),
+    ).not.toHaveProperty('response_format');
+  });
+
+  it('keeps open-text requests prompt-only for prompt-only bot models', () => {
+    const { room } = createRoom();
+
+    expect(
+      room._buildAiBotOpenTextRequest('@cf/openai/gpt-oss-20b', CITY_PROMPT),
+    ).not.toHaveProperty('guided_json');
+    expect(
+      room._buildAiBotOpenTextRequest('@cf/openai/gpt-oss-20b', CITY_PROMPT),
+    ).not.toHaveProperty('response_format');
+  });
+
+  it('keeps the open-text structured-output schema bounded by prompt length', () => {
+    const { room } = createRoom();
+    const request = room._buildAiBotOpenTextRequest(
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+      CITY_PROMPT,
+    ) as {
+      guided_json: unknown;
+    };
+
+    expect(request.guided_json).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['answerText'],
+      properties: {
+        answerText: {
+          type: 'string',
+          minLength: 1,
+          maxLength: CITY_PROMPT.maxLength,
+        },
+      },
+    });
+  });
+
+  it('clears timeout handles once timed AI work resolves', async () => {
+    vi.useFakeTimers();
+    try {
+      const { room } = createRoom();
+
+      await expect(
+        room._runWithTimeout(Promise.resolve('ok'), 20_000, 'timed out'),
+      ).resolves.toBe('ok');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects when timed AI work exceeds the timeout budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const { room } = createRoom();
+      const timed = room._runWithTimeout(
+        new Promise<string>(() => {}),
+        250,
+        'timed out',
+      );
+      const rejection = expect(timed).rejects.toThrow('timed out');
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      await rejection;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not commit a synthetic AI player when the model output is unusable', async () => {
     const aiRun = vi.fn().mockResolvedValue({
       response: 'not valid json',

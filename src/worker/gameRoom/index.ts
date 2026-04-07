@@ -33,6 +33,7 @@ import type {
   PlayerResultWithBalance,
   PlayerSettlementInput,
   SchellingPrompt,
+  SelectPrompt,
 } from '../../types/domain';
 import type {
   ClientMessage,
@@ -135,6 +136,11 @@ interface PersistedVoteLogRow {
   normalization_mode: NormalizationMode;
 }
 
+type AiBotStructuredOutputMode =
+  | 'guided_json'
+  | 'response_format'
+  | 'prompt_only';
+
 function neutralizeAiAssistedResult(result: GameResult): GameResult {
   return {
     ...result,
@@ -161,14 +167,24 @@ const AI_BOT_TARGET_MATCH_SIZE = 5;
 const STALE_MATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
 const DEFAULT_AI_BOT_MODELS = [
-  '@cf/meta/llama-3-8b-instruct',
-  '@cf/meta/llama-3.1-8b-instruct-fast',
-  '@cf/meta/llama-3.1-70b-instruct',
+  '@cf/openai/gpt-oss-20b',
+  '@cf/qwen/qwq-32b',
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
 ];
-const DEFAULT_AI_BOT_TIMEOUT_MS = 10_000;
+const KNOWN_AI_BOT_OUTPUT_MODES = new Map<string, AiBotStructuredOutputMode>([
+  ['@cf/meta/llama-3-8b-instruct', 'guided_json'],
+  ['@cf/meta/llama-3.1-8b-instruct-fast', 'guided_json'],
+  ['@cf/meta/llama-3.1-70b-instruct', 'guided_json'],
+  ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', 'guided_json'],
+  ['@cf/qwen/qwq-32b', 'guided_json'],
+  ['@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', 'response_format'],
+]);
+const DEFAULT_AI_BOT_TIMEOUT_MS = 20_000;
 const AI_BOT_COMMIT_BUFFER_MS = 1_500;
 const AI_BOT_TEMPERATURE = 0.05;
+const AI_BOT_SELECT_MAX_TOKENS = 24;
+const AI_BOT_OPEN_TEXT_MAX_TOKENS = 40;
 const DEFAULT_OPEN_TEXT_NORMALIZER_MODEL =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const DEFAULT_OPEN_TEXT_NORMALIZER_TIMEOUT_MS = 10_000;
@@ -199,6 +215,10 @@ function buildAllowedMatchSizes(availablePlayers: number): number[] {
 export class GameRoom {
   state: DurableObjectState;
   env: Env;
+  configuredAiBotStructuredOutputModesCache: Map<
+    string,
+    AiBotStructuredOutputMode
+  > | null;
 
   // accountId -> ConnectionState
   connections: Map<string, ConnectionState>;
@@ -218,6 +238,7 @@ export class GameRoom {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
+    this.configuredAiBotStructuredOutputModesCache = null;
 
     this.connections = new Map();
     this.waitingQueue = [];
@@ -626,6 +647,71 @@ export class GameRoom {
     return models[0] as string;
   }
 
+  _getAiBotStructuredOutputMode(model: string): AiBotStructuredOutputMode {
+    const configuredMode =
+      this._getConfiguredAiBotStructuredOutputModes().get(model);
+    if (configuredMode) {
+      return configuredMode;
+    }
+    return KNOWN_AI_BOT_OUTPUT_MODES.get(model) ?? 'prompt_only';
+  }
+
+  _getConfiguredAiBotStructuredOutputModes(): Map<
+    string,
+    AiBotStructuredOutputMode
+  > {
+    if (this.configuredAiBotStructuredOutputModesCache) {
+      return this.configuredAiBotStructuredOutputModesCache;
+    }
+
+    const configuredModes = new Map<string, AiBotStructuredOutputMode>();
+    const raw = this.env.AI_BOT_MODEL_OUTPUT_MODES?.trim();
+    if (!raw) {
+      this.configuredAiBotStructuredOutputModesCache = configuredModes;
+      return configuredModes;
+    }
+
+    for (const entry of raw.split(',')) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      const separatorIndex = trimmed.lastIndexOf('=');
+      if (separatorIndex <= 0 || separatorIndex >= trimmed.length - 1) {
+        console.warn('Ignoring malformed AI_BOT_MODEL_OUTPUT_MODES entry', {
+          entry: trimmed,
+        });
+        continue;
+      }
+      const model = trimmed.slice(0, separatorIndex).trim();
+      const mode = trimmed.slice(separatorIndex + 1).trim();
+      if (!model) {
+        console.warn(
+          'Ignoring AI_BOT_MODEL_OUTPUT_MODES entry with empty model',
+          { entry: trimmed },
+        );
+        continue;
+      }
+      if (
+        mode !== 'guided_json' &&
+        mode !== 'response_format' &&
+        mode !== 'prompt_only'
+      ) {
+        console.warn(
+          'Ignoring AI_BOT_MODEL_OUTPUT_MODES entry with invalid mode',
+          {
+            entry: trimmed,
+            model,
+            mode,
+          },
+        );
+        continue;
+      }
+      configuredModes.set(model, mode);
+    }
+
+    this.configuredAiBotStructuredOutputModesCache = configuredModes;
+    return configuredModes;
+  }
+
   _openTextPromptsEnabled(): boolean {
     return (
       this.env.OPEN_TEXT_PROMPTS_ENABLED === 'true' ||
@@ -657,6 +743,48 @@ export class GameRoom {
       console.error('Workers AI binding access failed', error);
       return null;
     }
+  }
+
+  async _runWithTimeout<T>(
+    work: Promise<T>,
+    timeoutMs: number,
+    timeoutMessage: string,
+  ): Promise<T> {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(timeoutMessage)),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle !== null) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  _previewAiOutput(output: unknown, maxLength = 240): string | null {
+    const raw =
+      this._extractAiResponseText(output) ??
+      (() => {
+        try {
+          return JSON.stringify(output);
+        } catch {
+          return null;
+        }
+      })();
+    if (!raw) {
+      return null;
+    }
+    if (raw.length <= maxLength) {
+      return raw;
+    }
+    return `${raw.slice(0, maxLength)}...`;
   }
 
   _getDisplayName(accountId: string): string {
@@ -1975,36 +2103,25 @@ export class GameRoom {
       return null;
     }
 
+    const model = this._getAiBotModel(accountId);
+
     try {
-      const output = await Promise.race([
-        ai.run(this._getAiBotModel(accountId), {
-          prompt: this._buildAiBotPrompt(prompt),
-          guided_json: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['optionIndex'],
-            properties: {
-              optionIndex: {
-                type: 'integer',
-                minimum: 0,
-                maximum: prompt.options.length - 1,
-              },
-            },
-          },
-          max_tokens: 16,
-          temperature: AI_BOT_TEMPERATURE,
-        }),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error('AI bot commit timed out')),
-            timeoutMs,
-          );
-        }),
-      ]);
+      const output = await this._runWithTimeout(
+        ai.run(model, this._buildAiBotOptionRequest(model, prompt)),
+        timeoutMs,
+        'AI bot commit timed out',
+      );
 
       const parsedIndex = this._parseAiBotOptionIndex(output, prompt);
       if (parsedIndex !== null) {
         return parsedIndex;
+      }
+      const outputPreview = this._previewAiOutput(output);
+      if (outputPreview) {
+        console.warn('Workers AI bot option output was unparseable', {
+          model,
+          outputPreview,
+        });
       }
     } catch (error) {
       console.error('Workers AI bot inference failed', error);
@@ -2032,42 +2149,101 @@ export class GameRoom {
       return null;
     }
 
+    const model = this._getAiBotModel(accountId);
+
     try {
-      const output = await Promise.race([
-        ai.run(this._getAiBotModel(accountId), {
-          prompt: this._buildAiBotPrompt(prompt),
-          guided_json: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['answerText'],
-            properties: {
-              answerText: {
-                type: 'string',
-                minLength: 1,
-                maxLength: prompt.maxLength,
-              },
-            },
-          },
-          max_tokens: 32,
-          temperature: AI_BOT_TEMPERATURE,
-        }),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error('AI bot commit timed out')),
-            timeoutMs,
-          );
-        }),
-      ]);
+      const output = await this._runWithTimeout(
+        ai.run(model, this._buildAiBotOpenTextRequest(model, prompt)),
+        timeoutMs,
+        'AI bot commit timed out',
+      );
 
       const parsedAnswer = this._parseAiBotAnswerText(output, prompt);
       if (parsedAnswer !== null) {
         return parsedAnswer;
+      }
+      const outputPreview = this._previewAiOutput(output);
+      if (outputPreview) {
+        console.warn('Workers AI bot open-text output was unparseable', {
+          model,
+          outputPreview,
+        });
       }
     } catch (error) {
       console.error('Workers AI bot inference failed', error);
     }
 
     return null;
+  }
+
+  _buildAiBotOptionRequest(model: string, prompt: SelectPrompt) {
+    const basePayload: Record<string, unknown> = {
+      prompt: this._buildAiBotPrompt(prompt),
+      max_tokens: AI_BOT_SELECT_MAX_TOKENS,
+      temperature: AI_BOT_TEMPERATURE,
+    };
+    const structuredOutputMode = this._getAiBotStructuredOutputMode(model);
+    if (structuredOutputMode === 'prompt_only') {
+      return basePayload;
+    }
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['optionIndex'],
+      properties: {
+        optionIndex: {
+          type: 'integer',
+          minimum: 0,
+          maximum: prompt.options.length - 1,
+        },
+      },
+    };
+    return {
+      ...basePayload,
+      ...(structuredOutputMode === 'guided_json'
+        ? { guided_json: schema }
+        : {
+            response_format: {
+              type: 'json_schema',
+              json_schema: schema,
+            },
+          }),
+    };
+  }
+
+  _buildAiBotOpenTextRequest(model: string, prompt: OpenTextPrompt) {
+    const basePayload: Record<string, unknown> = {
+      prompt: this._buildAiBotPrompt(prompt),
+      max_tokens: AI_BOT_OPEN_TEXT_MAX_TOKENS,
+      temperature: AI_BOT_TEMPERATURE,
+    };
+    const structuredOutputMode = this._getAiBotStructuredOutputMode(model);
+    if (structuredOutputMode === 'prompt_only') {
+      return basePayload;
+    }
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['answerText'],
+      properties: {
+        answerText: {
+          type: 'string',
+          minLength: 1,
+          maxLength: prompt.maxLength,
+        },
+      },
+    };
+    return {
+      ...basePayload,
+      ...(structuredOutputMode === 'guided_json'
+        ? { guided_json: schema }
+        : {
+            response_format: {
+              type: 'json_schema',
+              json_schema: schema,
+            },
+          }),
+    };
   }
 
   _buildAiBotPrompt(prompt: SchellingPrompt): string {
@@ -2115,7 +2291,7 @@ export class GameRoom {
         ...hintLines,
         ...exampleLines,
         '',
-        'Respond with JSON: {"answerText": "<answer>"}',
+        'Respond with JSON only: {"answerText": "<answer>"}',
       ].join('\n');
     }
 
@@ -2135,7 +2311,7 @@ export class GameRoom {
       options,
       ...hintLines,
       '',
-      'Respond with JSON: {"optionIndex": <zero-based index>}',
+      'Respond with JSON only: {"optionIndex": <zero-based index>}',
     ].join('\n');
   }
 
@@ -2254,6 +2430,83 @@ export class GameRoom {
         return response;
       }
     }
+    if (
+      typeof output === 'object' &&
+      output !== null &&
+      'choices' in output &&
+      Array.isArray(output.choices)
+    ) {
+      const firstChoice = output.choices[0];
+      if (typeof firstChoice === 'object' && firstChoice !== null) {
+        if ('text' in firstChoice && typeof firstChoice.text === 'string') {
+          return firstChoice.text.trim() || null;
+        }
+        if (
+          'message' in firstChoice &&
+          typeof firstChoice.message === 'object' &&
+          firstChoice.message !== null &&
+          'content' in firstChoice.message
+        ) {
+          const content = firstChoice.message.content;
+          if (typeof content === 'string') {
+            return content.trim() || null;
+          }
+          if (Array.isArray(content)) {
+            const joined = content
+              .map((part) =>
+                typeof part === 'object' &&
+                part !== null &&
+                'text' in part &&
+                typeof part.text === 'string'
+                  ? part.text
+                  : '',
+              )
+              .join('')
+              .trim();
+            return joined || null;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  _extractFirstJsonObject(response: string): string | null {
+    let start = response.indexOf('{');
+    while (start !== -1) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let index = start; index < response.length; index += 1) {
+        const char = response[index];
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+        if (inString) {
+          continue;
+        }
+        if (char === '{') {
+          depth += 1;
+          continue;
+        }
+        if (char === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            return response.slice(start, index + 1);
+          }
+        }
+      }
+      start = response.indexOf('{', start + 1);
+    }
     return null;
   }
 
@@ -2279,6 +2532,21 @@ export class GameRoom {
 
     try {
       const parsed = JSON.parse(strippedResponse);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        !Array.isArray(parsed)
+      ) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {}
+
+    const jsonObject = this._extractFirstJsonObject(strippedResponse);
+    if (!jsonObject) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(jsonObject);
       if (
         typeof parsed === 'object' &&
         parsed !== null &&
@@ -2551,15 +2819,11 @@ export class GameRoom {
           throw new Error('Workers AI binding unavailable');
         }
 
-        const output = await Promise.race([
+        const output = await this._runWithTimeout(
           ai.run(model, requestPayload),
-          new Promise<never>((_, reject) => {
-            setTimeout(
-              () => reject(new Error('Open-text normalization timed out')),
-              this._getOpenTextNormalizerTimeoutMs(),
-            );
-          }),
-        ]);
+          this._getOpenTextNormalizerTimeoutMs(),
+          'Open-text normalization timed out',
+        );
 
         const responseText =
           this._extractAiResponseText(output) ?? JSON.stringify(output);
