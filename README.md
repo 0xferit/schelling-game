@@ -82,7 +82,7 @@ If you change D1 schema, re-apply the local migrations before restarting or re-t
 | `npm run typecheck` | Type-check the Node-side domain/test code with `tsconfig.json`. |
 | `npm run typecheck:worker` | Type-check Worker code with `tsconfig.worker.json`. |
 | `npm run lint` | Run Biome checks across the repo. |
-| `npm run check:max-lines` | Fail if the current branch causes any changed text file to cross above 1000 lines relative to `origin/main`. Override the base with `MAX_LINES_BASE_REF` and the limit with `MAX_LINES_LIMIT`. |
+| `npm run check:max-lines` | Fail if the current branch causes any changed text file to cross above 1000 lines compared against the merge-base of `MAX_LINES_BASE_REF` and `HEAD` (by default, typically `origin/main`). Override the base with `MAX_LINES_BASE_REF` and the limit with `MAX_LINES_LIMIT`. |
 | `npm run smoke:remote` | Run the deployed remote smoke test. Requires `SMOKE_BASE_URL`. |
 | `npm run deploy` | Stamp build metadata, deploy the Worker, and restore checked-in HTML files. |
 
