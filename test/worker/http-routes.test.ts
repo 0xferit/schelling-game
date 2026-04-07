@@ -1,5 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LEADERBOARD_LIMIT } from '../../src/domain/constants';
 import type { Env } from '../../src/types/worker-env';
 import { handleHttpRequest } from '../../src/worker/httpHandler';
@@ -1064,5 +1064,42 @@ describe('HTTP routes', () => {
       } as Env,
     );
     expect(resp.status).toBe(503);
+  });
+});
+
+describe('escapeCsvField — formula injection defense', () => {
+  let escapeCsvField: (value: unknown) => string;
+
+  beforeAll(async () => {
+    const mod = await import('../../src/worker/routes/_helpers');
+    escapeCsvField = mod.escapeCsvField;
+  });
+
+  it('passes through plain values', () => {
+    expect(escapeCsvField('hello')).toBe('hello');
+    expect(escapeCsvField(42)).toBe('42');
+    expect(escapeCsvField(null)).toBe('');
+    expect(escapeCsvField(undefined)).toBe('');
+  });
+
+  it('quotes values containing commas, quotes, or newlines', () => {
+    expect(escapeCsvField('a,b')).toBe('"a,b"');
+    expect(escapeCsvField('say "hi"')).toBe('"say ""hi"""');
+    expect(escapeCsvField('line\nbreak')).toBe('"line\nbreak"');
+  });
+
+  it('prefixes formula-triggering characters with tab', () => {
+    expect(escapeCsvField('=SUM(A1)')).toBe('\t=SUM(A1)');
+    expect(escapeCsvField('+cmd')).toBe('\t+cmd');
+    expect(escapeCsvField('-val')).toBe('\t-val');
+    expect(escapeCsvField('@import')).toBe('\t@import');
+  });
+
+  it('keeps tab inside quotes for formula values that also need quoting', () => {
+    expect(escapeCsvField('=1,2')).toBe('"\t=1,2"');
+    expect(escapeCsvField('=HYPERLINK("evil","click")')).toBe(
+      '"\t=HYPERLINK(""evil"",""click"")"',
+    );
+    expect(escapeCsvField('+line\nbreak')).toBe('"\t+line\nbreak"');
   });
 });
