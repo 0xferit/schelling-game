@@ -2,7 +2,7 @@
 applyTo: "**"
 ---
 
-# Schelling Game
+# Schelling Games
 
 Multiplayer coordination game where players independently pick the option they expect the most other players to pick. Answers are committed with a hash, revealed, and settled by exact-match plurality. Runs on Cloudflare Workers + Durable Objects + D1.
 
@@ -70,6 +70,10 @@ Single entry point: `src/worker.ts` for both production and local dev. Domain lo
 ## Game Rules
 
 `docs/game-design.md` is the canonical, authoritative game rules document. Defer to it for any gameplay behavior questions. Do not duplicate or paraphrase game rules elsewhere.
+
+## Documentation Hygiene
+
+If a code change affects setup, commands, architecture, file layout, or documented behavior in `README.md`, update `README.md` in the same change.
 
 ## Architecture Decisions
 

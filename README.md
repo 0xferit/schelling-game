@@ -1,6 +1,6 @@
-# The Schelling Game
+# Schelling Games
 
-The Schelling Game is a wallet-authenticated multiplayer coordination game built on Cloudflare Workers. Players commit answers privately, reveal them later, and try to match the answer they expect the most other players to pick. The public product now uses a literature-rooted Schelling prompt pool with both `select` and controlled `open_text` prompts. This repository contains the production Worker, the singleton Durable Object that runs the lobby and matches, D1-backed persistence, and the static frontend served at `schelling.games`.
+Schelling Games is a wallet-authenticated multiplayer coordination game built on Cloudflare Workers. Players commit answers privately, reveal them later, and try to match the answer they expect the most other players to pick. The public product now uses a literature-rooted Schelling prompt pool with both `select` and controlled `open_text` prompts. This repository contains the production Worker, the singleton Durable Object that runs the lobby and matches, D1-backed persistence, and the static frontend served at `schelling.games`.
 
 ## Live Links And Docs
 
