@@ -65,6 +65,7 @@
 <link rel="stylesheet" href="/styles/base.css"/>
 <link rel="stylesheet" href="/styles/layout.css"/>
 <link rel="stylesheet" href="/styles/components.css"/>
+<link rel="stylesheet" href="/styles/app-shell.css"/>
 </head>
 <body>
 <div id="app">
@@ -72,7 +73,7 @@
     <div class="header-brand">
       <div class="header-brand-copy">
         <div class="header-kicker">Multiplayer coordination lobby</div>
-        <h1><a href="/" style="color:inherit;text-decoration:none">The Schelling <span>Game</span></a></h1>
+        <h1><a href="/" class="header-home-link">The Schelling <span>Game</span></a></h1>
       </div>
     </div>
     <nav>
@@ -190,8 +191,8 @@
       <div id="phase-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
       <!-- Timer -->
       <div class="timer-wrap">
-        <div id="phase-timer-label" style="min-width:3.5rem;font-size:.86rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Commit</div>
-        <div class="timer-bar-outer" id="timer-progress" role="progressbar" aria-labelledby="phase-timer-label" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30" aria-valuetext="30 seconds remaining"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
+        <div id="phase-timer-label" class="phase-timer-label">Commit</div>
+        <div class="timer-bar-outer" id="timer-progress" role="progressbar" aria-labelledby="phase-timer-label" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30" aria-valuetext="30 seconds remaining"><div class="timer-bar timer-bar-fill" id="timer-bar"></div></div>
         <div class="timer-num" id="timer-num">30</div>
       </div>
 
@@ -204,7 +205,7 @@
             <span>This run is off the record, so balances and stats stay unchanged.</span>
           </div>
         </div>
-        <div id="forfeit-status-banner" class="danger-banner hidden" style="margin-bottom:1rem">
+        <div id="forfeit-status-banner" class="danger-banner banner-spaced hidden">
           <strong>Forfeit locked in.</strong> You're out of this run. Wait in the lobby or stay here to watch until final standings land.
         </div>
         <div id="question-text">Waiting for game...</div>
@@ -222,18 +223,18 @@
       <!-- Game result -->
       <div id="game-result-banner" class="hidden">
         <h3>Game <span id="result-game-num">?</span> Result</h3>
-        <div id="void-banner" class="hidden" style="color:var(--orange);margin-bottom:.5rem;font-weight:600">Game voided: all antes refunded</div>
+        <div id="void-banner" class="void-banner hidden">Game voided: all antes refunded</div>
         <table id="result-table">
           <thead><tr>
             <th>Player</th><th>Choice</th><th>Won</th><th>Coord. Credit</th><th>Net</th><th>Balance</th>
           </tr></thead>
           <tbody id="result-tbody"></tbody>
         </table>
-        <div id="result-note" style="font-size:.88rem;color:var(--muted);margin-top:.5rem"></div>
+        <div id="result-note" class="result-note"></div>
         <div id="rating-row" class="hidden">
           <span>Rate this prompt:</span>
-          <button id="rating-like" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128077; <span id="rating-likes">0</span></button>
-          <button id="rating-dislike" class="btn-ghost" style="padding:.3rem .7rem;font-size:.9rem">&#128078; <span id="rating-dislikes">0</span></button>
+          <button id="rating-like" class="btn-ghost rating-button-compact">&#128077; <span id="rating-likes">0</span></button>
+          <button id="rating-dislike" class="btn-ghost rating-button-compact">&#128078; <span id="rating-dislikes">0</span></button>
         </div>
       </div>
     </div>
@@ -284,7 +285,7 @@
           <div id="summary-rings"></div>
         </div>
       </div>
-      <div id="summary-off-record-banner" class="info-banner hidden" style="margin-top:1rem">
+      <div id="summary-off-record-banner" class="info-banner summary-off-record-banner hidden">
         <strong>Off the record.</strong> This AI-assisted match did not change balances, streaks, or leaderboard standing.
       </div>
       <div id="summary-stats"></div>
@@ -335,7 +336,7 @@
         </tr></thead>
         <tbody id="lb-tbody"></tbody>
       </table>
-      <div id="lb-empty" class="hidden" style="text-align:center;padding:2rem;color:var(--muted)">No leaderboard data yet.</div>
+      <div id="lb-empty" class="leaderboard-empty-state hidden">No leaderboard data yet.</div>
     </div>
   </div>
 </div>
@@ -347,10 +348,10 @@
 <div id="notif"></div>
 <div id="seed-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="seed-dialog-title">
   <div class="seed-card">
-    <h3 id="seed-dialog-title" style="margin:0">Your Seed Phrase</h3>
+    <h3 id="seed-dialog-title" class="dialog-title-reset">Your Seed Phrase</h3>
     <p class="seed-warn">Write these words down and store them somewhere safe. Anyone with this phrase can access your account.</p>
     <textarea class="seed-phrase" id="seed-phrase-text" readonly rows="3"></textarea>
-    <div style="display:flex;gap:.5rem">
+    <div class="dialog-actions-inline">
       <button class="btn-primary" id="copy-seed-btn">Copy</button>
       <button class="btn-ghost" id="close-seed-btn">Close</button>
     </div>
@@ -360,7 +361,7 @@
 <div id="rules-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="rules-dialog-title">
   <div class="rules-card">
     <div class="rules-header">
-      <h3 id="rules-dialog-title" style="margin:0">Rules</h3>
+      <h3 id="rules-dialog-title" class="dialog-title-reset">Rules</h3>
       <button class="btn-ghost" id="close-rules-btn">Close</button>
     </div>
 
@@ -406,7 +407,7 @@
 
     <div>
       <p class="rules-section-label">Examples</p>
-      <div class="rules-example" style="margin-bottom:.5rem">
+      <div class="rules-example rules-example-spaced">
         <strong>2-1 split</strong> (3 players, pot = 7560): Two players pick the same option. Each winner receives 3780 (net +1260). The lone picker gets nothing (net &minus;2520).
       </div>
       <div class="rules-example">

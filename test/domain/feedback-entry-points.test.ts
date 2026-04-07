@@ -19,6 +19,20 @@ describe('feedback entry points', () => {
     expect(landingHtml).toContain('issues/new?template=feedback.md');
   });
 
+  it('landing shell references extracted stylesheet and runtime script', () => {
+    expect(landingHtml).toContain(
+      '<link rel="stylesheet" href="/styles/landing.css"/>',
+    );
+    expect(landingHtml).toContain(
+      '<script src="/scripts/landing.js"></script>',
+    );
+  });
+
+  it('landing shell no longer embeds inline style or runtime script blocks', () => {
+    expect(landingHtml).not.toContain('<style>');
+    expect(landingHtml).not.toContain('/* ── Convergence Canvas');
+  });
+
   it('app shell exposes the feedback issue link', () => {
     expect(appHtml).toContain('issues/new?template=feedback.md');
   });
@@ -32,14 +46,15 @@ describe('feedback entry points', () => {
     const stylesheetLinks = appHtml.match(
       /<link rel="stylesheet" href="\/styles\/[^"]+\.css"\/>/g,
     );
-    expect(stylesheetLinks?.length).toBeGreaterThanOrEqual(4);
+    expect(stylesheetLinks?.length).toBeGreaterThanOrEqual(5);
     expect(appHtml).toContain(
       '<script type="module" src="/scripts/app.js"></script>',
     );
   });
 
-  it('app shell no longer embeds the application style block or runtime script', () => {
+  it('app shell no longer embeds the application style block, runtime script, or inline styles', () => {
     expect(appHtml).not.toContain('<style>');
+    expect(appHtml).not.toContain('style=');
     expect(appHtml).not.toContain('The Schelling Game client');
     expect(appHtml).not.toContain("window.addEventListener('error'");
   });

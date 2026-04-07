@@ -1,4 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import {
+  CANONICAL_PROMPT_RECORDS,
+  loadPromptCatalogRecords,
+} from '../../src/catalog/loader';
+import { RAW_CANONICAL_PROMPT_RECORDS } from '../../src/catalog/records';
+import type {
+  RawOpenTextPrompt,
+  RawPromptCatalogRecord,
+  RawSelectPrompt,
+} from '../../src/catalog/schema';
 import {
   getCanonicalPromptPool,
   getCanonicalPromptRecords,
@@ -8,6 +19,11 @@ import {
   validatePromptPool,
 } from '../../src/domain/prompts';
 import type { OpenTextPrompt, SchellingPrompt } from '../../src/types/domain';
+
+const rawCatalogSource = readFileSync(
+  new URL('../../src/catalog/records.ts', import.meta.url),
+  'utf8',
+);
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -28,6 +44,118 @@ function getMutableRecord(id: number) {
   }
   return record;
 }
+
+describe('catalog loader', () => {
+  it('materializes raw catalog data into the canonical runtime records', () => {
+    expect(loadPromptCatalogRecords()).toEqual(CANONICAL_PROMPT_RECORDS);
+
+    const rawOpenTextRecord = RAW_CANONICAL_PROMPT_RECORDS.find(
+      (record) => record.prompt.type === 'open_text',
+    );
+    const loadedOpenTextRecord = CANONICAL_PROMPT_RECORDS.find(
+      (record) => record.prompt.type === 'open_text',
+    );
+    if (!rawOpenTextRecord || !loadedOpenTextRecord) {
+      throw new Error('Expected open-text prompt records to exist');
+    }
+    if (loadedOpenTextRecord.prompt.type !== 'open_text') {
+      throw new Error('Expected loaded open-text prompt record');
+    }
+
+    expect('aiNormalization' in rawOpenTextRecord.prompt).toBe(false);
+    expect(loadedOpenTextRecord.prompt.aiNormalization).toBe('required');
+  });
+
+  it('keeps raw researcher-owned catalog data free of domain-builder imports', () => {
+    expect(rawCatalogSource).not.toContain('../domain/');
+    expect(rawCatalogSource).not.toContain('createSelectPrompt');
+    expect(rawCatalogSource).not.toContain('createOpenTextPrompt');
+  });
+
+  it('defensively clones mutable raw prompt fields during loading', () => {
+    const selectRawPrompt: RawSelectPrompt = {
+      id: 2001,
+      text: 'Pick a colour.',
+      type: 'select',
+      category: 'aesthetics',
+      options: ['Blue', 'Red'],
+    };
+    const selectRawRecord: RawPromptCatalogRecord = {
+      root: 'colour',
+      calibration: false,
+      aiBackfill: { promptHints: ['colour hint'] },
+      prompt: selectRawPrompt,
+    };
+    const openTextRawPrompt: RawOpenTextPrompt = {
+      id: 2002,
+      text: 'Pick a number from 1 to 10.',
+      type: 'open_text',
+      category: 'number',
+      maxLength: 16,
+      placeholder: 'Type a number',
+      answerSpec: {
+        kind: 'integer_range',
+        min: 1,
+        max: 10,
+        allowWords: true,
+      },
+      canonicalExamples: ['Seven'],
+    };
+    const openTextRawRecord: RawPromptCatalogRecord = {
+      root: 'number_1_to_10',
+      calibration: true,
+      aiBackfill: { promptHints: ['number hint'] },
+      prompt: openTextRawPrompt,
+    };
+    const rawRecords: RawPromptCatalogRecord[] = [
+      selectRawRecord,
+      openTextRawRecord,
+    ];
+
+    const loadedRecords = loadPromptCatalogRecords(rawRecords);
+    const loadedSelectPrompt = loadedRecords[0]?.prompt;
+    const loadedOpenTextPrompt = loadedRecords[1]?.prompt;
+    if (!loadedSelectPrompt || !loadedOpenTextPrompt) {
+      throw new Error('Expected loaded prompt records');
+    }
+    if (loadedOpenTextPrompt.type !== 'open_text') {
+      throw new Error('Expected open-text prompt record');
+    }
+
+    selectRawPrompt.options.push('Green');
+    selectRawRecord.aiBackfill.promptHints.push('second hint');
+    if (openTextRawPrompt.answerSpec.kind !== 'integer_range') {
+      throw new Error('Expected integer-range answer spec');
+    }
+    openTextRawPrompt.answerSpec.allowWords = false;
+    openTextRawPrompt.canonicalExamples.push('Eight');
+
+    expect(loadedSelectPrompt).toEqual({
+      id: 2001,
+      text: 'Pick a colour.',
+      type: 'select',
+      category: 'aesthetics',
+      options: ['Blue', 'Red'],
+    });
+    expect(loadedRecords[0]?.aiBackfill.promptHints).toEqual(['colour hint']);
+    expect(loadedOpenTextPrompt).toEqual({
+      id: 2002,
+      text: 'Pick a number from 1 to 10.',
+      type: 'open_text',
+      category: 'number',
+      maxLength: 16,
+      placeholder: 'Type a number',
+      answerSpec: {
+        kind: 'integer_range',
+        min: 1,
+        max: 10,
+        allowWords: true,
+      },
+      aiNormalization: 'required',
+      canonicalExamples: ['Seven'],
+    });
+  });
+});
 
 describe('prompt pool', () => {
   const pool = getCanonicalPromptPool();
