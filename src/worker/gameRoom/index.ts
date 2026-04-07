@@ -429,8 +429,7 @@ export class GameRoom {
       } catch {}
       // Remove from queue if they were queued
       this._removeFromQueue(accountId);
-      this._ensureAiBotBackfill();
-      this._tryFormMatch();
+      this._rebalanceQueueAndForm();
     }
 
     this.connections.set(accountId, {
@@ -907,9 +906,14 @@ export class GameRoom {
     return botIds;
   }
 
-  // Must be called BEFORE _tryFormMatch at every call site. It reads
-  // both waitingQueue and formingMatch to count humans, so the caller
-  // must not move players between those structures between the two calls.
+  // Adjusts AI bot count then attempts to form a match. This is the
+  // standard entry point; use it instead of calling the two methods
+  // separately to guarantee correct ordering.
+  _rebalanceQueueAndForm(): void {
+    this._ensureAiBotBackfill();
+    this._tryFormMatch();
+  }
+
   _ensureAiBotBackfill(): void {
     for (const botId of this._getQueuedAiBotIds()) {
       this._removeFromQueue(botId);
@@ -986,8 +990,7 @@ export class GameRoom {
 
     conn.startNow = false;
     this.waitingQueue.push(accountId);
-    this._ensureAiBotBackfill();
-    this._tryFormMatch();
+    this._rebalanceQueueAndForm();
     this._broadcastQueueState();
   }
 
@@ -997,8 +1000,7 @@ export class GameRoom {
 
     conn.startNow = false;
     this._removeFromQueue(accountId);
-    this._ensureAiBotBackfill();
-    this._tryFormMatch();
+    this._rebalanceQueueAndForm();
     this._broadcastQueueState();
   }
 
@@ -1255,8 +1257,7 @@ export class GameRoom {
         }
         this.playerMatchIndex.delete(accountId);
       }
-      this._ensureAiBotBackfill();
-      this._tryFormMatch();
+      this._rebalanceQueueAndForm();
       this._broadcastQueueState();
       return;
     }
@@ -1932,8 +1933,7 @@ export class GameRoom {
     }
     this._deleteMatchCheckpoint(match.matchId);
 
-    this._ensureAiBotBackfill();
-    this._tryFormMatch();
+    this._rebalanceQueueAndForm();
     this._broadcastQueueState();
   }
 
@@ -3261,8 +3261,7 @@ export class GameRoom {
       // Not in a match: remove from queue and forming match
       this._removeFromQueue(accountId);
       this.connections.delete(accountId);
-      this._ensureAiBotBackfill();
-      this._tryFormMatch();
+      this._rebalanceQueueAndForm();
       this._broadcastQueueState();
       return;
     }
