@@ -38,7 +38,7 @@ function restoreRecord<T extends object>(target: T, snapshot: T): void {
 }
 
 function getMutableRecord(id: number) {
-  const record = getPromptRecordById(id);
+  const record = CANONICAL_PROMPT_RECORDS.find((r) => r.prompt.id === id);
   if (!record) {
     throw new Error(`Expected prompt record ${id}`);
   }
