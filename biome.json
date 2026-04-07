@@ -22,7 +22,8 @@
         "noVoidTypeReturn": "off"
       },
       "style": {
-        "noNonNullAssertion": "error"
+        "noNonNullAssertion": "error",
+        "useNumericSeparators": "error"
       },
       "complexity": {
         "noUselessLoneBlockStatements": "off"

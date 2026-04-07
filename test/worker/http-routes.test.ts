@@ -699,13 +699,13 @@ describe('HTTP routes', () => {
       {
         accountId,
         displayName: 'TargetPlayer',
-        balance: 100000,
+        balance: 100_000,
         coherentGames: 1,
       },
       ...Array.from({ length: LEADERBOARD_LIMIT }, (_, index) => ({
         accountId: `ahead-${index}`,
         displayName: `Ahead${String(index).padStart(3, '0')}`,
-        balance: 200000 - index,
+        balance: 200_000 - index,
         coherentGames: index % 7,
       })),
     ]);

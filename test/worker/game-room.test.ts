@@ -73,7 +73,7 @@ function buildPromptAction(
 }
 
 function getGameResultTimeoutMs(prompt: SchellingPrompt): number {
-  return prompt.type === 'open_text' ? 25_000 : 5_000;
+  return prompt.type === 'open_text' ? 25_000 : 5000;
 }
 
 function createDeterministicAiBinding() {
@@ -1445,11 +1445,7 @@ describe('GameRoom Durable Object', () => {
           expect(message.prompt).toEqual(prompt);
         }
 
-        const phaseChange = waitForMessage(
-          players[0].ws,
-          'phase_change',
-          5_000,
-        );
+        const phaseChange = waitForMessage(players[0].ws, 'phase_change', 5000);
         for (let i = 0; i < players.length; i++) {
           const salt = makeSalt(gameNum, i + 1);
           const action = buildPromptAction(prompt, salt, 0);

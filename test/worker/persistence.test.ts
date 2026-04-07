@@ -490,7 +490,7 @@ describe('restoreMatchesFromStorage', () => {
         salt: null,
         forfeited: 0,
         // Explicit timestamp: this player really disconnected 5 s ago
-        disconnected_at: Date.now() - 5_000,
+        disconnected_at: Date.now() - 5000,
       },
     ];
 
