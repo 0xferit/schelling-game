@@ -6,7 +6,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { WebSocketServer, WebSocket } from 'ws';
 import db from './src/db';
 import { createChallenge, verifyChallenge, getSession, isValidAddress, devCreateSession } from './src/auth';
-import { handleMessage, handleDisconnect, getAccountState } from './src/gameManager';
+import { handleMessage, handleDisconnect, handleReconnect, getAccountState } from './src/gameManager';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -341,6 +341,54 @@ app.get('/api/example-tally', (_req: Request, res: Response) => {
   }
 });
 
+app.get('/api/landing-stats', async (_req: Request, res: Response) => {
+  try {
+    const stats = db.getLandingStats();
+    res.json({
+      playersLast24h: stats.players24h,
+      completedMatches: stats.completedMatches,
+      longestStreak: stats.bestCoordinationStreak,
+    });
+  } catch (err) {
+    try {
+      const fallback = await fetch('https://schelling.games/api/landing-stats');
+      if (!fallback.ok) throw new Error(`fallback status ${fallback.status}`);
+      const data = await fallback.json();
+      res.json(data);
+    } catch (fallbackErr) {
+      const cause = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      res.status(500).json({
+        error: (err as Error).message,
+        fallbackError: cause,
+      });
+    }
+  }
+});
+
+app.get('/api/stats', async (_req: Request, res: Response) => {
+  try {
+    const stats = db.getLandingStats();
+    res.json(stats);
+  } catch {
+    try {
+      const fallback = await fetch('https://schelling.games/api/landing-stats');
+      if (!fallback.ok) throw new Error(`fallback status ${fallback.status}`);
+      const data = await fallback.json() as {
+        playersLast24h?: number;
+        completedMatches?: number;
+        longestStreak?: number;
+      };
+      res.json({
+        players24h: data.playersLast24h ?? 0,
+        completedMatches: data.completedMatches ?? 0,
+        bestCoordinationStreak: data.longestStreak ?? 0,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Static files
 // ---------------------------------------------------------------------------
@@ -365,6 +413,7 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
   }
 
   ws._accountId = session.accountId;
+  handleReconnect(ws, session.accountId);
 
   ws.on('message', (data: Buffer) => {
     handleMessage(ws, data.toString());

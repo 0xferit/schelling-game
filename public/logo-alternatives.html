@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schelling Game Logo Alternatives</title>
+  <style>
+    :root{
+      --bg:#0a0a0a;
+      --surface:#111;
+      --surface2:#161616;
+      --border:rgba(237,231,221,.12);
+      --text:#ede7dd;
+      --muted:#938a80;
+      --accent:#E63C14;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text)}
+    body{
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background-image:radial-gradient(circle, rgba(230,60,20,.16) 1px, transparent 1.25px);
+      background-size:40px 40px;
+    }
+    .page{
+      width:min(1320px, calc(100vw - 32px));
+      margin:0 auto;
+      padding:40px 0 56px;
+    }
+    .head{
+      display:grid;
+      gap:18px;
+      margin-bottom:28px;
+    }
+    .eyebrow{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      color:var(--muted);
+    }
+    .eyebrow::before{
+      content:"/";
+      color:var(--accent);
+    }
+    .head h1{
+      margin:0;
+      font-size:clamp(42px, 7vw, 88px);
+      line-height:.9;
+      text-transform:uppercase;
+      letter-spacing:-.04em;
+    }
+    .head h1 em{
+      font-style:normal;
+      color:var(--accent);
+    }
+    .head p{
+      margin:0;
+      max-width:62ch;
+      color:var(--muted);
+      line-height:1.8;
+      font-size:16px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:20px;
+    }
+    .card{
+      position:relative;
+      overflow:hidden;
+      background:rgba(17,17,17,.92);
+      border:1px solid var(--border);
+      min-height:700px;
+      display:grid;
+      grid-template-rows:auto auto 1fr auto;
+    }
+    .card::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      background-image:
+        linear-gradient(rgba(237,231,221,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(237,231,221,.06) 1px, transparent 1px),
+        radial-gradient(circle, rgba(237,231,221,.1) .9px, transparent 1px);
+      background-size:72px 72px,72px 72px,24px 24px;
+      opacity:.22;
+      pointer-events:none;
+    }
+    .card > *{position:relative;z-index:1}
+    .card-top{
+      display:grid;
+      grid-template-columns:auto 1fr auto;
+      gap:10px;
+      align-items:center;
+      padding:14px 16px 12px;
+      border-bottom:1px solid var(--border);
+      font:10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      color:rgba(237,231,221,.62);
+    }
+    .card-top span:nth-child(2){text-align:center}
+    .card-top span:last-child{text-align:right}
+    .lockup{
+      display:grid;
+      gap:18px;
+      align-content:start;
+      padding:20px 16px 18px;
+      border-bottom:1px solid var(--border);
+      min-height:176px;
+    }
+    .lockup-bar{
+      display:flex;
+      align-items:center;
+      gap:14px;
+    }
+    .mark{
+      width:48px;
+      height:48px;
+      flex:0 0 auto;
+      color:var(--text);
+    }
+    .lockup-text{
+      display:grid;
+      gap:4px;
+    }
+    .lockup-name{
+      font-size:10px;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      color:var(--muted);
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    }
+    .wordmark{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.2em;
+      align-items:baseline;
+      text-transform:uppercase;
+      line-height:.9;
+    }
+    .wm-fill,
+    .wm-outline,
+    .wm-mono{
+      font-weight:900;
+      letter-spacing:-.04em;
+      font-size:clamp(24px, 2.8vw, 42px);
+    }
+    .wm-fill{color:var(--text)}
+    .wm-outline{
+      color:transparent;
+      -webkit-text-stroke:1.2px var(--accent);
+    }
+    .wm-mono{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:clamp(20px, 2.3vw, 34px);
+      letter-spacing:.02em;
+      color:var(--text);
+    }
+    .hero-mark{
+      display:grid;
+      place-items:center;
+      padding:30px 16px;
+      border-bottom:1px solid var(--border);
+      min-height:260px;
+    }
+    .hero-mark svg{
+      width:min(100%, 260px);
+      height:auto;
+      display:block;
+    }
+    .notes{
+      display:grid;
+      gap:16px;
+      padding:18px 16px 22px;
+      align-content:start;
+    }
+    .notes p{
+      margin:0;
+      color:var(--muted);
+      line-height:1.75;
+      font-size:14px;
+    }
+    .meta{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:10px;
+      padding-top:12px;
+      border-top:1px solid var(--border);
+    }
+    .meta span{
+      font:10px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+      color:rgba(237,231,221,.54);
+    }
+    .accent{color:var(--accent)}
+    .pick{
+      margin-top:16px;
+      font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+      color:rgba(237,231,221,.62);
+    }
+    @media (max-width: 980px){
+      .grid{grid-template-columns:1fr}
+      .card{min-height:0}
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="head">
+      <span class="eyebrow">Logo Alternatives</span>
+      <h1>Three directions for the <em>mark</em></h1>
+      <p>Each option pushes the project toward a different read: focal-point salience, commit-reveal protocol, or networked coordination. The lockups below are meant as directionally correct logo systems, not final production files.</p>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <div class="card-top">
+          <span>Option 01</span>
+          <span>Focal point mark</span>
+          <span>Recommended</span>
+        </div>
+        <div class="lockup">
+          <div class="lockup-bar">
+            <svg class="mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="24" cy="24" r="17" stroke="currentColor" stroke-width="1.6"/>
+              <circle cx="24" cy="24" r="9.5" stroke="currentColor" stroke-width="1.6" opacity=".72"/>
+              <circle cx="30.5" cy="18.5" r="3.8" fill="var(--accent)"/>
+              <path d="M24 7V13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+              <path d="M41 24H35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+              <path d="M24 41V35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+              <path d="M7 24H13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+            </svg>
+            <div class="lockup-text">
+              <span class="lockup-name">Navbar Lockup</span>
+              <div class="wordmark"><span class="wm-fill">Schelling</span><span class="wm-outline">Game</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hero-mark">
+          <svg viewBox="0 0 280 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="140" cy="140" r="94" stroke="var(--text)" stroke-width="2.4"/>
+            <circle cx="140" cy="140" r="55" stroke="var(--text)" stroke-width="2.4" opacity=".68"/>
+            <circle cx="175" cy="111" r="18" fill="var(--accent)"/>
+            <path d="M140 28V58" stroke="var(--text)" stroke-width="2.4" stroke-linecap="round" opacity=".42"/>
+            <path d="M252 140H222" stroke="var(--text)" stroke-width="2.4" stroke-linecap="round" opacity=".42"/>
+            <path d="M140 252V222" stroke="var(--text)" stroke-width="2.4" stroke-linecap="round" opacity=".42"/>
+            <path d="M28 140H58" stroke="var(--text)" stroke-width="2.4" stroke-linecap="round" opacity=".42"/>
+          </svg>
+        </div>
+        <div class="notes">
+          <p>The best fit for the product meaning. The mark reads as a shared target, a salience anchor, and a place where multiple independent guesses converge.</p>
+          <div class="meta">
+            <span>Feel / precise</span>
+            <span>Use / brand mark</span>
+            <span>Risk / lowest</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-top">
+          <span>Option 02</span>
+          <span>Commit seal</span>
+          <span>Protocol-first</span>
+        </div>
+        <div class="lockup">
+          <div class="lockup-bar">
+            <svg class="mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="24" cy="24" r="17" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M24 7A17 17 0 0 1 24 41" stroke="var(--accent)" stroke-width="4.6" stroke-linecap="round"/>
+              <path d="M24 7A17 17 0 0 0 24 41" stroke="currentColor" stroke-width="1.6" opacity=".7"/>
+              <rect x="20.5" y="16" width="7" height="16" rx="1.7" fill="var(--bg)" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+            <div class="lockup-text">
+              <span class="lockup-name">Navbar Lockup</span>
+              <div class="wordmark"><span class="wm-fill">Commit</span><span class="wm-outline">Reveal</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hero-mark">
+          <svg viewBox="0 0 280 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="140" cy="140" r="90" stroke="var(--text)" stroke-width="2.2"/>
+            <path d="M140 50A90 90 0 0 1 140 230" stroke="var(--accent)" stroke-width="22" stroke-linecap="round"/>
+            <path d="M140 50A90 90 0 0 0 140 230" stroke="var(--text)" stroke-width="2.2" opacity=".62"/>
+            <rect x="120" y="84" width="40" height="112" rx="9" fill="var(--bg)" stroke="var(--text)" stroke-width="2.2"/>
+            <path d="M126 140H154" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="notes">
+          <p>This one leans into commit-reveal. It feels more protocol-heavy and less game-like, which is good if the product wants to read as mechanism rather than cultural object.</p>
+          <div class="meta">
+            <span>Feel / technical</span>
+            <span>Use / protocol brand</span>
+            <span>Risk / narrower</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-top">
+          <span>Option 03</span>
+          <span>Grid node</span>
+          <span>Systemic</span>
+        </div>
+        <div class="lockup">
+          <div class="lockup-bar">
+            <svg class="mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect x="8" y="8" width="32" height="32" rx="3" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M16 8V40" stroke="currentColor" stroke-width="1.2" opacity=".46"/>
+              <path d="M32 8V40" stroke="currentColor" stroke-width="1.2" opacity=".46"/>
+              <path d="M8 16H40" stroke="currentColor" stroke-width="1.2" opacity=".46"/>
+              <path d="M8 32H40" stroke="currentColor" stroke-width="1.2" opacity=".46"/>
+              <circle cx="24" cy="24" r="3.8" fill="var(--accent)"/>
+              <path d="M24 24L32 16" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            <div class="lockup-text">
+              <span class="lockup-name">Navbar Lockup</span>
+              <div class="wordmark"><span class="wm-mono">SCHELLING.GAME</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hero-mark">
+          <svg viewBox="0 0 280 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="44" y="44" width="192" height="192" rx="10" stroke="var(--text)" stroke-width="2.2"/>
+            <path d="M108 44V236" stroke="var(--text)" stroke-width="1.8" opacity=".34"/>
+            <path d="M172 44V236" stroke="var(--text)" stroke-width="1.8" opacity=".34"/>
+            <path d="M44 108H236" stroke="var(--text)" stroke-width="1.8" opacity=".34"/>
+            <path d="M44 172H236" stroke="var(--text)" stroke-width="1.8" opacity=".34"/>
+            <circle cx="140" cy="140" r="15" fill="var(--accent)"/>
+            <path d="M140 140L204 76" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
+            <circle cx="204" cy="76" r="8" stroke="var(--accent)" stroke-width="2.4"/>
+          </svg>
+        </div>
+        <div class="notes">
+          <p>The strongest system icon. It connects well to on-chain coordination and dashboards, but it is less emotionally distinct than the focal-point direction.</p>
+          <div class="meta">
+            <span>Feel / networked</span>
+            <span>Use / interface brand</span>
+            <span>Risk / colder</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="pick">Reply with <span class="accent">1</span>, <span class="accent">2</span>, or <span class="accent">3</span> and I can push that direction into the navbar, footer, and favicon treatments next.</div>
+  </main>
+</body>
+</html>

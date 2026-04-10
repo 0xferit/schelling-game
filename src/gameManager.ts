@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import type WebSocket from 'ws';
 import queue from './matchmaking';
-import { verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal';
+import crypto from 'node:crypto';
+import { createCommitHash, verifyCommit, validateSalt, validateHash, validateOptionIndex } from './domain/commitReveal';
 import { settleRound, ROUND_ANTE } from './domain/settlement';
 import { selectQuestionsForMatch } from './domain/questions';
 import db from './db';
@@ -14,6 +15,11 @@ const RESULTS_DURATION = 12;   // seconds
 const RECONNECT_GRACE = 15;    // seconds
 const TOTAL_ROUNDS = 10;
 const MAX_CHAT_LENGTH = 300;
+const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
+const AI_BOT_COMMIT_MIN_MS = 1200;
+const AI_BOT_COMMIT_SPREAD_MS = 1600;
+const AI_BOT_REVEAL_MIN_MS = 900;
+const AI_BOT_REVEAL_SPREAD_MS = 1300;
 
 // ---------------------------------------------------------------------------
 // Type definitions for in-memory state
@@ -28,8 +34,10 @@ interface SessionEntry {
 interface PlayerState {
   accountId: string;
   displayName: string;
+  isBot: boolean;
   ws: WebSocket | null;
   startingBalance: number;
+  currentBalance: number;
   committed: boolean;
   revealed: boolean;
   hash: string | null;
@@ -98,6 +106,116 @@ function clearTimers(match: MatchState): void {
   match.commitTimer = null;
   match.revealTimer = null;
   match.resultsTimer = null;
+}
+
+function isAiBot(accountId: string): boolean {
+  return accountId.startsWith(AI_BOT_ACCOUNT_PREFIX);
+}
+
+function pickBotOption(question: Question, accountId: string): number {
+  const preferredTokens = [
+    '50%', '50', '0.50', '0.5', '100', '10', '7', '3', '1', '0', '42',
+    'saturday', 'sunday', '12:00', 'july', 'love', 'peace', 'blue', 'black', 'white',
+  ];
+  const scores = question.options.map((option, index) => {
+    const normalized = option.trim().toLowerCase();
+    let score = 0;
+    preferredTokens.forEach((token, tokenIndex) => {
+      if (normalized === token || normalized.includes(token)) {
+        score += 200 - tokenIndex;
+      }
+    });
+
+    const numeric = Number.parseFloat(normalized.replace('%', ''));
+    if (Number.isFinite(numeric)) {
+      if (numeric === 50 || numeric === 100 || numeric === 10 || numeric === 7) score += 50;
+      if (numeric % 10 === 0) score += 15;
+      if (numeric === 0 || numeric === 1) score += 10;
+    }
+
+    const center = (question.options.length - 1) / 2;
+    score += 10 - Math.abs(index - center);
+    score -= normalized.length * 0.05;
+    return { index, score };
+  });
+
+  scores.sort((a, b) => b.score - a.score || a.index - b.index);
+  const bestScore = scores[0]?.score ?? 0;
+  const tied = scores.filter(entry => entry.score === bestScore);
+  if (tied.length === 0) return 0;
+
+  const botSeed = accountId.split(':').pop() || accountId;
+  const botIndex = botSeed.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return tied[botIndex % tied.length]!.index;
+}
+
+function scheduleBotCommits(match: MatchState): void {
+  const question = match.questions[match.currentRound]!;
+  const bots = Array.from(match.players.values()).filter(player => player.isBot && !player.forfeited);
+
+  bots.forEach((bot, index) => {
+    const delayMs = AI_BOT_COMMIT_MIN_MS + index * AI_BOT_COMMIT_SPREAD_MS;
+    setTimeout(() => {
+      if (match.phase !== 'commit' || bot.forfeited || bot.committed) return;
+
+      const optionIndex = pickBotOption(question, bot.accountId);
+      const salt = crypto.randomBytes(16).toString('hex');
+      bot.optionIndex = optionIndex;
+      bot.salt = salt;
+      bot.hash = createCommitHash(optionIndex, salt);
+      bot.committed = true;
+
+      broadcastMatch(match, {
+        type: 'commit_status',
+        committed: Array.from(match.players.values()).map(p => ({
+          displayName: p.displayName,
+          hasCommitted: p.committed,
+        })),
+      });
+
+      const eligible = Array.from(match.players.values()).filter(
+        p => !p.forfeited && p.disconnectedAt === null
+      );
+      if (eligible.length > 0 && eligible.every(p => p.committed)) {
+        clearTimeout(match.commitTimer!);
+        match.commitTimer = null;
+        startRevealPhase(match);
+      }
+    }, delayMs);
+  });
+}
+
+function scheduleBotReveals(match: MatchState): void {
+  const bots = Array.from(match.players.values()).filter(player =>
+    player.isBot && !player.forfeited && player.committed && !player.revealed
+  );
+
+  bots.forEach((bot, index) => {
+    const delayMs = AI_BOT_REVEAL_MIN_MS + index * AI_BOT_REVEAL_SPREAD_MS;
+    setTimeout(() => {
+      if (match.phase !== 'reveal' || bot.forfeited || !bot.committed || bot.revealed) return;
+      if (bot.optionIndex === null || !bot.salt) return;
+
+      bot.revealed = true;
+
+      broadcastMatch(match, {
+        type: 'reveal_status',
+        revealed: Array.from(match.players.values()).map(p => ({
+          displayName: p.displayName,
+          hasRevealed: p.revealed,
+        })),
+      });
+
+      const mustReveal = Array.from(match.players.values()).filter(
+        p => p.committed && !p.forfeited
+      );
+      if (mustReveal.length > 0 && mustReveal.every(p => p.revealed)) {
+        clearTimeout(match.revealTimer!);
+        match.revealTimer = null;
+        finalizeRound(match);
+      }
+    }, delayMs);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +471,12 @@ function handleReconnect(ws: WebSocket, accountId: string): void {
 
   queue.updatePlayerWs(accountId, ws);
 
+  if (queue.isQueued(accountId)) {
+    const state = queue.getQueueState(accountId) as Record<string, unknown>;
+    state.autoRequeue = session?.autoRequeue ?? false;
+    send(ws, state);
+  }
+
   const match = getMatchForAccount(accountId);
   if (match) {
     const player = match.players.get(accountId);
@@ -453,7 +577,8 @@ function checkAutoAdvance(match: MatchState): void {
 interface QueuePlayer {
   accountId: string;
   displayName: string;
-  ws: WebSocket;
+  ws: WebSocket | null;
+  isBot?: boolean;
   previousOpponents: Set<string>;
 }
 
@@ -464,21 +589,26 @@ function onMatchReady(players: QueuePlayer[], matchId: string): void {
 
   const playerMap = new Map<string, PlayerState>();
   for (const p of players) {
-    const account = db.getAccount(p.accountId);
+    const botPlayer = p.isBot ?? isAiBot(p.accountId);
+    const account = botPlayer ? undefined : db.getAccount(p.accountId);
     const startingBalance = account?.token_balance ?? 0;
 
-    db.addMatchPlayer({
-      matchId,
-      accountId: p.accountId,
-      displayNameSnapshot: p.displayName,
-      startingBalance,
-    });
+    if (!botPlayer) {
+      db.addMatchPlayer({
+        matchId,
+        accountId: p.accountId,
+        displayNameSnapshot: p.displayName,
+        startingBalance,
+      });
+    }
 
     playerMap.set(p.accountId, {
       accountId: p.accountId,
       displayName: p.displayName,
+      isBot: botPlayer,
       ws: p.ws,
       startingBalance,
+      currentBalance: startingBalance,
       committed: false,
       revealed: false,
       hash: null,
@@ -489,12 +619,16 @@ function onMatchReady(players: QueuePlayer[], matchId: string): void {
       graceTimer: null,
     });
 
-    playerMatchIndex.set(p.accountId, matchId);
+    if (!botPlayer) {
+      playerMatchIndex.set(p.accountId, matchId);
+    }
 
     const session = sessionState.get(p.accountId);
     if (session) {
       session.previousOpponents = new Set(
-        players.filter(x => x.accountId !== p.accountId).map(x => x.accountId)
+        players
+          .filter(x => x.accountId !== p.accountId && !(x.isBot ?? isAiBot(x.accountId)))
+          .map(x => x.accountId)
       );
     }
   }
@@ -549,6 +683,8 @@ function startCommitPhase(match: MatchState): void {
     phase: 'commit',
   });
 
+  scheduleBotCommits(match);
+
   match.commitTimer = setTimeout(() => {
     match.commitTimer = null;
     startRevealPhase(match);
@@ -563,6 +699,8 @@ function startRevealPhase(match: MatchState): void {
     phase: 'reveal',
     revealDuration: REVEAL_DURATION,
   });
+
+  scheduleBotReveals(match);
 
   match.revealTimer = setTimeout(() => {
     match.revealTimer = null;
@@ -590,15 +728,23 @@ function finalizeRound(match: MatchState): void {
 
   // Apply balance deltas and annotate with newBalance
   const enrichedPlayers = resultWithNum.players.map(pr => {
-    if (pr.netDelta !== 0) {
-      db.updateBalance(pr.accountId, pr.netDelta);
+    const playerState = match.players.get(pr.accountId);
+    if (playerState) {
+      playerState.currentBalance += pr.netDelta;
     }
-    const updatedAccount = db.getAccount(pr.accountId);
-    return { ...pr, newBalance: updatedAccount?.token_balance ?? 0 };
+    if (pr.netDelta !== 0) {
+      if (playerState && !playerState.isBot) {
+        db.updateBalance(pr.accountId, pr.netDelta);
+      }
+    }
+    const updatedAccount = playerState?.isBot ? null : db.getAccount(pr.accountId);
+    return { ...pr, newBalance: updatedAccount?.token_balance ?? playerState?.currentBalance ?? 0 };
   });
 
   // Log vote records
   for (const pr of enrichedPlayers) {
+    const playerState = match.players.get(pr.accountId);
+    if (playerState?.isBot) continue;
     db.insertVoteLog({
       matchId: match.matchId,
       roundNumber: match.currentRound + 1,
@@ -624,6 +770,8 @@ function finalizeRound(match: MatchState): void {
 
   // Update per-round player stats
   for (const pr of enrichedPlayers) {
+    const playerState = match.players.get(pr.accountId);
+    if (playerState?.isBot) continue;
     if (!result.voided) {
       db.updatePlayerStats(pr.accountId, {
         roundsPlayed: 1,
@@ -663,26 +811,28 @@ function endMatch(match: MatchState): void {
 
   const summary = {
     players: Array.from(match.players.values()).map(p => {
-      const account = db.getAccount(p.accountId);
-      const endingBalance = account?.token_balance ?? 0;
+      const account = p.isBot ? null : db.getAccount(p.accountId);
+      const endingBalance = account?.token_balance ?? p.currentBalance;
       const netDelta = endingBalance - p.startingBalance;
       const result = p.forfeited ? 'forfeited' as const : 'completed' as const;
 
-      db.updateMatchPlayer({
-        matchId: match.matchId,
-        accountId: p.accountId,
-        endingBalance,
-        netDelta,
-        result,
-      });
+      if (!p.isBot) {
+        db.updateMatchPlayer({
+          matchId: match.matchId,
+          accountId: p.accountId,
+          endingBalance,
+          netDelta,
+          result,
+        });
 
-      db.updatePlayerStats(p.accountId, {
-        roundsPlayed: 0,
-        coherentRounds: 0,
-        isGameEnd: true,
-        wonRound: false,
-        earnsCoordinationCredit: false,
-      });
+        db.updatePlayerStats(p.accountId, {
+          roundsPlayed: 0,
+          coherentRounds: 0,
+          isGameEnd: true,
+          wonRound: false,
+          earnsCoordinationCredit: false,
+        });
+      }
 
       return {
         displayName: p.displayName,
@@ -700,7 +850,9 @@ function endMatch(match: MatchState): void {
 
   queue.unregisterActiveMatch(match.matchId);
   for (const [accountId, p] of match.players) {
-    playerMatchIndex.delete(accountId);
+    if (!p.isBot) {
+      playerMatchIndex.delete(accountId);
+    }
 
     if (p.graceTimer) {
       clearTimeout(p.graceTimer);
@@ -731,6 +883,7 @@ function endMatch(match: MatchState): void {
   // handleJoinQueue() creates a fresh entry, so deleting here is safe
   // even if the player is still connected and rejoins later.
   for (const [accountId] of match.players) {
+    if (isAiBot(accountId)) continue;
     if (!queue.isQueued(accountId)) {
       sessionState.delete(accountId);
     }

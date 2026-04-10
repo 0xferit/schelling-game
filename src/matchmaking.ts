@@ -2,14 +2,26 @@ import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
 const FILL_TIMER_MS = 20_000; // 20 seconds
-const ALLOWED_SIZES = [3, 5, 7];
-const MAX_MATCH_SIZE = 7;
+const MIN_MATCH_SIZE = 3;
+const MAX_MATCH_SIZE = 21;
+const AI_BOT_TARGET_MATCH_SIZE = 5;
+const AI_BOT_ACCOUNT_PREFIX = 'ai-bot:';
+
+function buildAllowedSizes(maxSize: number): number[] {
+  const sizes: number[] = [];
+  const cappedMax = Math.max(MIN_MATCH_SIZE, Math.min(maxSize, MAX_MATCH_SIZE));
+  for (let size = MIN_MATCH_SIZE; size <= cappedMax; size += 1) {
+    sizes.push(size);
+  }
+  return sizes;
+}
 
 interface QueueEntry {
   accountId: string;
   displayName: string;
-  ws: WebSocket;
+  ws: WebSocket | null;
   joinedAt: number;
+  isBot: boolean;
   previousOpponents: Set<string>;
 }
 
@@ -22,7 +34,8 @@ interface FormingMatch {
 interface EnqueueInput {
   accountId: string;
   displayName: string;
-  ws: WebSocket;
+  ws: WebSocket | null;
+  isBot?: boolean;
   previousOpponents?: Set<string>;
 }
 
@@ -57,6 +70,7 @@ class MatchmakingQueue {
       displayName: player.displayName,
       ws: player.ws,
       joinedAt: Date.now(),
+      isBot: Boolean(player.isBot),
       previousOpponents: player.previousOpponents || new Set(),
     });
 
@@ -76,8 +90,8 @@ class MatchmakingQueue {
       const idx = this.formingMatch.players.findIndex(p => p.accountId === accountId);
       if (idx !== -1) {
         this.formingMatch.players.splice(idx, 1);
-        // If below 3, cancel forming
-        if (this.formingMatch.players.length < 3) {
+        // Only cancel once the forming group is empty.
+        if (this.formingMatch.players.length === 0) {
           this._cancelForming();
         }
       }
@@ -92,7 +106,9 @@ class MatchmakingQueue {
 
   isInActiveMatch(accountId: string): boolean {
     for (const match of this.activeMatches.values()) {
-      if ((match as { players?: { accountId: string }[] }).players && (match as { players: { accountId: string }[] }).players.some(p => p.accountId === accountId)) return true;
+      const players = (match as { players?: QueueEntry[] | Map<string, unknown> }).players;
+      if (Array.isArray(players) && players.some(p => p.accountId === accountId)) return true;
+      if (players instanceof Map && players.has(accountId)) return true;
     }
     return false;
   }
@@ -126,7 +142,12 @@ class MatchmakingQueue {
       formingMatch: this.formingMatch ? {
         playerCount: this.formingMatch.players.length,
         players: this.formingMatch.players.map(p => p.displayName),
-        allowedSizes: ALLOWED_SIZES,
+        allowedSizes: buildAllowedSizes(
+          Math.max(
+            this.formingMatch.players.length + this.waitingQueue.length,
+            AI_BOT_TARGET_MATCH_SIZE,
+          ),
+        ),
         fillDeadlineMs: this.formingMatch.fillDeadlineMs,
       } : null,
     };
@@ -190,23 +211,18 @@ class MatchmakingQueue {
       return;
     }
 
-    // Need at least 3 to start forming
-    if (this.waitingQueue.length < 3) return;
+    if (this.waitingQueue.length === 0) return;
 
-    // Reserve first 3 players
-    const reserved = this.waitingQueue.splice(0, 3);
+    // Reserve everyone available up to the maximum size. Backfill can
+    // later add bots if the human crowd is below the playable threshold.
+    const reserveCount = Math.min(this.waitingQueue.length, MAX_MATCH_SIZE);
+    const reserved = this.waitingQueue.splice(0, reserveCount);
 
     this.formingMatch = {
       players: reserved,
       fillDeadlineMs: Date.now() + FILL_TIMER_MS,
       timer: setTimeout(() => this._onFillTimerExpired(), FILL_TIMER_MS),
     };
-
-    // Try to add more
-    while (this.waitingQueue.length > 0 && this.formingMatch.players.length < MAX_MATCH_SIZE) {
-      const next = this.waitingQueue.shift()!;
-      this.formingMatch.players.push(next);
-    }
 
     // If reached 7, start immediately
     if (this.formingMatch.players.length >= MAX_MATCH_SIZE) {
@@ -223,24 +239,29 @@ class MatchmakingQueue {
     if (!this.formingMatch) return;
     clearTimeout(this.formingMatch.timer);
 
-    const reserved = this.formingMatch.players;
-    // Find largest odd size <= reserved.length
-    let matchSize = 3;
-    for (const size of [7, 5, 3]) {
-      if (reserved.length >= size) {
-        matchSize = size;
-        break;
-      }
-    }
-
-    // Take matchSize players, push extras back to front of queue
-    const matchPlayers = reserved.slice(0, matchSize);
-    const extras = reserved.slice(matchSize);
-
-    // Return extras to front of queue in their existing order
-    this.waitingQueue.unshift(...extras);
-
+    const matchPlayers = [...this.formingMatch.players];
     this.formingMatch = null;
+
+    while (
+      matchPlayers.length < MIN_MATCH_SIZE ||
+      matchPlayers.length < AI_BOT_TARGET_MATCH_SIZE
+    ) {
+      if (matchPlayers.length >= MAX_MATCH_SIZE) break;
+      const botIndex = matchPlayers.filter(p => p.isBot).length + 1;
+      matchPlayers.push({
+        accountId: `${AI_BOT_ACCOUNT_PREFIX}${uuidv4()}`,
+        displayName: `Bot ${String(botIndex).padStart(2, '0')}`,
+        ws: null,
+        joinedAt: Date.now(),
+        isBot: true,
+        previousOpponents: new Set(),
+      });
+    }
+    if (matchPlayers.length < MIN_MATCH_SIZE) {
+      this.waitingQueue.unshift(...matchPlayers.filter(player => !player.isBot));
+      this._tryFormMatch();
+      return;
+    }
 
     const matchId = `match_${uuidv4()}`;
 
@@ -265,5 +286,5 @@ class MatchmakingQueue {
 // Singleton
 const queue = new MatchmakingQueue();
 export default queue;
-export { MatchmakingQueue, FILL_TIMER_MS, ALLOWED_SIZES, MAX_MATCH_SIZE };
+export { MatchmakingQueue, FILL_TIMER_MS, MAX_MATCH_SIZE, MIN_MATCH_SIZE };
 export type { QueueEntry, FormingMatch, EnqueueInput };

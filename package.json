@@ -15,16 +15,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/proveuswrong/schelling-game.git"
+    "url": "git+https://github.com/0xferit/schelling-game.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Ferit Tuncer",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/proveuswrong/schelling-game/issues"
+    "url": "https://github.com/0xferit/schelling-game/issues"
   },
-  "homepage": "https://github.com/proveuswrong/schelling-game#readme",
+  "homepage": "https://github.com/0xferit/schelling-game#readme",
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "ethers": "^6.16.0",

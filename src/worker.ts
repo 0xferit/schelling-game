@@ -504,6 +504,36 @@ export default {
       return jsonResponse({ total, votes });
     }
 
+    if ((url.pathname === '/api/stats' || url.pathname === '/api/landing-stats') && method === 'GET') {
+      const players24hRow = await env.DB.prepare(
+        "SELECT COUNT(DISTINCT mp.account_id) AS value FROM match_players mp JOIN matches m ON m.match_id = mp.match_id WHERE m.started_at >= datetime('now', '-1 day')"
+      ).first() as { value: number | null } | null;
+      const completedMatchesRow = await env.DB.prepare(
+        "SELECT COUNT(*) AS value FROM matches WHERE status = 'completed'"
+      ).first() as { value: number | null } | null;
+      const bestCoordinationStreakRow = await env.DB.prepare(
+        'SELECT MAX(longest_streak) AS value FROM player_stats'
+      ).first() as { value: number | null } | null;
+
+      const players24h = Number(players24hRow?.value ?? 0);
+      const completedMatches = Number(completedMatchesRow?.value ?? 0);
+      const longestStreak = Number(bestCoordinationStreakRow?.value ?? 0);
+
+      if (url.pathname === '/api/landing-stats') {
+        return jsonResponse({
+          playersLast24h: players24h,
+          completedMatches,
+          longestStreak,
+        });
+      }
+
+      return jsonResponse({
+        players24h,
+        completedMatches,
+        bestCoordinationStreak: longestStreak,
+      });
+    }
+
     // All other paths fall through to static asset serving (configured in wrangler.toml).
     return new Response('Not found', { status: 404 });
   },

@@ -421,6 +421,37 @@ function getExampleVoteTally(): { total: number; votes: ExampleVoteTally[] } {
   return { total, votes: rows };
 }
 
+function getLandingStats(): { players24h: number; completedMatches: number; bestCoordinationStreak: number } {
+  const row = getDb().prepare(`
+    SELECT
+      COALESCE((
+        SELECT COUNT(DISTINCT mp.account_id)
+        FROM match_players mp
+        JOIN matches m ON m.match_id = mp.match_id
+        WHERE m.started_at >= datetime('now', '-1 day')
+      ), 0) AS players24h,
+      COALESCE((
+        SELECT COUNT(*)
+        FROM matches
+        WHERE status = 'completed'
+      ), 0) AS completedMatches,
+      COALESCE((
+        SELECT MAX(longest_streak)
+        FROM player_stats
+      ), 0) AS bestCoordinationStreak
+  `).get() as {
+    players24h: number;
+    completedMatches: number;
+    bestCoordinationStreak: number;
+  } | undefined;
+
+  return {
+    players24h: row?.players24h ?? 0,
+    completedMatches: row?.completedMatches ?? 0,
+    bestCoordinationStreak: row?.bestCoordinationStreak ?? 0,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
@@ -447,4 +478,5 @@ export default {
   setLeaderboardEligible,
   insertExampleVote,
   getExampleVoteTally,
+  getLandingStats,
 };
