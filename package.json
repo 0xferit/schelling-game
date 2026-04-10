@@ -22,16 +22,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/0xferit/schelling-game.git"
+    "url": "git+https://github.com/0xferit/schelling-games.git"
   },
   "keywords": [],
   "author": "Ferit Tuncer",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/0xferit/schelling-game/issues"
+    "url": "https://github.com/0xferit/schelling-games/issues"
   },
-  "homepage": "https://github.com/0xferit/schelling-game#readme",
+  "homepage": "https://github.com/0xferit/schelling-games#readme",
   "dependencies": {
     "ethers": "^6.16.0"
   },
