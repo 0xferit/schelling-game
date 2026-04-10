@@ -3,456 +3,5148 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-
-<!-- Primary SEO -->
-<title>Schelling Games — Coordination Theory Meets Crypto-Native Play</title>
-<meta name="description"
-  content="Can you predict what strangers will choose? Schelling Games is a commit-reveal coordination game inspired by Thomas Schelling's focal point theory. Play now — no install required."/>
-<link rel="canonical" href="https://schelling.games/"/>
-<meta name="robots" content="index, follow"/>
-
-<!-- Open Graph -->
-<meta property="og:type"         content="website"/>
-<meta property="og:url"          content="https://schelling.games/"/>
-<meta property="og:title"        content="Schelling Games"/>
-<meta property="og:description"  content="A commit-reveal coordination game. Think like everyone else — and win."/>
-<meta property="og:locale"       content="en_US"/>
-<meta property="og:site_name"    content="Schelling Games"/>
-
-<!-- Twitter / X Card -->
-<meta name="twitter:card"        content="summary_large_image"/>
-<meta name="twitter:site"        content="@0xferit"/>
-<meta name="twitter:title"       content="Schelling Games"/>
-<meta name="twitter:description" content="A commit-reveal coordination game. Think like everyone else — and win."/>
-
-<!-- Favicon & PWA -->
-<link rel="icon"             type="image/svg+xml"  href="/favicon.svg"/>
-<link rel="manifest"                                href="/site.webmanifest"/>
-<meta name="theme-color" content="#0a0a0a"/>
-<meta name="color-scheme" content="dark"/>
-
-<!-- Fonts -->
+<title>Schelling Game</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link rel="preload" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'"/>
-<noscript><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/></noscript>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
-
-<!-- Structured Data -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "WebApplication",
-  "name": "Schelling Games",
-  "url": "https://schelling.games/",
-  "description": "A commit-reveal coordination game inspired by Thomas Schelling's focal point theory. Players simultaneously commit secret choices, then reveal — plurality wins.",
-  "applicationCategory": "GameApplication",
-  "browserRequirements": "Requires JavaScript. Requires an Ethereum-compatible browser wallet.",
-  "inLanguage": "en",
-  "author": {
-    "@type": "Person",
-    "name": "Ferit Tunçer",
-    "url": "https://github.com/0xferit"
-  },
-  "genre": ["Coordination Game", "Game Theory", "Blockchain Game"],
-  "offers": {
-    "@type": "Offer",
-    "price": "0",
-    "priceCurrency": "USD"
-  }
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0a;
+  --surface:#111;
+  --surface2:#161616;
+  --panel:rgba(17,17,17,.82);
+  --panel-strong:#0f0f10;
+  --border:#222;
+  --text:#ede7dd;
+  --muted:#b0a79b;
+  --accent:#E63C14;
+  --accent2:#FF4D25;
+  --on-accent:#120c09;
+  --on-accent-strong:rgba(18,12,9,.94);
+  --on-accent-muted:#120c09;
+  --on-accent-soft:rgba(18,12,9,.86);
+  --on-accent-faint:rgba(18,12,9,.72);
+  --on-accent-line:rgba(18,12,9,.26);
+  --content-max:1160px;
+  --page-x:clamp(1.25rem, 3vw, 2rem);
+  --frame-x:max(var(--page-x), calc((100vw - var(--content-max)) / 2));
+  --folio-x:clamp(.7rem, 1.2vw, 1rem);
+  --section-gap:clamp(5.9rem, 9.4vw, 8.9rem);
+  --folder-notch-line:clamp(3.45rem, 4.8vw, 4.1rem);
+  --folder-notch-start:clamp(5.5rem, 8.4vw, 8.4rem);
+  --folder-notch-end:clamp(8rem, 11.6vw, 11rem);
+  --folder-corner-cut:clamp(.9rem, 1.3vw, 1.25rem);
+  --folder-top-safe-left:calc(var(--folder-notch-end) + clamp(.7rem, 1.2vw, 1rem));
+  --folder-tag-left:clamp(1rem, 1.8vw, 1.35rem);
+  --serif:'Cormorant Garamond',Georgia,serif;
+  --sans:'Outfit',system-ui,sans-serif;
+  --display:'Barlow Condensed','Impact',sans-serif;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
 }
-</script>
-<link rel="stylesheet" href="/styles/landing.css"/>
+html[data-theme="light"]{
+  --bg:#f5f0e9;
+  --surface:#ebe4db;
+  --surface2:#e2dad1;
+  --panel:rgba(236,230,221,.9);
+  --panel-strong:#e8e1d8;
+  --border:#c9c0b5;
+  --text:#171310;
+  --muted:#433b33;
+}
+html{scroll-behavior:smooth;transition:background-color .25s}
+body{
+  background-color:var(--bg);
+  background-image:radial-gradient(circle, rgba(230,60,20,.16) 1px, transparent 1.25px);
+  background-size:40px 40px;
+  background-position:0 0;
+  color:var(--text);
+  font-family:var(--sans);
+  font-weight:400;
+  line-height:1.7;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+html[data-theme="light"] body{
+  background-color:var(--bg);
+  background-image:radial-gradient(circle, rgba(26,23,20,.12) 1px, transparent 1.25px);
+  background-size:40px 40px;
+  background-position:0 0;
+}
+/* Scanlines overlay — Utopia Tokyo aesthetic */
+body::after{
+  content:none;
+}
+html[data-theme="light"] body::after{
+  content:none;
+}
+
+/* ── CORNER FRAMES — Utopia Tokyo-inspired ── */
+.corner-frame{position:relative}
+.corner-frame::before,.corner-frame::after{
+  content:'';position:absolute;
+  width:18px;height:18px;
+  pointer-events:none;
+  opacity:.18;
+  transition:opacity .4s ease;
+}
+.corner-frame::before{
+  top:0;left:0;
+  border-top:1.5px solid var(--accent);
+  border-left:1.5px solid var(--accent);
+}
+.corner-frame::after{
+  bottom:0;right:0;
+  border-bottom:1.5px solid var(--accent);
+  border-right:1.5px solid var(--accent);
+}
+.corner-frame:hover::before,.corner-frame:hover::after{opacity:.45}
+
+/* ── SECTION COORD LABELS ─────────────────── */
+.sec-coord{
+  position:absolute;
+  right:var(--page-x);top:2.5rem;
+  font-family:var(--mono);
+  font-size:.5rem;
+  letter-spacing:.18em;
+  color:var(--muted);
+  opacity:.25;
+  text-transform:uppercase;
+  writing-mode:horizontal-tb;
+}
+
+/* ── NAV ─────────────────────────────────── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  padding:1.25rem var(--frame-x);
+  display:flex;align-items:center;justify-content:space-between;
+  background:color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+}
+nav .logo{
+  display:flex;
+  align-items:center;
+  gap:0;
+  color:var(--text);
+}
+.brand-mark{
+  width:2.2rem;
+  height:2.2rem;
+  flex:0 0 auto;
+  display:block;
+  color:currentColor;
+}
+.brand-mark-dot{
+  fill:var(--brand-mark-dot, var(--accent));
+}
+nav .nav-links{
+  display:flex;align-items:center;gap:2.5rem;
+  position:absolute;left:50%;transform:translateX(-50%);
+}
+nav .nav-links a{
+  font-family:var(--mono);
+  font-size:.78rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+  text-decoration:none;
+  transition:color .2s;
+}
+nav .nav-links a:hover{color:var(--text)}
+nav .nav-links a{position:relative}
+nav .nav-links a::after{
+  content:'';position:absolute;bottom:-.25rem;left:0;right:0;
+  height:1px;background:var(--accent);
+  transform:scaleX(0);transform-origin:right;
+  transition:transform .3s cubic-bezier(.4,0,.2,1);
+}
+nav .nav-links a:hover::after{transform:scaleX(1);transform-origin:left}
+nav .nav-right{display:flex;align-items:center;gap:2rem}
+.theme-toggle{
+  background:none;
+  border:1px solid var(--border);
+  color:var(--muted);
+  cursor:pointer;
+  width:30px;height:30px;
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  padding:0;
+  transition:border-color .2s,color .2s;
+  flex-shrink:0;
+}
+.theme-toggle:hover{border-color:var(--accent);color:var(--text)}
+.theme-toggle svg{width:13px;height:13px;display:block}
+nav .play-link{
+  font-family:var(--mono);
+  font-size:.7rem;
+  font-weight:400;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--accent);
+  text-decoration:none;
+  padding:.45rem 1.1rem;
+  border:1px solid rgba(230,60,20,.4);
+  transition:all .2s;
+}
+nav .play-link:hover{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.nav-hamburger{
+  display:none;
+  background:none;border:none;cursor:pointer;
+  padding:4px;gap:5px;
+  flex-direction:column;align-items:center;justify-content:center;
+  width:30px;height:30px;
+}
+.nav-hamburger span{
+  display:block;width:18px;height:1.5px;
+  background:var(--muted);
+  border-radius:2px;
+  transition:transform .3s ease, opacity .3s ease, background .2s;
+  transform-origin:center;
+}
+.nav-hamburger:hover span{background:var(--text)}
+nav.menu-open .nav-hamburger span:nth-child(1){transform:translateY(6.5px) rotate(45deg)}
+nav.menu-open .nav-hamburger span:nth-child(2){opacity:0;transform:scaleX(0)}
+nav.menu-open .nav-hamburger span:nth-child(3){transform:translateY(-6.5px) rotate(-45deg)}
+.nav-mobile{
+  position:absolute;top:100%;left:0;right:0;
+  background:var(--bg);
+  border-bottom:1px solid var(--border);
+  padding:0 var(--page-x) 1.5rem;
+  display:none;
+  flex-direction:column;
+  transform:translateY(-6px);
+  opacity:0;
+  transition:transform .32s cubic-bezier(.4,0,.2,1), opacity .28s ease;
+  pointer-events:none;
+  z-index:10;
+}
+nav.menu-open .nav-mobile{transform:translateY(0);opacity:1;pointer-events:auto}
+.nav-mobile a{
+  font-family:var(--mono);
+  font-size:.8rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+  text-decoration:none;
+  padding:.9rem 0;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:1.2rem;
+  transition:color .2s;
+  opacity:0;
+  transform:translateY(6px);
+  transition:color .2s, opacity .24s ease, transform .24s ease;
+}
+.nav-mobile a:last-child{border-bottom:none}
+.nav-mobile a:hover{color:var(--text)}
+.nav-mobile a .nm-n{
+  font-size:.6rem;letter-spacing:.12em;
+  color:var(--accent);opacity:.7;
+  flex-shrink:0;
+}
+.nav-mobile .nm-cta{color:var(--accent)}
+nav.menu-open .nav-mobile a{opacity:1;transform:translateY(0)}
+nav.menu-open .nav-mobile a:nth-child(1){transition-delay:.06s}
+nav.menu-open .nav-mobile a:nth-child(2){transition-delay:.10s}
+nav.menu-open .nav-mobile a:nth-child(3){transition-delay:.14s}
+nav.menu-open .nav-mobile a:nth-child(4){transition-delay:.18s}
+nav.menu-open .nav-mobile a:nth-child(5){transition-delay:.22s}
+
+/* ── HERO ────────────────────────────────── */
+.hero{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:6.25rem var(--folio-x) 3rem;
+  position:relative;
+  overflow:hidden;
+}
+.hero-shell{
+  width:100%;
+  max-width:none;
+  margin:0 auto;
+  position:relative;
+  z-index:1;
+}
+.hero-shell-tag{
+  position:absolute;
+  top:0;
+  left:0;
+  z-index:2;
+  display:grid;
+  gap:.32rem;
+  width:auto;
+  padding-top:.58rem;
+  padding-left:var(--folder-tag-left);
+  font-family:var(--mono);
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  pointer-events:none;
+}
+.hero-shell-tag span{
+  position:static;
+  max-width:none;
+}
+.hero-shell-tag-dark{
+  display:inline-flex;
+  align-items:center;
+  align-self:flex-start;
+  gap:.65rem;
+  font-size:.62rem;
+  color:color-mix(in srgb, var(--text) 72%, transparent);
+  max-width:calc(var(--folder-notch-start) - var(--folder-tag-left) - .4rem);
+  white-space:nowrap;
+}
+.hero-shell-tag-dark::after{
+  content:'';
+  width:2.75rem;
+  height:1px;
+  background:color-mix(in srgb, var(--accent) 58%, transparent);
+  flex-shrink:0;
+}
+.hero-shell-tag-accent{
+  font-size:.58rem;
+  color:var(--on-accent-muted);
+  white-space:nowrap;
+}
+.hero-panel{
+  position:relative;
+  min-height:min(78vh, 52rem);
+  background:var(--accent);
+  color:var(--on-accent);
+  clip-path:polygon(
+    0 var(--folder-notch-line),
+    var(--folder-notch-start) var(--folder-notch-line),
+    var(--folder-notch-end) 0,
+    calc(100% - var(--folder-corner-cut)) 0,
+    100% var(--folder-corner-cut),
+    100% 100%,
+    0 100%
+  );
+  overflow:hidden;
+  box-shadow:0 24px 90px rgba(0,0,0,.26);
+  display:grid;
+  grid-template-rows:auto auto 1fr auto;
+}
+.hero-panel::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(16,12,9,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16,12,9,.14) 1px, transparent 1px),
+    radial-gradient(circle, rgba(16,12,9,.18) .9px, transparent 1px);
+  background-size:86px 80px, 86px 80px, 28px 28px;
+  background-position:0 0, 0 0, 0 0;
+  opacity:.42;
+  pointer-events:none;
+}
+.hero-panel-top,
+.hero-panel-title,
+.hero-panel-grid,
+.hero-panel-foot{
+  position:relative;
+  z-index:1;
+}
+.hero-panel-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem 2rem;
+  min-height:var(--folder-notch-line);
+  padding:0 clamp(1.2rem, 2vw, 1.9rem) 0 var(--folder-top-safe-left);
+  border-bottom:1px solid var(--on-accent-line);
+  font-family:var(--mono);
+  font-size:.64rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.hero-panel-brand{
+  display:inline-flex;
+  align-items:center;
+  gap:.55rem;
+  min-width:0;
+}
+.hero-panel-brand::after{
+  content:'';
+  width:2.5rem;
+  height:1px;
+  background:var(--on-accent-soft);
+}
+.hero-panel-coord{
+  min-width:0;
+}
+.hero-panel-loc{
+  text-align:right;
+}
+.hero-panel-title{
+  display:flex;
+  align-items:flex-end;
+  gap:.3rem;
+  padding:1.15rem clamp(1.2rem, 2vw, 1.9rem) 1rem;
+  border-bottom:1px solid rgba(16,12,9,.28);
+  text-transform:uppercase;
+  line-height:.82;
+  letter-spacing:-.05em;
+}
+.hero-title-fill,
+.hero-title-outline{
+  font-family:var(--display);
+  font-size:clamp(4.7rem, 13.8vw, 10.6rem);
+}
+.hero-title-fill{
+  color:#100c09;
+}
+.hero-title-outline{
+  color:transparent;
+  -webkit-text-stroke:1.6px rgba(16,12,9,.9);
+}
+.hero-panel-grid{
+  display:grid;
+  grid-template-columns:minmax(0,.96fr) minmax(0,.62fr) minmax(13rem,.42fr);
+  align-items:stretch;
+}
+.hero-panel-left,
+.hero-panel-copy,
+.hero-panel-meta{
+  min-height:0;
+  padding:1rem clamp(1.2rem, 2vw, 1.9rem) 1.2rem;
+}
+.hero-panel-copy,
+.hero-panel-meta{
+  border-left:1px solid rgba(16,12,9,.24);
+}
+.hero-stack{
+  display:grid;
+  gap:.05em;
+  margin-bottom:1.5rem;
+}
+.hero-stack span{
+  font-family:var(--display);
+  font-size:clamp(3rem, 6.8vw, 5.1rem);
+  line-height:.86;
+  letter-spacing:-.04em;
+  text-transform:uppercase;
+  color:#100c09;
+}
+.hero-cta{
+  display:inline-block;
+  font-family:var(--mono);
+  font-size:.75rem;
+  font-weight:400;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:var(--bg);
+  background:var(--accent);
+  padding:.75rem 2.25rem;
+  text-decoration:none;
+  cursor:pointer;
+  transition:all .2s;
+}
+.hero-cta:hover{
+  background:var(--accent2);
+  box-shadow:0 0 24px rgba(230,60,20,.25),0 0 60px rgba(230,60,20,.08);
+}
+.hero-cta-group{
+  display:flex;flex-direction:column;align-items:flex-start;gap:.5rem;
+  padding-bottom:.12rem;
+}
+.hero-panel .hero-cta{
+  font-size:.68rem;
+  letter-spacing:.16em;
+  color:#100c09;
+  background:transparent;
+  border:1px solid rgba(16,12,9,.56);
+  padding:.82rem 1.15rem;
+}
+.hero-panel .hero-cta:hover{
+  background:#100c09;
+  color:var(--accent);
+  border-color:#100c09;
+  box-shadow:none;
+}
+.hero-panel .hero-disclaimer{
+  font-family:var(--mono);
+  font-size:.62rem;
+  color:var(--on-accent-muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  border:1px solid var(--on-accent-line);
+  padding:.25rem .7rem;
+  opacity:1;
+}
+.hero-panel-copy{
+  display:grid;
+  align-content:space-between;
+  gap:1.2rem;
+}
+.hero-panel-copy p{
+  font-size:1.03rem;
+  line-height:1.7;
+  font-weight:400;
+  max-width:24ch;
+}
+.hero-panel-copy-notes{
+  display:grid;
+  gap:.65rem;
+  padding-top:1rem;
+  border-top:1px solid var(--on-accent-line);
+}
+.hero-panel-copy-notes span{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--on-accent-muted);
+}
+.hero-panel-meta{
+  display:grid;
+  align-content:stretch;
+}
+.hero-panel-meta-block{
+  display:grid;
+  gap:.45rem;
+  padding:.95rem 0 1rem;
+  border-top:1px solid var(--on-accent-line);
+}
+.hero-panel-meta-block:first-child{border-top:none;padding-top:0}
+.hero-panel-meta-block span,
+.hero-panel-meta-block strong{
+  font-family:var(--mono);
+  text-transform:uppercase;
+}
+.hero-panel-meta-block span{
+  font-size:.58rem;
+  letter-spacing:.16em;
+  color:var(--on-accent-muted);
+}
+.hero-panel-meta-block strong{
+  font-size:.92rem;
+  letter-spacing:.1em;
+  font-weight:400;
+  color:#100c09;
+}
+.hero-panel-foot{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  border-top:1px solid rgba(16,12,9,.24);
+}
+.hero-panel-foot span{
+  padding:.95rem clamp(1rem, 2vw, 1.4rem);
+  min-height:3.25rem;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  border-left:1px solid rgba(16,12,9,.24);
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.hero-panel-foot span:first-child{border-left:none}
+.hero-scroll{
+  position:absolute;
+  bottom:2rem;
+  left:0;right:0;
+  display:flex;align-items:center;justify-content:center;gap:.5rem;
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--muted);
+  white-space:nowrap;
+  z-index:1;
+  transition:opacity .3s ease;
+}
+.hero-scroll::before{content:'↓';color:var(--accent)}
+.hero-scroll.hidden{animation:none !important;opacity:0;pointer-events:none}
+
+/* ── SECTION SHELL ───────────────────────── */
+section{
+  padding:var(--section-gap) var(--page-x);
+  position:relative;
+}
+section + section{border-top:none}
+section:not(.hero)::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:none;
+  pointer-events:none;
+}
+html[data-theme="light"] section:not(.hero)::before{
+  background:none;
+  opacity:1;
+}
+.container{max-width:var(--content-max);margin:0 auto;position:relative}
+
+.sec-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  margin-bottom:clamp(2.9rem, 5.2vw, 4.85rem);
+  border-bottom:1px solid var(--border);
+  padding-bottom:1.24rem;
+  position:relative;
+}
+/* Animated underline on sec-head — grows from left on scroll reveal */
+.sec-head::after{
+  content:'';position:absolute;bottom:-1px;left:0;right:0;
+  height:1px;background:var(--accent);
+  transform:scaleX(0);transform-origin:left;
+  transition:transform .8s cubic-bezier(.4,0,.2,1);
+}
+.sec-head.reveal-visible::after{transform:scaleX(1)}
+.sec-label{
+  font-family:var(--mono);
+  font-size:.78rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.sec-label .sl{color:var(--accent)}
+.sec-pg{
+  font-family:var(--mono);
+  font-size:.74rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--muted);
+  opacity:.7;
+}
+
+.section-title{
+  font-family:var(--display);
+  font-size:clamp(3rem, 8vw, 6.5rem);
+  font-weight:800;
+  text-transform:uppercase;
+  line-height:.92;
+  letter-spacing:-.01em;
+  margin-bottom:2.05rem;
+}
+.section-title em{
+  font-style:normal;
+  color:var(--accent);
+  text-shadow:0 0 40px rgba(230,60,20,.15);
+}
+.section-body{
+  color:var(--muted);
+  font-size:1rem;
+  max-width:42rem;
+  line-height:1.75;
+}
+.section-body strong{color:var(--text);font-weight:400}
+
+/* ── SVG SYSTEM ──────────────────────────── */
+.diagram-line{
+  fill:none;
+  stroke:currentColor;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.diagram-soft{opacity:.34}
+.diagram-faint{opacity:.16}
+.diagram-accent{stroke:var(--accent);fill:none}
+.diagram-accent-fill{fill:rgba(230,60,20,.1);stroke:var(--accent)}
+.diagram-label{
+  font-family:var(--mono);
+  font-size:7px;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  fill:currentColor;
+  opacity:.32;
+}
+.diagram-label-accent{
+  font-family:var(--mono);
+  font-size:7px;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  fill:var(--accent);
+  opacity:.88;
+}
+.diagram-digit{
+  font-family:var(--display);
+  font-weight:700;
+  fill:currentColor;
+}
+.diagram-digit-accent{
+  font-family:var(--display);
+  font-weight:700;
+  fill:var(--accent);
+}
+
+/* ── ORIGIN ──────────────────────────────── */
+.origin{overflow:hidden}
+.origin-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(18rem,.98fr);
+  gap:clamp(2.9rem,5.2vw,5.7rem);
+  align-items:stretch;
+}
+.origin-stage{
+  position:relative;
+  min-height:100%;
+  padding:1.3rem clamp(1.25rem, 2.2vw, 1.9rem) 1.8rem;
+  display:grid;
+  gap:1.2rem;
+  align-content:start;
+  background:
+    linear-gradient(180deg, rgba(237,231,221,.03), rgba(237,231,221,0) 38%),
+    rgba(16,12,9,.92);
+  color:var(--text);
+  border:1px solid rgba(237,231,221,.12);
+  box-shadow:0 18px 70px rgba(0,0,0,.22);
+  overflow:hidden;
+}
+.origin-stage::before{
+  content:'';
+  position:absolute;
+  left:clamp(1.1rem, 2vw, 1.6rem);
+  top:1rem;
+  width:4.25rem;
+  height:1px;
+  background:linear-gradient(90deg, rgba(237,231,221,.42), rgba(237,231,221,0));
+  z-index:1;
+}
+.origin-stage::after{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(237,231,221,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(237,231,221,.06) 1px, transparent 1px),
+    radial-gradient(circle, rgba(237,231,221,.12) .8px, transparent 1px);
+  background-size:88px 82px, 88px 82px, 28px 28px;
+  background-position:0 0, 0 0, 0 0;
+  opacity:.34;
+  pointer-events:none;
+}
+.origin-stage-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:flex-start;
+  gap:1rem;
+  margin-bottom:.75rem;
+}
+.origin-kicker{
+  display:inline-flex;
+  align-items:center;
+  gap:.75rem;
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.74);
+  position:relative;
+  z-index:1;
+}
+.origin-kicker::after{
+  content:'';
+  width:2.6rem;
+  height:1px;
+  background:rgba(237,231,221,.24);
+}
+.origin-year-stack{
+  position:relative;
+  z-index:1;
+  display:grid;
+  gap:.1rem;
+  margin-bottom:.65rem;
+}
+.origin-year-line{
+  display:block;
+  font-family:var(--display);
+  font-size:clamp(6.5rem,17vw,13rem);
+  line-height:.8;
+  letter-spacing:-.045em;
+  text-transform:uppercase;
+  color:var(--accent);
+  -webkit-text-stroke:0 transparent;
+  text-shadow:none;
+}
+.origin-year-line.accent{
+  color:transparent;
+  -webkit-text-stroke:1.45px rgba(230,60,20,.86);
+}
+html[data-theme="light"] .origin-year-line{
+  color:var(--accent);
+}
+html[data-theme="light"] .origin-year-line.accent{
+  color:transparent;
+  -webkit-text-stroke:1.45px rgba(230,60,20,.86);
+}
+.origin-caption{
+  position:relative;
+  z-index:1;
+  max-width:24rem;
+  display:grid;
+  gap:.7rem;
+}
+.origin-caption-title{
+  font-family:var(--display);
+  font-size:clamp(1.4rem,2.4vw,2rem);
+  line-height:.96;
+  text-transform:uppercase;
+  letter-spacing:.03em;
+  color:var(--text);
+}
+.origin-caption-text{
+  font-family:var(--mono);
+  font-size:.68rem;
+  letter-spacing:.13em;
+  text-transform:uppercase;
+  color:rgba(232,228,222,.62);
+  max-width:34ch;
+  line-height:1.7;
+}
+.origin-stage-notes{
+  position:relative;
+  z-index:1;
+  display:grid;
+  gap:.8rem;
+  margin-top:.85rem;
+  padding-top:1.15rem;
+  border-top:1px solid rgba(237,231,221,.12);
+}
+.origin-stage-notes span{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(232,228,222,.56);
+}
+.origin-copy{
+  padding-top:1.4rem;
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+}
+.origin-copy-top{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:1.5rem;
+  margin-bottom:2.15rem;
+}
+.origin-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:.75rem;
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.74);
+  border:none;
+  padding:0;
+  margin-bottom:0;
+}
+.origin-badge::after{
+  content:'';
+  width:2.75rem;
+  height:1px;
+  background:rgba(237,231,221,.24);
+}
+.origin-book{
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--muted);
+  text-align:right;
+}
+.origin-text{
+  color:var(--muted);
+  font-size:.95rem;
+  line-height:1.88;
+  max-width:36rem;
+}
+.origin-text strong{color:var(--text);font-weight:400}
+.origin-foot{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:1.2rem;
+  margin-top:auto;
+  padding-top:1.45rem;
+  border-top:1px solid rgba(237,231,221,.12);
+}
+.origin-foot span{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+  line-height:1.7;
+}
+
+/* ── CONCEPT ─────────────────────────────── */
+.concept{overflow:hidden}
+.theory-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.04fr) minmax(20rem,.96fr);
+  gap:clamp(2.9rem,5.2vw,5.7rem);
+  align-items:start;
+}
+.theory-copy{
+  padding-top:.35rem;
+  display:grid;
+  align-content:start;
+}
+.theory-copy-top{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:1.5rem;
+  margin-bottom:2.15rem;
+}
+.theory-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:.75rem;
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--accent);
+}
+.theory-badge::after{
+  content:'';
+  width:2.75rem;
+  height:1px;
+  background:rgba(230,60,20,.36);
+}
+.theory-meta{
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--muted);
+  text-align:right;
+}
+.theory-copy-title{
+  font-family:var(--display);
+  font-size:clamp(2rem, 4vw, 3rem);
+  line-height:.92;
+  text-transform:uppercase;
+  letter-spacing:.01em;
+  margin-bottom:1.35rem;
+}
+.theory-copy-title em{
+  font-style:normal;
+  color:var(--accent);
+}
+.theory-text{
+  color:var(--muted);
+  font-size:.96rem;
+  line-height:1.82;
+  max-width:38rem;
+}
+.theory-text strong{color:var(--text);font-weight:400}
+.theory-panel{
+  position:relative;
+  min-height:37rem;
+  padding:1.5rem clamp(1.35rem,2.3vw,2rem) 1.55rem;
+  border:1px solid rgba(237,231,221,.12);
+  background:
+    radial-gradient(circle at 78% 24%, rgba(237,231,221,.04), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,.014), rgba(255,255,255,0));
+  overflow:hidden;
+}
+.theory-panel::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    radial-gradient(circle, rgba(237,231,221,.12) .8px, transparent 1px);
+  background-size:26px 26px;
+  opacity:.28;
+  pointer-events:none;
+}
+.theory-panel::after{
+  content:'';
+  position:absolute;
+  left:clamp(1.1rem,2vw,1.6rem);
+  right:clamp(1.1rem,2vw,1.6rem);
+  top:4rem;
+  height:1px;
+  background:rgba(237,231,221,.12);
+}
+.theory-panel-top,
+.theory-panel-word,
+.theory-panel-notes,
+.theory-quote-card{
+  position:relative;
+  z-index:1;
+}
+.theory-panel-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+}
+.theory-panel-kicker{
+  display:inline-flex;
+  align-items:center;
+  gap:.75rem;
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.72);
+}
+.theory-panel-kicker::after{
+  content:'';
+  width:2.6rem;
+  height:1px;
+  background:rgba(237,231,221,.24);
+}
+.theory-panel-meta{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(232,228,222,.48);
+  text-align:right;
+}
+.theory-panel-notes{
+  display:grid;
+  gap:.82rem;
+  max-width:16rem;
+  margin-top:5.85rem;
+}
+.theory-panel-notes span{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(232,228,222,.46);
+}
+.theory-quote-card{
+  width:min(29.5rem, 92%);
+  margin-top:2.85rem;
+  margin-left:auto;
+  padding:1.32rem 1.4rem 1.28rem;
+  background:linear-gradient(180deg, rgba(11,11,12,.78), rgba(15,15,16,.84));
+  border:1px solid rgba(237,231,221,.12);
+  color:var(--text);
+  clip-path:polygon(0 0, 88% 0, 100% 14%, 100% 100%, 0 100%);
+  box-shadow:0 18px 60px rgba(0,0,0,.2);
+  z-index:2;
+  backdrop-filter:blur(3px);
+  -webkit-backdrop-filter:blur(3px);
+}
+.theory-quote-label{
+  display:inline-flex;
+  align-items:center;
+  gap:.65rem;
+  margin-bottom:.9rem;
+  font-family:var(--mono);
+  font-size:.56rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.62);
+}
+.theory-quote-label::after{
+  content:'';
+  width:2rem;
+  height:1px;
+  background:rgba(230,60,20,.34);
+}
+.theory-quote{
+  margin:0;
+  padding:0;
+  border-top:none;
+  max-width:none;
+  font-family:var(--serif);
+  font-size:clamp(1.35rem, 3vw, 1.95rem);
+  font-style:italic;
+  line-height:1.48;
+  color:var(--text);
+}
+.theory-quote::before{
+  content:'"';
+  display:block;
+  margin-bottom:.55rem;
+  font-family:var(--display);
+  font-size:1.55rem;
+  line-height:1;
+  color:rgba(230,60,20,.54);
+}
+.theory-attrib{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.58);
+  margin-top:.85rem;
+}
+.theory-panel-word{
+  position:absolute;
+  left:clamp(1.1rem,2vw,1.6rem);
+  right:clamp(1.1rem,2vw,1.6rem);
+  bottom:.95rem;
+  display:grid;
+  gap:.1rem;
+  line-height:.82;
+  letter-spacing:-.055em;
+  text-transform:uppercase;
+  pointer-events:none;
+}
+.theory-panel-word-fill,
+.theory-panel-word-outline{
+  display:block;
+  font-family:var(--display);
+  font-size:clamp(4.2rem, 10.2vw, 7.6rem);
+}
+.theory-panel-word-fill{
+  color:rgba(232,228,222,.96);
+}
+.theory-panel-word-outline{
+  color:var(--accent);
+  -webkit-text-stroke:1px rgba(16,12,9,.18);
+}
+.theory-foot{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:1rem;
+  margin-top:1.85rem;
+  padding-top:1rem;
+  border-top:1px solid rgba(237,231,221,.12);
+}
+.theory-foot span{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+  line-height:1.7;
+}
+
+/* ── HOW IT WORKS ────────────────────────── */
+.how-it-works{}
+.how-top{
+  display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(18rem,.75fr);
+  gap:2.5rem;
+  align-items:start;
+  margin-bottom:3rem;
+}
+.how-kicker{
+  display:inline-flex;
+  align-items:center;
+  gap:.75rem;
+  margin-bottom:1.25rem;
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.how-kicker::after{
+  content:'';
+  width:3rem;
+  height:1px;
+  background:rgba(230,60,20,.4);
+}
+.how-summary{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:1.5rem;
+  padding-top:.2rem;
+}
+.summary-card{
+  background:none;
+  padding:.2rem 0 0;
+  border:none;
+  border-top:1px solid rgba(232,228,222,.08);
+  min-height:0;
+  position:relative;
+}
+.summary-card::after{display:none}
+.summary-card span{
+  display:block;
+  margin-bottom:.6rem;
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--accent);
+}
+.summary-card strong{
+  display:block;
+  font-family:var(--display);
+  font-size:1.35rem;
+  line-height:.95;
+  text-transform:uppercase;
+  letter-spacing:.02em;
+  color:var(--text);
+  margin-bottom:.45rem;
+}
+.summary-card p{
+  color:var(--muted);
+  font-size:.9rem;
+  line-height:1.65;
+  max-width:34ch;
+}
+.phases{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  position:relative;
+  gap:2.25rem;
+  padding-top:1.5rem;
+  margin-bottom:clamp(1.5rem, 3vw, 2.5rem);
+}
+.phases::before{
+  content:'';
+  position:absolute;
+  left:0;
+  right:0;
+  top:2.55rem;
+  height:1px;
+  background:rgba(232,228,222,.08);
+}
+.phase{
+  padding:4.2rem 0 0;
+  background:none;
+  border:none;
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  transition:transform .24s ease;
+}
+.phase::before{
+  content:'';
+  position:absolute;
+  top:2.55rem;
+  left:0;
+  width:100%;
+  height:1px;
+  background:transparent;
+}
+.phase::after{
+  content:'';
+  position:absolute;
+  top:2.55rem;
+  left:0;
+  width:12px;
+  height:12px;
+  border:1px solid rgba(230,60,20,.7);
+  background:var(--bg);
+  transform:translateY(-50%) rotate(45deg);
+}
+.phase:hover{
+  transform:translateY(-2px);
+}
+.phase:nth-child(2){margin-top:3rem}
+.phase:nth-child(3){margin-top:1.25rem}
+.phase-shape{
+  display:block;
+  width:78px;height:78px;
+  color:var(--accent);
+  opacity:.72;
+  margin-bottom:1.65rem;
+}
+.phase-num{
+  font-family:var(--mono);
+  font-size:.76rem;
+  font-weight:400;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--accent);
+  opacity:.8;
+  margin-bottom:.6rem;
+}
+.phase h3{
+  font-family:var(--display);
+  font-size:1.85rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  margin-bottom:.5rem;
+  color:var(--text);
+}
+.phase p{
+  color:var(--muted);
+  font-size:.9rem;
+  line-height:1.7;
+  max-width:24ch;
+  flex:1;
+}
+.phase-timer{
+  display:inline-block;
+  margin-top:1.25rem;
+  font-family:var(--mono);
+  font-size:.76rem;
+  font-weight:400;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--accent);
+  border:1px solid rgba(230,60,20,.2);
+  padding:.2rem .6rem;
+  align-self:flex-start;
+}
+.how-protocol{
+  --how-board-shift:0px;
+  --how-board-opacity:1;
+  --how-stage-strength:0;
+  position:relative;
+  min-height:400vh;
+  min-height:400svh;
+  margin-top:0;
+  margin-left:calc(50% - 50vw);
+  margin-right:calc(50% - 50vw);
+}
+.how-protocol-sticky{
+  position:sticky;
+  top:0;
+  height:100vh;
+  height:100svh;
+  overflow:hidden;
+  isolation:isolate;
+  background-color:var(--bg);
+  background-image:radial-gradient(circle, rgba(230,60,20,.16) 1px, transparent 1.25px);
+  background-size:40px 40px;
+  background-position:0 0;
+}
+.how-protocol-sticky::before{
+  content:none;
+}
+.how-protocol-sticky::after{
+  content:none;
+}
+.how-protocol-board{
+  position:absolute;
+  left:var(--folio-x);
+  right:var(--folio-x);
+  top:50%;
+  min-height:min(74vh, 45.5rem);
+  background:var(--accent);
+  color:var(--on-accent);
+  clip-path:polygon(
+    0 var(--folder-notch-line),
+    var(--folder-notch-start) var(--folder-notch-line),
+    var(--folder-notch-end) 0,
+    calc(100% - var(--folder-corner-cut)) 0,
+    100% var(--folder-corner-cut),
+    100% 100%,
+    0 100%
+  );
+  transform:translateY(calc(-50% + var(--how-board-shift)));
+  opacity:var(--how-board-opacity);
+  will-change:transform,opacity;
+  z-index:5;
+  box-shadow:0 18px 80px rgba(0,0,0,.22);
+  overflow:hidden;
+}
+.how-board-top{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:1rem;
+  align-items:center;
+  min-height:var(--folder-notch-line);
+  padding:0 clamp(1.2rem, 2vw, 1.8rem) 0 var(--folder-top-safe-left);
+  font-family:var(--mono);
+  font-size:.64rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--on-accent-line);
+  color:var(--on-accent-muted);
+}
+.how-board-top span:last-child{text-align:right}
+.how-board-copy{
+  display:grid;
+  grid-template-columns:minmax(0,1.2fr) minmax(13rem,.62fr) minmax(11rem,.42fr);
+  gap:0;
+  border-bottom:1px solid var(--on-accent-line);
+}
+.how-board-copy > div{
+  min-height:12.6rem;
+  padding:1.65rem clamp(1.35rem, 2.2vw, 2.05rem) 1.95rem;
+}
+.how-board-copy > div + div{
+  border-left:1px solid var(--on-accent-line);
+}
+.how-board-lede{
+  font-family:var(--sans);
+  font-size:clamp(1.45rem, 2.6vw, 2.3rem);
+  line-height:1.1;
+  font-weight:500;
+  max-width:20ch;
+}
+.how-board-meta{
+  display:grid;
+  align-content:start;
+  gap:1rem;
+  font-family:var(--mono);
+  font-size:.78rem;
+  line-height:1.45;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.how-board-stat{
+  display:grid;
+  align-content:start;
+  gap:.65rem;
+}
+.how-board-stat span,
+.how-board-stat strong{
+  font-family:var(--mono);
+  text-transform:uppercase;
+}
+.how-board-stat span{
+  font-size:.62rem;
+  letter-spacing:.16em;
+}
+.how-board-stat strong{
+  font-size:1.05rem;
+  letter-spacing:.08em;
+  font-weight:400;
+}
+.how-board-track{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:clamp(7.4rem, 10.4vh, 8.4rem);
+  display:grid;
+  grid-template-columns:repeat(8,minmax(0,1fr));
+  border-top:1px solid var(--on-accent-line);
+  border-bottom:1px solid var(--on-accent-line);
+  background:rgba(18,12,9,.05);
+}
+.how-board-track span{
+  min-height:4rem;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  text-align:left;
+  padding:1rem .55rem;
+  border-left:1px solid var(--on-accent-line);
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--on-accent-strong);
+}
+.how-board-track span:first-child{border-left:none}
+.how-board-notes{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:clamp(12rem, 16.8vh, 13.1rem);
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  border-top:1px solid var(--on-accent-line);
+  border-bottom:1px solid var(--on-accent-line);
+  background:rgba(18,12,9,.05);
+}
+.how-board-notes span{
+  min-height:3rem;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  text-align:left;
+  padding:1rem clamp(1rem, 2vw, 1.45rem);
+  border-left:1px solid var(--on-accent-line);
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--on-accent-strong);
+}
+.how-board-notes span:first-child{border-left:none}
+.how-board-word{
+  position:absolute;
+  left:clamp(1rem, 2vw, 1.6rem);
+  right:clamp(1rem, 2vw, 1.6rem);
+  bottom:.95rem;
+  display:flex;
+  align-items:flex-end;
+  gap:.35rem;
+  line-height:.8;
+  text-transform:uppercase;
+  pointer-events:none;
+}
+.how-board-word-fill,
+.how-board-word-outline{
+  font-family:var(--display);
+  font-size:clamp(3.1rem, 8.8vw, 7.15rem);
+  letter-spacing:-.04em;
+}
+.how-board-word-fill{color:#100c09}
+.how-board-word-outline{
+  color:transparent;
+  -webkit-text-stroke:1.5px rgba(16,12,9,.88);
+}
+.how-phase-screen{
+  position:absolute;
+  inset:0;
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  padding:clamp(5.4rem, 7vw, 7rem) var(--frame-x) clamp(1.25rem, 3vw, 2rem);
+  opacity:0;
+  transform:translateY(28px) scale(.96);
+  pointer-events:none;
+  z-index:2;
+  will-change:transform,opacity;
+}
+.how-phase-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+}
+.how-phase-kicker,
+.how-phase-count,
+.how-phase-domain,
+.how-phase-tag{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+}
+.how-phase-kicker,
+.how-phase-domain{color:var(--muted)}
+.how-phase-count{color:var(--accent)}
+.how-phase-stage{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  min-height:0;
+  padding:0;
+}
+.how-phase-stage::before{content:none}
+.how-phase-stage::after{
+  content:none;
+}
+.how-phase-word{
+  position:relative;
+  z-index:2;
+  font-family:var(--display);
+  font-size:clamp(5rem, 12vw, 10rem);
+  line-height:.84;
+  letter-spacing:-.04em;
+  text-transform:uppercase;
+  color:var(--text);
+  text-align:center;
+}
+.how-phase-subword{
+  position:relative;
+  z-index:2;
+  margin-top:.7rem;
+  font-family:var(--mono);
+  font-size:.68rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.52);
+  text-align:center;
+  max-width:28ch;
+}
+.how-phase-frame{
+  display:none;
+}
+.how-phase-copy{
+  display:grid;
+  grid-template-columns:minmax(14rem,.58fr) minmax(18rem,1fr) auto;
+  gap:1.25rem 2.25rem;
+  align-items:start;
+  padding-top:1rem;
+  padding-bottom:.1rem;
+  border-top:1px solid rgba(230,60,20,.14);
+  background:linear-gradient(180deg, rgba(16,12,9,.18), rgba(16,12,9,0));
+}
+.how-phase-title{
+  display:grid;
+  gap:.45rem;
+}
+.how-phase-copy h3{
+  font-family:var(--display);
+  font-size:clamp(2.35rem, 5vw, 4rem);
+  line-height:.88;
+  letter-spacing:.01em;
+  text-transform:uppercase;
+  color:var(--text);
+  margin:0;
+}
+.how-phase-copy p{
+  color:var(--text);
+  font-size:1rem;
+  line-height:1.82;
+  max-width:44ch;
+}
+.how-phase-tags{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:1rem;
+}
+.how-phase-tag{color:var(--muted)}
+.how-phase-screen--reveal .how-phase-stage::before{content:none}
+.how-phase-screen--settle .how-phase-stage::before{content:none}
+.rules-shell{
+  display:block;
+  margin-top:clamp(3.25rem, 6.2vw, 5.35rem);
+}
+.rules-intro{
+  position:relative;
+  min-height:calc(100vh - 7.5rem);
+  display:block;
+  padding:0;
+  margin-left:calc(50% - 50vw + var(--folio-x));
+  margin-right:calc(50% - 50vw + var(--folio-x));
+  background:var(--surface);
+  border:1px solid rgba(237,231,221,.12);
+  clip-path:none;
+  overflow:hidden;
+  box-shadow:0 18px 56px rgba(0,0,0,.16);
+  transition:
+    opacity .72s cubic-bezier(.22,1,.36,1),
+    transform .82s cubic-bezier(.22,1,.36,1);
+  will-change:opacity,transform;
+}
+.rules-intro::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(237,231,221,.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(237,231,221,.08) 1px, transparent 1px),
+    radial-gradient(circle, rgba(237,231,221,.12) .9px, transparent 1px);
+  background-size:78px 78px, 78px 78px, 24px 24px;
+  opacity:.24;
+  pointer-events:none;
+}
+.rules-intro-grid{
+  width:100%;
+  max-width:none;
+  min-height:calc(100vh - 7.5rem);
+  margin:0 auto;
+  display:grid;
+  grid-template-columns:minmax(0,1.08fr) minmax(30rem,.82fr);
+  gap:clamp(1.9rem, 3vw, 3.3rem) clamp(2.3rem, 4vw, 4.4rem);
+  align-items:start;
+  padding:
+    clamp(1.7rem, 2.9vw, 2.4rem)
+    calc(var(--frame-x) - var(--folio-x))
+    clamp(1.95rem, 3.2vw, 2.7rem);
+  position:relative;
+  z-index:1;
+}
+.rules-intro-main{
+  display:grid;
+  align-content:start;
+  gap:1.2rem;
+  min-height:0;
+}
+.rules-intro-side{
+  display:grid;
+  gap:1.55rem;
+  align-content:start;
+  padding-top:.2rem;
+  max-width:none;
+  width:100%;
+  min-width:0;
+}
+.rules-intro-detail{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:1.35rem;
+  align-items:start;
+  padding-top:1.15rem;
+  border-top:1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  min-width:0;
+}
+.rules-intro-kicker{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:color-mix(in srgb, var(--text) 64%, transparent);
+}
+.rules-intro-note{
+  font-family:var(--mono);
+  font-size:.64rem;
+  letter-spacing:.14em;
+  line-height:1.78;
+  text-transform:uppercase;
+  color:color-mix(in srgb, var(--text) 68%, transparent);
+  max-width:34ch;
+  margin:0;
+  padding-top:.9rem;
+  padding-left:0;
+  min-width:0;
+  overflow-wrap:break-word;
+  border-top:1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  border-left:none;
+}
+.rules-divider{
+  display:inline-flex;
+  align-items:center;
+  gap:.85rem;
+  margin-bottom:0;
+}
+.rules-divider span{
+  font-family:var(--mono);
+  font-size:.78rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:color-mix(in srgb, var(--text) 68%, transparent);
+  white-space:nowrap;
+}
+.rules-divider::before{display:none}
+.rules-divider::after{
+  content:'';
+  width:3rem;
+  height:1px;
+  background:color-mix(in srgb, var(--text) 24%, transparent);
+}
+.rules-title{
+  font-family:var(--display);
+  font-size:clamp(4rem, 8vw, 6.9rem);
+  line-height:.9;
+  text-transform:uppercase;
+  letter-spacing:-.015em;
+  color:var(--text);
+  max-width:11ch;
+  margin:0;
+  text-wrap:balance;
+}
+.rules-title em{
+  font-style:normal;
+  color:var(--accent);
+}
+.rules-lede{
+  color:color-mix(in srgb, var(--text) 78%, transparent);
+  font-size:1.05rem;
+  line-height:1.84;
+  max-width:30ch;
+  margin:0;
+}
+.rules-meta{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(11rem,1fr));
+  gap:1.2rem 1.8rem;
+  margin-top:0;
+  min-width:0;
+  width:min(100%, 34rem);
+}
+.rules-meta span{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.15em;
+  line-height:1.72;
+  text-transform:uppercase;
+  color:color-mix(in srgb, var(--text) 70%, transparent);
+  padding-top:.85rem;
+  padding-left:0;
+  border-top:none;
+  position:relative;
+  min-width:0;
+  overflow-wrap:break-word;
+  word-break:normal;
+}
+.rules-meta span::before{
+  content:'';
+  position:absolute;
+  left:0;
+  top:0;
+  width:2.75rem;
+  height:1px;
+  background:color-mix(in srgb, var(--text) 24%, transparent);
+  opacity:1;
+}
+.rules-scrolly{
+  position:relative;
+  min-height:400vh;
+  min-height:400svh;
+  margin-top:0;
+  margin-left:calc(50% - 50vw);
+  margin-right:calc(50% - 50vw);
+}
+.rules-sticky{
+  position:sticky;
+  top:0;
+  height:100vh;
+  height:100svh;
+  overflow:hidden;
+  border-top:none;
+  border-bottom:none;
+  background-color:var(--bg);
+  background-image:radial-gradient(circle, rgba(230,60,20,.16) 1px, transparent 1.25px);
+  background-size:40px 40px;
+  background-position:0 0;
+  transition:
+    opacity .72s cubic-bezier(.22,1,.36,1),
+    transform .82s cubic-bezier(.22,1,.36,1);
+  will-change:opacity,transform;
+}
+.rules-shell.is-primed .rules-intro{
+  opacity:0;
+  transform:translateY(42px) scale(.986);
+}
+.rules-shell.is-primed.is-intro-visible .rules-intro{
+  opacity:1;
+  transform:none;
+}
+.rules-scrolly.is-primed .rules-sticky{
+  opacity:0;
+  transform:translateY(46px) scale(.986);
+}
+.rules-scrolly.is-primed.is-entered .rules-sticky{
+  opacity:1;
+  transform:none;
+}
+.rules-screen{
+  position:absolute;
+  inset:0;
+  display:grid;
+  grid-template-rows:auto 1fr auto;
+  padding:clamp(6rem,8vw,7.5rem) var(--frame-x) clamp(1.5rem,4vw,2.6rem);
+  background-color:var(--bg);
+  background-image:radial-gradient(circle, rgba(230,60,20,.16) 1px, transparent 1.25px);
+  background-size:40px 40px;
+  background-position:0 0;
+  opacity:0;
+  -webkit-clip-path:circle(0 at 50% 52%);
+  clip-path:circle(0 at 50% 52%);
+  transition:none;
+  pointer-events:none;
+  will-change:clip-path,-webkit-clip-path,opacity;
+  --screen-chrome-opacity:1;
+  --screen-art-opacity:1;
+}
+.rules-screen.is-active{
+  pointer-events:auto;
+}
+.rules-screen-top,
+.rules-screen-copy{
+  opacity:var(--screen-chrome-opacity);
+}
+.rules-screen--inverse{
+  background-color:var(--accent);
+  background-image:radial-gradient(circle, rgba(16,12,9,.22) 1px, transparent 1.25px);
+}
+.rules-screen--inverse .rule-motion{
+  --word-base:rgba(10,10,10,.22);
+  --note-color:rgba(10,10,10,.62);
+}
+.rules-screen--inverse .rules-screen-kicker,
+.rules-screen--inverse .rules-screen-domain,
+.rules-screen--inverse .rules-screen-count,
+.rules-screen--inverse .rule-tags span{
+  color:rgba(10,10,10,.84);
+}
+.rules-screen--inverse .rule-motion-brand,
+.rules-screen--inverse .rule-motion-note{
+  color:rgba(10,10,10,.66);
+}
+.rules-screen--inverse .rules-screen-copy{
+  border-top-color:rgba(10,10,10,.24);
+}
+.rules-screen--inverse .rules-screen-copy h3,
+.rules-screen--inverse .rule-motion-base .rule-motion-word{
+  color:rgba(10,10,10,.94);
+}
+.rules-screen--inverse .rules-screen-copy p{
+  color:rgba(10,10,10,.88);
+}
+.rules-screen--inverse .rule-motion-base .rule-motion-word{
+  -webkit-text-stroke:1px rgba(10,10,10,.16);
+}
+.rules-screen-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+}
+.rules-screen-kicker,
+.rules-screen-count,
+.rules-screen-domain{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+}
+.rules-screen-kicker,
+.rules-screen-domain{color:rgba(237,231,221,.54)}
+.rules-screen-count{color:rgba(237,231,221,.78)}
+.rules-stage-art{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:0;
+  opacity:var(--screen-art-opacity);
+}
+.rule-viz{width:100%;display:flex;align-items:center;justify-content:center}
+.rule-viz svg,.rule-viz .rule-motion{width:100%;display:block}
+.rules-stage-art .rule-motion{
+  max-width:min(100%, 1380px);
+  min-height:min(68vh, 42rem);
+}
+.rules-screen-copy{
+  display:grid;
+  grid-template-columns:minmax(14rem,.62fr) minmax(18rem,1fr) minmax(13rem,.56fr);
+  gap:1.25rem 2.25rem;
+  align-items:start;
+  padding-top:1.2rem;
+  border-top:1px solid rgba(232,228,222,.12);
+}
+.rules-screen-title{
+  display:grid;
+  gap:.45rem;
+}
+.rules-screen-copy h3{
+  font-family:var(--display);
+  font-size:clamp(2.5rem,5.8vw,4.75rem);
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.02em;
+  line-height:.88;
+  color:var(--text);
+  margin:0;
+}
+.rules-screen-copy p{
+  color:var(--text);
+  font-size:1rem;
+  line-height:1.82;
+  max-width:44ch;
+}
+.rules-screen-copy .rule-tags{
+  justify-content:flex-end;
+  align-content:flex-start;
+  margin-top:0;
+}
+.rules-screen-copy .rule-tags span{color:var(--muted)}
+.rules-progress{
+  position:absolute;
+  right:var(--frame-x);
+  top:50%;
+  transform:translateY(-50%);
+  z-index:10;
+  display:grid;
+  justify-items:end;
+  gap:.48rem;
+  padding:0;
+  background:none;
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+}
+.rules-progress-item{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-direction:row-reverse;
+  gap:.38rem;
+  opacity:.34;
+  transition:opacity .3s ease,color .3s ease;
+}
+.rules-progress-item.is-active{
+  opacity:1;
+}
+.rules-progress-dot{
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  border:1px solid rgba(232,228,222,.28);
+  background:transparent;
+  transition:transform .3s ease, background-color .3s ease, border-color .3s ease;
+}
+.rules-progress-item.is-active .rules-progress-dot{
+  background:rgba(232,228,222,.82);
+  border-color:rgba(232,228,222,.82);
+  transform:scale(1.05);
+}
+.rules-progress-label{
+  font-family:var(--mono);
+  font-size:.48rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(232,228,222,.34);
+}
+.rules-progress-item.is-active .rules-progress-label{color:rgba(232,228,222,.78)}
+#rulesScrolly[data-active-rule="2"] .rules-progress-item,
+#rulesScrolly[data-active-rule="4"] .rules-progress-item{
+  opacity:.46;
+}
+#rulesScrolly[data-active-rule="2"] .rules-progress-label,
+#rulesScrolly[data-active-rule="4"] .rules-progress-label{
+  color:rgba(10,10,10,.34);
+}
+#rulesScrolly[data-active-rule="2"] .rules-progress-dot,
+#rulesScrolly[data-active-rule="4"] .rules-progress-dot{
+  border-color:rgba(10,10,10,.34);
+}
+#rulesScrolly[data-active-rule="2"] .rules-progress-item.is-active .rules-progress-label,
+#rulesScrolly[data-active-rule="4"] .rules-progress-item.is-active .rules-progress-label{
+  color:rgba(10,10,10,.82);
+}
+#rulesScrolly[data-active-rule="2"] .rules-progress-item.is-active .rules-progress-dot,
+#rulesScrolly[data-active-rule="4"] .rules-progress-item.is-active .rules-progress-dot{
+  background:rgba(10,10,10,.82);
+  border-color:rgba(10,10,10,.82);
+}
+.rule-motion{
+  --word-base:var(--text);
+  --word-orb:var(--bg);
+  --orb-fill:var(--accent);
+  --note-color:rgba(237,231,221,.28);
+  --orb-x:50%;
+  --orb-y:52%;
+  --orb-size:min(32vmin, 20rem);
+  --orb-scale-min:.42;
+  --orb-scale-max:1.12;
+  --word-size:clamp(4.75rem, 13vw, 8.25rem);
+  --word-tracking:-.05em;
+  position:relative;
+  width:100%;
+  min-height:clamp(12rem, 24vw, 16rem);
+  overflow:hidden;
+  isolation:isolate;
+}
+.rule-motion-layer{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.rule-motion-base{z-index:1}
+.rule-motion-word{
+  position:relative;
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  font-family:var(--display);
+  font-size:var(--word-size);
+  line-height:.82;
+  letter-spacing:var(--word-tracking);
+  text-transform:uppercase;
+  text-align:center;
+  transform:translateY(.04em);
+}
+.rule-motion-word span{display:block}
+.rule-motion-base .rule-motion-word{color:var(--word-base)}
+.rule-motion-brand{
+  position:absolute;
+  left:50%;
+  top:1.2rem;
+  transform:translateX(-50%);
+  z-index:4;
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--note-color);
+  white-space:nowrap;
+}
+.rule-motion-note{
+  position:absolute;
+  z-index:1;
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--note-color);
+  opacity:.46;
+  white-space:nowrap;
+}
+.rule-motion-note--x1{left:4%}
+.rule-motion-note--x2{left:24%}
+.rule-motion-note--x3{left:68%}
+.rule-motion-note--x4{left:82%}
+.rule-motion-note--top{top:34%}
+.rule-motion-note--bottom{top:76%}
+.rule-motion--medium{
+  --orb-size:min(46vmin, 29rem);
+  --orb-scale-min:.58;
+  --orb-scale-max:1.26;
+}
+.rule-motion--full{
+  --orb-size:min(56vmin, 36rem);
+  --orb-scale-min:1.15;
+  --orb-scale-max:2.7;
+}
+.rule-motion--inverse{
+  --word-base:var(--bg);
+  --note-color:rgba(9,13,19,.76);
+  background:var(--accent);
+  box-shadow:none;
+}
+.rule-tags{
+  display:flex;
+  flex-wrap:wrap;
+  gap:1rem;
+  margin-top:1rem;
+}
+.rule-tags span{
+  font-family:var(--mono);
+  font-size:.54rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.54);
+  padding:0;
+  border:none;
+  background:none;
+}
+@media (prefers-reduced-motion:reduce){
+  .rules-screen{transition:none}
+  .rules-intro,
+  .rules-sticky{
+    transition:none !important;
+    opacity:1 !important;
+    transform:none !important;
+  }
+  .context-ticker-track{animation:none}
+  .incentive-stage-dot-wrap{animation:none}
+}
+
+/* ── INCENTIVE / CONTEXT ────────────────── */
+.protocol-context{
+  padding-top:clamp(5rem, 7.2vw, 6.85rem);
+}
+.context-shell{
+  display:grid;
+  gap:clamp(4.5rem, 7vw, 6.8rem);
+}
+.context-prelude{
+  position:relative;
+  margin:0;
+  background:none;
+  border:none;
+  clip-path:none;
+  overflow:visible;
+  box-shadow:none;
+  display:grid;
+  align-items:center;
+  min-height:100svh;
+  padding:clamp(1.35rem, 2.6vw, 2rem) 0;
+}
+.context-prelude::before{
+  content:none;
+}
+.context-prelude-top,
+.context-intro,
+.incentive-list,
+.incentive-mechanics{
+  position:relative;
+  z-index:1;
+}
+.context-prelude-top{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:1rem 1.75rem;
+  padding:0 0 1.15rem;
+  border-bottom:1px solid rgba(237,231,221,.12);
+  font-family:var(--mono);
+  font-size:.63rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.56);
+}
+.context-prelude-top span:nth-child(2){
+  text-align:center;
+}
+.context-prelude-top span:last-child{
+  text-align:right;
+}
+.context-intro{
+  display:grid;
+  grid-template-columns:minmax(0,1.08fr) minmax(18rem,.82fr);
+  gap:clamp(3rem, 5vw, 6.4rem);
+  align-items:center;
+  padding:clamp(2.6rem, 4.6vw, 4rem) 0;
+}
+.context-bridge{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.15em;
+  line-height:1.9;
+  text-transform:uppercase;
+  color:rgba(232,228,222,.56);
+  max-width:34ch;
+}
+.context-copy{
+  display:grid;
+  gap:1.55rem;
+}
+.context-copy .section-title{
+  max-width:8.5ch;
+}
+.context-copy .section-body{
+  max-width:44rem;
+}
+.context-copy-side{
+  display:grid;
+  gap:1.7rem;
+  align-content:start;
+  max-width:34rem;
+}
+.context-copy-side::before{
+  content:'';
+  width:min(100%, 18rem);
+  height:1px;
+  background:rgba(237,231,221,.14);
+}
+.incentive-mechanics{
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr);
+  gap:clamp(2.15rem, 3.4vw, 3.2rem);
+  min-height:100svh;
+  align-items:stretch;
+  align-content:center;
+  padding:clamp(1.7rem, 3vw, 2.4rem) 0;
+}
+.incentive-mechanics-top{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:1rem 1.75rem;
+  padding:0;
+  font-family:var(--mono);
+  font-size:.63rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.56);
+}
+.incentive-mechanics-top span:nth-child(2){
+  text-align:center;
+}
+.incentive-mechanics-top span:last-child{
+  text-align:right;
+}
+.incentive-list{
+  display:grid;
+  grid-template-columns:minmax(14rem,1fr) clamp(18rem, 25vw, 22rem) minmax(14rem,1fr);
+  grid-template-areas:
+    "one stage two"
+    "three stage four";
+  align-items:center;
+  gap:clamp(2.2rem, 3.4vw, 3rem) clamp(2.35rem, 3.8vw, 4.6rem);
+  padding:clamp(.4rem, 1vw, .75rem) 0 0;
+}
+.incentive-item{
+  display:grid;
+  gap:.82rem;
+  align-content:start;
+  padding:.8rem 0 .95rem;
+  align-items:start;
+  position:relative;
+}
+.incentive-item::after{
+  content:'';
+  width:2.4rem;
+  height:1px;
+  background:rgba(237,231,221,.16);
+  margin-top:.25rem;
+}
+.incentive-item--one{grid-area:one;text-align:right;justify-items:end}
+.incentive-item--two{grid-area:two}
+.incentive-item--three{grid-area:three;text-align:right;justify-items:end}
+.incentive-item--four{grid-area:four}
+.incentive-num{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.44);
+}
+.incentive-item h3{
+  font-family:var(--display);
+  font-size:clamp(1.55rem, 2.6vw, 2.35rem);
+  line-height:.92;
+  letter-spacing:.01em;
+  text-transform:uppercase;
+  color:var(--text);
+  max-width:11ch;
+}
+.incentive-item p{
+  color:rgba(237,231,221,.68);
+  font-size:.92rem;
+  line-height:1.8;
+  max-width:36ch;
+}
+.incentive-stage{
+  grid-area:stage;
+  align-self:center;
+  justify-self:center;
+  width:100%;
+  display:grid;
+  justify-items:center;
+  gap:1.35rem;
+  padding:.75rem 0;
+}
+.incentive-stage-orbit{
+  position:relative;
+  width:clamp(14rem, 24vw, 19rem);
+  aspect-ratio:1;
+  display:grid;
+  place-items:center;
+}
+.incentive-stage-orbit::before,
+.incentive-stage-orbit::after{
+  content:'';
+  position:absolute;
+  border-radius:50%;
+  pointer-events:none;
+}
+.incentive-stage-orbit::before{
+  inset:9%;
+  border:1px solid rgba(237,231,221,.16);
+}
+.incentive-stage-orbit::after{
+  inset:28%;
+  border:1px solid rgba(237,231,221,.11);
+}
+.incentive-mark{
+  position:relative;
+  z-index:1;
+  width:clamp(9rem, 15vw, 12rem);
+  height:auto;
+  color:var(--text);
+}
+.incentive-stage-dot-wrap{
+  position:absolute;
+  inset:0;
+  transform:rotate(var(--incentive-angle, 0deg));
+  transition:none;
+  will-change:transform;
+}
+.incentive-stage-dot{
+  position:absolute;
+  top:6%;
+  left:50%;
+  width:clamp(.7rem, 1.1vw, .95rem);
+  height:clamp(.7rem, 1.1vw, .95rem);
+  border-radius:50%;
+  transform:translateX(-50%);
+  background:var(--accent);
+  box-shadow:0 0 0 6px rgba(230,60,20,.08), 0 0 28px rgba(230,60,20,.22);
+}
+.incentive-stage-label{
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.46);
+  text-align:center;
+  max-width:16ch;
+}
+.context-ticker{
+  position:relative;
+  margin-left:calc(50% - 50vw + var(--folio-x));
+  margin-right:calc(50% - 50vw + var(--folio-x));
+  margin-top:clamp(1.2rem, 2.1vw, 1.75rem);
+  margin-bottom:clamp(1.3rem, 2.4vw, 2rem);
+  overflow:hidden;
+  border-top:1px solid rgba(16,12,9,.24);
+  border-bottom:1px solid rgba(16,12,9,.24);
+  background:var(--accent);
+}
+.context-ticker::before,
+.context-ticker::after{
+  content:'';
+  position:absolute;
+  top:0;
+  bottom:0;
+  width:clamp(2rem, 4vw, 4rem);
+  z-index:2;
+  pointer-events:none;
+}
+.context-ticker::before{
+  left:0;
+  background:linear-gradient(90deg, var(--accent), rgba(230,60,20,0));
+}
+.context-ticker::after{
+  right:0;
+  background:linear-gradient(270deg, var(--accent), rgba(230,60,20,0));
+}
+.context-ticker-track{
+  display:flex;
+  width:max-content;
+  animation:contextTicker 28s linear infinite;
+  will-change:transform;
+}
+.context-ticker-group{
+  display:flex;
+  align-items:center;
+  flex-shrink:0;
+  gap:1.35rem;
+  padding:.9rem 1.35rem;
+}
+.context-ticker-group span{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(16,12,9,.78);
+  white-space:nowrap;
+}
+.context-ticker-sep{
+  color:rgba(16,12,9,.52) !important;
+}
+.context-columns{
+  display:grid;
+  margin-left:calc(50% - 50vw + var(--folio-x));
+  margin-right:calc(50% - 50vw + var(--folio-x));
+}
+.context-folio{
+  position:relative;
+  padding-top:1.95rem;
+}
+.context-folio-tag{
+  position:absolute;
+  top:0;
+  left:clamp(1rem, 2vw, 1.8rem);
+  display:inline-flex;
+  align-items:center;
+  gap:.65rem;
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(230,60,20,.86);
+  z-index:2;
+}
+.context-folio-tag::after{
+  content:'';
+  width:2.75rem;
+  height:1px;
+  background:rgba(230,60,20,.42);
+}
+.context-folio-panel{
+  position:relative;
+  background:var(--surface);
+  color:var(--text);
+  clip-path:none;
+  overflow:hidden;
+  border:1px solid rgba(237,231,221,.12);
+  box-shadow:0 18px 56px rgba(0,0,0,.16);
+}
+.context-folio-panel::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(237,231,221,.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(237,231,221,.08) 1px, transparent 1px),
+    radial-gradient(circle, rgba(237,231,221,.12) .9px, transparent 1px);
+  background-size:78px 78px, 78px 78px, 24px 24px;
+  opacity:.32;
+  pointer-events:none;
+}
+.context-folio-top,
+.context-folio-main,
+.context-applications{
+  position:relative;
+  z-index:1;
+}
+.context-folio-top{
+  display:grid;
+  grid-template-columns:minmax(0,.74fr) minmax(0,1fr) auto;
+  align-items:center;
+  gap:1rem 1.75rem;
+  padding:1rem clamp(1.4rem, 2.4vw, 2.2rem) .9rem;
+  border-bottom:1px solid rgba(237,231,221,.12);
+  font-family:var(--mono);
+  font-size:.63rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.66);
+}
+.context-folio-top span:nth-child(2),
+.context-folio-top span:last-child{
+  color:rgba(230,60,20,.78);
+}
+.context-folio-top span:last-child{
+  text-align:right;
+}
+.context-folio-main{
+  display:grid;
+  grid-template-columns:minmax(0,1.14fr) minmax(22rem,.86fr);
+  align-items:stretch;
+}
+.context-folio-story,
+.context-folio-side{
+  min-height:0;
+  padding:1.65rem clamp(1.5rem, 2.55vw, 2.35rem) 1.8rem;
+}
+.context-folio-side{
+  border-left:1px solid rgba(237,231,221,.12);
+  display:grid;
+  align-content:start;
+  gap:.9rem;
+}
+.context-folio-story{
+  display:grid;
+  gap:1.1rem;
+}
+.context-folio-story h3,
+.context-folio-side h4{
+  margin:0;
+  font-family:var(--display);
+  text-transform:uppercase;
+  line-height:.88;
+  letter-spacing:-.03em;
+  color:var(--text);
+}
+.context-folio-story h3{
+  font-size:clamp(3.5rem, 7vw, 6rem);
+  max-width:7.5ch;
+}
+.context-folio-side h4{
+  font-size:clamp(2.3rem, 4.2vw, 3.7rem);
+  max-width:11ch;
+}
+.context-folio-copy{
+  display:grid;
+  gap:1.1rem;
+  max-width:60rem;
+}
+.context-folio-copy p,
+.context-folio-side p{
+  color:rgba(237,231,221,.74);
+  font-size:1rem;
+  line-height:1.86;
+}
+.context-folio-copy strong{
+  color:var(--text);
+  font-weight:400;
+}
+.context-folio-copy a{
+  color:var(--text);
+  text-decoration:none;
+  border-bottom:1px solid rgba(237,231,221,.32);
+}
+.context-folio-side span{
+  display:inline-flex;
+  align-items:center;
+  gap:.65rem;
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(230,60,20,.8);
+}
+.context-folio-side span::after{
+  content:'';
+  width:2.4rem;
+  height:1px;
+  background:rgba(230,60,20,.32);
+}
+.context-applications{
+  display:grid;
+  gap:1rem;
+  padding:1rem clamp(1.4rem, 2.4vw, 2.2rem) 1.35rem;
+  border-top:1px solid rgba(237,231,221,.12);
+}
+.context-applications-top{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:1rem;
+}
+.context-applications-top{
+  font-family:var(--mono);
+  font-size:.62rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.58);
+}
+.context-applications-top span:first-child,
+.context-applications-count{
+  color:rgba(230,60,20,.74);
+}
+.context-applications-current{
+  text-align:center;
+  color:rgba(237,231,221,.72);
+}
+.context-applications-count{
+  text-align:right;
+}
+.context-applications-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:0;
+  border:1px solid rgba(237,231,221,.12);
+  background:rgba(10,10,11,.74);
+}
+.application-card{
+  position:relative;
+  min-height:15.25rem;
+  padding:1.05rem 1.1rem 1.2rem;
+  border-right:1px solid rgba(237,231,221,.08);
+  display:grid;
+  grid-template-rows:auto auto 1fr;
+  align-content:start;
+}
+.application-card:last-child{
+  border-right:none;
+}
+.application-card::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(rgba(237,231,221,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(237,231,221,.04) 1px, transparent 1px),
+    radial-gradient(circle, rgba(237,231,221,.08) .85px, transparent 1px);
+  background-size:88px 88px, 88px 88px, 24px 24px;
+  opacity:.2;
+  pointer-events:none;
+}
+.application-card > *{
+  position:relative;
+  z-index:1;
+}
+.application-card-head{
+  display:grid;
+  gap:.55rem;
+  margin-bottom:1rem;
+}
+.application-card-index,
+.application-tag{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(230,60,20,.74);
+}
+.application-card h4{
+  margin:0;
+  font-family:var(--display);
+  font-size:clamp(1.8rem, 2.55vw, 2.75rem);
+  line-height:.92;
+  letter-spacing:-.02em;
+  text-transform:uppercase;
+  color:var(--text);
+  max-width:11ch;
+}
+.application-card p{
+  margin:0;
+  color:rgba(237,231,221,.74);
+  font-size:.98rem;
+  line-height:1.82;
+  max-width:28ch;
+}
+.application-card-foot{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.35rem;
+  margin-top:1.1rem;
+  padding-top:.8rem;
+  border-top:1px solid rgba(237,231,221,.1);
+}
+.application-card-foot span{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.44);
+}
+.application-card-foot span:first-child{
+  color:rgba(230,60,20,.58);
+}
+/* ── TRY IT ──────────────────────────────── */
+.example{
+  border-top:none;
+  padding:clamp(5.9rem, 9vw, 8.1rem) var(--page-x);
+  min-height:100vh;
+  min-height:100svh;
+}
+.example .container{
+  display:grid;
+  gap:clamp(2.35rem, 3.6vw, 3.25rem);
+}
+.example-shell{
+  width:100%;
+}
+.example-panel{
+  position:relative;
+  overflow:hidden;
+  background:rgba(13,13,14,.94);
+  border:1px solid rgba(237,231,221,.12);
+}
+.example-panel::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(circle, rgba(237,231,221,.09) .9px, transparent 1px);
+  background-size:24px 24px;
+  opacity:.32;
+  pointer-events:none;
+}
+.example-panel > *{
+  position:relative;
+  z-index:1;
+}
+.example-panel-top{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:1rem 1.75rem;
+  padding:1rem clamp(1.4rem, 2.4vw, 2.2rem) .92rem;
+  border-bottom:1px solid rgba(237,231,221,.1);
+  font-family:var(--mono);
+  font-size:.63rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.62);
+}
+.example-panel-top span:last-child{
+  text-align:right;
+}
+.example-panel-main{
+  display:grid;
+  grid-template-columns:minmax(0,1.16fr) minmax(20rem,.84fr);
+  align-items:stretch;
+  border-bottom:1px solid rgba(237,231,221,.1);
+}
+.example-copy{
+  display:grid;
+  align-content:start;
+  gap:1.35rem;
+  padding:clamp(1.95rem, 3.5vw, 2.9rem) clamp(1.65rem, 2.75vw, 2.55rem);
+}
+.example-copy-label{
+  display:inline-flex;
+  align-items:center;
+  gap:.7rem;
+  font-family:var(--mono);
+  font-size:.6rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.62);
+}
+.example-copy-label::after{
+  content:'';
+  width:2.5rem;
+  height:1px;
+  background:rgba(237,231,221,.22);
+}
+.example-question{
+  font-family:var(--display);
+  font-size:clamp(2.4rem, 5vw, 4.7rem);
+  font-weight:800;
+  text-transform:uppercase;
+  line-height:.88;
+  letter-spacing:-.03em;
+  color:var(--text);
+  max-width:10.5ch;
+}
+.example-question em{color:var(--accent);font-style:normal}
+.example-panel-side{
+  display:grid;
+  align-content:start;
+  gap:1.4rem;
+  padding:clamp(1.95rem, 3.5vw, 2.9rem) clamp(1.65rem, 2.75vw, 2.55rem);
+  border-left:1px solid rgba(237,231,221,.1);
+}
+.example-note{
+  color:rgba(237,231,221,.74);
+  font-size:.98rem;
+  line-height:1.95;
+  max-width:34rem;
+}
+.example-panel-meta{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:1rem 1.4rem;
+  padding-top:1.35rem;
+  border-top:1px solid rgba(237,231,221,.1);
+}
+.example-panel-meta span{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.54);
+}
+.example-grid-frame{
+  display:grid;
+}
+.example-grid-meta{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:1rem 1.4rem;
+  padding:1rem clamp(1.5rem, 2.55vw, 2.35rem);
+  border-bottom:1px solid rgba(237,231,221,.1);
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(237,231,221,.56);
+}
+.example-grid-meta span:nth-child(2){
+  text-align:center;
+  color:rgba(237,231,221,.42);
+}
+.example-grid-meta span:last-child{
+  text-align:right;
+}
+/* grid container */
+.example-grid{
+  display:grid;
+  gap:1px;
+  background:rgba(237,231,221,.1);
+  grid-template-columns:repeat(6,1fr);
+  counter-reset:nc;
+  width:100%;
+  border-bottom:1px solid rgba(237,231,221,.1);
+}
+/* index counter top-left */
+.example-opt{counter-increment:nc}
+.example-opt::before{
+  content:counter(nc,decimal-leading-zero);
+  position:absolute;
+  top:.75rem;
+  left:.85rem;
+  font-family:var(--mono);
+  font-size:.44rem;
+  letter-spacing:.1em;
+  color:rgba(237,231,221,.34);
+  opacity:1;
+}
+/* shared button */
+.example-opt{
+  background:rgba(10,10,11,.92);
+  border:none;
+  font-family:var(--display);
+  font-weight:800;
+  color:rgba(237,231,221,.76);
+  cursor:pointer;
+  transition:background-color .18s,color .18s,opacity .38s;
+  line-height:1;
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:.4rem;
+  text-align:left;
+}
+.opt-n{font-size:inherit;font-weight:inherit;font-family:inherit;color:inherit;line-height:1}
+.opt-meta{display:none}
+/* GRID VIEW cells */
+.example-grid .example-opt{
+  font-size:clamp(1.9rem,3vw,3.2rem);
+  padding:2rem 1.4rem 1.5rem;
+  min-height:7.8rem;
+}
+/* corner bracket hover */
+.example-grid:not(.revealed) .example-opt:hover{
+  background-color:rgba(230,60,20,.07);
+  background-image:
+    linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent));
+  background-position:0 0,0 0,100% 0,100% 0,0 100%,0 100%,100% 100%,100% 100%;
+  background-size:9px 1.5px,1.5px 9px,9px 1.5px,1.5px 9px,9px 1.5px,1.5px 9px,9px 1.5px,1.5px 9px;
+  background-repeat:no-repeat;
+  color:var(--text);
+}
+/* vote bars (hidden until revealed) */
+.example-opt .vote-bar{
+  display:none;height:2px;background:var(--accent);
+  width:0;transition:width .6s ease;align-self:stretch;
+}
+.example-opt .vote-pct{
+  display:none;font-family:var(--mono);
+  font-size:.5rem;letter-spacing:.06em;color:var(--muted);
+}
+.example-grid.revealed .example-opt .vote-bar,
+.example-grid.revealed .example-opt .vote-pct{display:block}
+/* revealed state */
+.example-grid.revealed .example-opt{opacity:.06;cursor:default}
+.example-grid.revealed .example-opt.popular,
+.example-grid.revealed .example-opt.my-pick{opacity:1}
+.example-grid.revealed .example-opt.popular{
+  background-color:rgba(230,60,20,.12);color:var(--accent);
+  box-shadow:0 0 0 1px rgba(230,60,20,.5);
+}
+.example-opt.popular::after{
+  content:'focal point';display:none;
+  font-family:var(--mono);font-size:.48rem;letter-spacing:.1em;text-transform:uppercase;opacity:.7;
+}
+.example-grid.revealed:not(.has-tally) .example-opt.popular::after{display:block}
+.example-grid.revealed .example-opt.my-pick{background-color:rgba(232,228,222,.05);color:var(--text)}
+/* my-pick label overrides the counter ::before */
+.example-grid.revealed .example-opt.my-pick::before{
+  content:'your pick';
+  position:static;counter-increment:none;opacity:.7;
+  font-family:var(--mono);font-size:.46rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);display:block;
+}
+.example-grid.revealed .example-opt.my-pick.popular{color:var(--accent)}
+.example-grid.revealed .example-opt.my-pick.popular::before{display:none}
+.example-grid.revealed .example-opt.my-pick.popular::after{content:'your pick · focal point';display:block}
+/* insight bar */
+.example-insight{
+  display:none;
+  padding:1.15rem clamp(1.4rem, 2.4vw, 2.2rem) 1.2rem;
+  font-size:.88rem;
+  color:rgba(237,231,221,.72);
+  line-height:1.8;
+  border-top:none;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1.5rem 2rem;
+  background:rgba(237,231,221,.02);
+}
+.example-grid.revealed ~ .example-insight{display:flex}
+.example-insight span{
+  max-width:55rem;
+}
+.example-reset{
+  background:none;border:1px solid rgba(237,231,221,.16);color:rgba(237,231,221,.62);
+  font-family:var(--mono);font-size:.56rem;letter-spacing:.12em;text-transform:uppercase;
+  cursor:pointer;padding:.35rem .85rem;flex-shrink:0;
+  transition:border-color .2s,color .2s;white-space:nowrap;
+}
+.example-reset:hover{border-color:var(--accent);color:var(--text)}
+
+/* ── SOCIAL PROOF ────────────────────────── */
+.social-proof{display:block}
+.social-proof.loaded{display:block}
+.social-proof-shell{
+  display:grid;
+  gap:3.6rem;
+}
+.social-proof-head{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:1.8rem 2.4rem;
+  align-items:end;
+}
+.social-proof-copy{
+  max-width:42rem;
+}
+.social-proof-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:2.2rem 3rem;
+}
+.social-card{
+  display:grid;
+  gap:.8rem;
+  padding-top:1.2rem;
+  border-top:1px solid rgba(232,228,222,.1);
+}
+.social-value{
+  font-family:var(--display);
+  font-size:clamp(3rem, 8vw, 5.8rem);
+  line-height:.84;
+  letter-spacing:-.02em;
+  color:var(--text);
+  min-height:2.4rem;
+}
+.social-label{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--accent);
+}
+.social-copy{
+  color:var(--muted);
+  font-size:.94rem;
+  line-height:1.86;
+  max-width:28ch;
+}
+.social-proof-note{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:rgba(232,228,222,.48);
+  white-space:nowrap;
+}
+
+html[data-theme="light"] .section-body,
+html[data-theme="light"] .theory-text,
+html[data-theme="light"] .social-copy,
+html[data-theme="light"] .context-bridge,
+html[data-theme="light"] .incentive-item p{
+  color:rgba(23,19,16,.88);
+}
+html[data-theme="light"] .hero-shell-tag-dark{
+  color:rgba(23,19,16,.88);
+}
+html[data-theme="light"] .origin-kicker,
+html[data-theme="light"] .theory-meta,
+html[data-theme="light"] .theory-panel-meta,
+html[data-theme="light"] .theory-panel-notes span,
+html[data-theme="light"] .theory-attrib,
+html[data-theme="light"] .incentive-mechanics-top,
+html[data-theme="light"] .incentive-num,
+html[data-theme="light"] .incentive-stage-label,
+html[data-theme="light"] .social-proof-note{
+  color:rgba(23,19,16,.68);
+}
+html[data-theme="light"] .theory-copy-title,
+html[data-theme="light"] .context-folio-story h3,
+html[data-theme="light"] .context-folio-side h4,
+html[data-theme="light"] .application-card h4,
+html[data-theme="light"] .example-question,
+html[data-theme="light"] .social-value{
+  color:rgba(23,19,16,.96);
+}
+html[data-theme="light"] .theory-panel{
+  background:
+    radial-gradient(circle at 78% 24%, rgba(23,19,16,.04), transparent 28%),
+    linear-gradient(180deg, rgba(23,19,16,.03), rgba(23,19,16,0));
+  border-color:rgba(23,19,16,.14);
+}
+html[data-theme="light"] .theory-panel::before{
+  background-image:radial-gradient(circle, rgba(23,19,16,.1) .8px, transparent 1px);
+}
+html[data-theme="light"] .theory-panel::after{
+  background:rgba(23,19,16,.14);
+}
+html[data-theme="light"] .theory-panel-kicker{
+  color:rgba(23,19,16,.72);
+}
+html[data-theme="light"] .theory-panel-kicker::after{
+  background:rgba(23,19,16,.22);
+}
+html[data-theme="light"] .theory-quote-card{
+  background:linear-gradient(180deg, rgba(31,29,30,.92), rgba(42,39,40,.95));
+}
+html[data-theme="light"] .theory-panel-word-fill{
+  color:rgba(23,19,16,.12);
+}
+html[data-theme="light"] .context-folio-tag{
+  color:rgba(177,56,27,.96);
+}
+html[data-theme="light"] .context-folio-tag::after{
+  background:rgba(177,56,27,.34);
+}
+html[data-theme="light"] .context-folio-panel{
+  background:linear-gradient(180deg, rgba(235,228,219,.95), rgba(231,223,213,.95));
+  border-color:rgba(23,19,16,.12);
+  box-shadow:0 18px 56px rgba(55,40,28,.08);
+}
+html[data-theme="light"] .context-folio-panel::before{
+  background-image:
+    linear-gradient(rgba(23,19,16,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23,19,16,.05) 1px, transparent 1px),
+    radial-gradient(circle, rgba(23,19,16,.08) .9px, transparent 1px);
+}
+html[data-theme="light"] .context-folio-top,
+html[data-theme="light"] .context-applications-top{
+  color:rgba(23,19,16,.72);
+  border-color:rgba(23,19,16,.12);
+}
+html[data-theme="light"] .context-folio-top span:nth-child(2),
+html[data-theme="light"] .context-folio-top span:last-child,
+html[data-theme="light"] .context-folio-side span,
+html[data-theme="light"] .context-applications-top span:first-child,
+html[data-theme="light"] .context-applications-count,
+html[data-theme="light"] .application-card-index,
+html[data-theme="light"] .application-tag,
+html[data-theme="light"] .application-card-foot span:first-child{
+  color:rgba(177,56,27,.9);
+}
+html[data-theme="light"] .context-folio-copy p,
+html[data-theme="light"] .context-folio-side p{
+  color:rgba(23,19,16,.86);
+}
+html[data-theme="light"] .context-folio-copy a{
+  color:var(--text);
+  border-bottom-color:rgba(23,19,16,.2);
+}
+html[data-theme="light"] .context-applications-current,
+html[data-theme="light"] .application-card-foot span,
+html[data-theme="light"] .example-panel-top,
+html[data-theme="light"] .example-copy-label,
+html[data-theme="light"] .example-grid-meta{
+  color:rgba(23,19,16,.68);
+}
+html[data-theme="light"] .context-folio-side span,
+html[data-theme="light"] .application-card-foot span:first-child{
+  color:rgba(177,56,27,.9);
+}
+html[data-theme="light"] .context-folio-side span::after,
+html[data-theme="light"] .context-applications-grid,
+html[data-theme="light"] .application-card-foot,
+html[data-theme="light"] .example-panel-top,
+html[data-theme="light"] .example-panel-main,
+html[data-theme="light"] .example-panel-side,
+html[data-theme="light"] .example-grid-meta,
+html[data-theme="light"] .example-grid{
+  border-color:rgba(23,19,16,.12);
+}
+html[data-theme="light"] .context-folio-side span::after{
+  background:rgba(177,56,27,.28);
+}
+html[data-theme="light"] .context-applications-grid{
+  background:rgba(207,198,188,.44);
+}
+html[data-theme="light"] .application-card{
+  background:rgba(238,231,222,.86);
+  border-right-color:rgba(23,19,16,.08);
+}
+html[data-theme="light"] .application-card::before{
+  background:
+    linear-gradient(rgba(23,19,16,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23,19,16,.03) 1px, transparent 1px),
+    radial-gradient(circle, rgba(23,19,16,.05) .85px, transparent 1px);
+}
+html[data-theme="light"] .application-card p,
+html[data-theme="light"] .example-note,
+html[data-theme="light"] .example-insight{
+  color:rgba(23,19,16,.86);
+}
+html[data-theme="light"] .example-panel{
+  background:rgba(238,231,222,.92);
+  border-color:rgba(23,19,16,.12);
+}
+html[data-theme="light"] .example-panel::before{
+  background:radial-gradient(circle, rgba(23,19,16,.08) .9px, transparent 1px);
+}
+html[data-theme="light"] .example-opt{
+  background:rgba(242,236,228,.92);
+  color:rgba(23,19,16,.88);
+}
+html[data-theme="light"] .example-opt::before{
+  color:rgba(23,19,16,.52);
+}
+html[data-theme="light"] .example-grid.revealed .example-opt{
+  opacity:.3;
+}
+html[data-theme="light"] .social-stat{
+  border-color:rgba(23,19,16,.16);
+}
+html[data-theme="light"] .social-label{
+  color:rgba(23,19,16,.7);
+}
+html[data-theme="light"] .social-note,
+html[data-theme="light"] .rules-intro-meta span,
+html[data-theme="light"] .rules-intro-note{
+  color:rgba(23,19,16,.8);
+}
+
+/* ── FINAL CTA ───────────────────────────── */
+.final-cta{
+  padding:clamp(6rem, 9.2vw, 8.8rem) var(--folio-x) clamp(3.35rem, 5.2vw, 4.6rem);
+}
+.final-cta-panel{
+  position:relative;
+  overflow:hidden;
+  background:var(--accent);
+  color:#100c09;
+  clip-path:polygon(
+    0 var(--folder-notch-line),
+    var(--folder-notch-start) var(--folder-notch-line),
+    var(--folder-notch-end) 0,
+    calc(100% - var(--folder-corner-cut)) 0,
+    100% var(--folder-corner-cut),
+    100% 100%,
+    0 100%
+  );
+  box-shadow:0 24px 90px rgba(0,0,0,.22);
+}
+.final-cta-panel::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(16,12,9,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16,12,9,.14) 1px, transparent 1px),
+    radial-gradient(circle, rgba(16,12,9,.18) .9px, transparent 1px);
+  background-size:78px 78px, 78px 78px, 24px 24px;
+  opacity:.42;
+  pointer-events:none;
+}
+.final-cta-panel > *{
+  position:relative;
+  z-index:1;
+}
+.final-cta-top{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:1rem 1.5rem;
+  align-items:center;
+  min-height:var(--folder-notch-line);
+  padding:0 clamp(1.2rem, 2vw, 1.8rem) 0 var(--folder-top-safe-left);
+  border-bottom:1px solid rgba(16,12,9,.28);
+  font-family:var(--mono);
+  font-size:.63rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:rgba(16,12,9,.76);
+}
+.final-cta-top span:nth-child(2){
+  text-align:center;
+}
+.final-cta-top span:last-child{
+  text-align:right;
+}
+.final-cta-main{
+  display:grid;
+  grid-template-columns:minmax(0,1.08fr) minmax(16rem,.54fr);
+  gap:2.2rem 2.9rem;
+  align-items:end;
+  padding:clamp(2.35rem, 3.7vw, 3.2rem) clamp(1.5rem, 2.35vw, 2.15rem) clamp(2.65rem, 3.8vw, 3.45rem);
+  border-bottom:1px solid rgba(16,12,9,.24);
+}
+.final-cta-title{
+  font-family:var(--display);
+  font-size:clamp(3rem, 9vw, 7.5rem);
+  font-weight:900;
+  text-transform:uppercase;
+  line-height:.9;
+  letter-spacing:-.01em;
+  max-width:8.5ch;
+}
+.final-cta-title em{
+  font-style:normal;
+  color:transparent;
+  -webkit-text-stroke:1.5px rgba(16,12,9,.88);
+}
+.final-cta-right{
+  display:flex;flex-direction:column;align-items:flex-end;gap:1.45rem;
+  padding-left:3rem;
+}
+.final-cta-sub{
+  font-family:var(--mono);
+  font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(16,12,9,.7);text-align:right;
+}
+.final-cta-panel .hero-cta{
+  font-size:.68rem;
+  letter-spacing:.16em;
+  color:#100c09;
+  background:transparent;
+  border:1px solid rgba(16,12,9,.56);
+  padding:.82rem 1.15rem;
+}
+.final-cta-panel .hero-cta:hover{
+  background:#100c09;
+  color:var(--accent);
+  border-color:#100c09;
+  box-shadow:none;
+}
+
+/* ── FOOTER IN CTA ───────────────────────── */
+.final-cta-footer{
+  padding:1.25rem clamp(1.2rem, 2vw, 1.8rem) 1.35rem;
+  font-size:.65rem;
+  color:rgba(16,12,9,.72);
+  position:relative;
+}
+.footer-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.25fr) repeat(2,minmax(10rem,.55fr));
+  gap:2rem 3rem;
+  align-items:start;
+}
+.footer-brand{
+  display:grid;
+  gap:.8rem;
+  max-width:34rem;
+}
+.footer-mark{
+  display:flex;
+  align-items:center;
+  gap:0;
+  color:#100c09;
+}
+.footer-mark .brand-mark{
+  width:2.35rem;
+  height:2.35rem;
+}
+.footer-mark .brand-mark-dot{
+  fill:rgba(16,12,9,.94);
+}
+.footer-copy{
+  color:rgba(16,12,9,.72);
+  font-size:.92rem;
+  line-height:1.8;
+  max-width:42ch;
+}
+.footer-col{
+  display:grid;
+  gap:.8rem;
+  align-content:start;
+}
+.footer-heading{
+  font-family:var(--mono);
+  font-size:.56rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(16,12,9,.86);
+}
+.footer-list{
+  display:grid;
+  gap:.5rem;
+}
+.footer-list a{
+  font-family:var(--mono);
+  font-size:.66rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:rgba(16,12,9,.72);
+  text-decoration:none;
+  transition:color .2s ease;
+}
+.footer-list a:hover{color:#100c09}
+.footer-bottom{
+  margin-top:1.75rem;
+  padding-top:1rem;
+  border-top:1px solid rgba(16,12,9,.24);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:1rem;
+  flex-wrap:wrap;
+}
+.footer-meta{
+  font-family:var(--mono);
+  font-size:.58rem;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:rgba(16,12,9,.72);
+}
+#deploy-status{display:flex;align-items:center;gap:.4rem;font-family:var(--mono)}
+#deploy-status .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+#deploy-status .dot.success{background:#4caf50}
+#deploy-status .dot.in_progress{background:#ff9800;animation:pulse 1s infinite alternate}
+#deploy-status .dot.failure{background:#e53935}
+@keyframes pulse{to{opacity:.3}}
+
+/* ── RESPONSIVE ──────────────────────────── */
+@media(max-width:980px){
+  .how-top{grid-template-columns:1fr}
+  .how-summary{grid-template-columns:1fr}
+  .rules-intro{
+    min-height:auto;
+    display:block;
+    margin-left:0;
+    margin-right:0;
+    clip-path:none;
+  }
+  .rules-intro-grid{
+    grid-template-columns:1fr;
+    min-height:auto;
+    padding:
+      clamp(1.2rem, 4vw, 1.55rem)
+      clamp(1rem, 3.6vw, 1.35rem)
+      clamp(1.35rem, 4vw, 1.65rem);
+  }
+  .rules-intro-side{padding-top:0}
+  .rules-intro-detail{grid-template-columns:1fr}
+  .rules-meta{grid-template-columns:1fr}
+  .how-board-copy{grid-template-columns:1fr}
+  .how-board-copy > div + div{border-left:none;border-top:1px solid rgba(16,12,9,.24)}
+  .how-board-track{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .how-phase-copy{grid-template-columns:1fr;max-width:42rem}
+  .how-phase-tags{justify-content:flex-start}
+  .context-prelude{
+    margin-left:0;
+    margin-right:0;
+    clip-path:none;
+    min-height:auto;
+    padding:.35rem 0 0;
+  }
+  .context-prelude-top{
+    grid-template-columns:1fr;
+    padding:0 0 .75rem;
+  }
+  .context-prelude-top span:nth-child(2),
+  .context-prelude-top span:last-child{text-align:left}
+  .context-intro{
+    grid-template-columns:1fr;
+    padding:1.15rem 0 1.6rem;
+  }
+  .incentive-mechanics{
+    min-height:auto;
+    padding:.6rem 0 0;
+  }
+  .incentive-mechanics-top{
+    grid-template-columns:1fr;
+    padding:0 0 .75rem;
+  }
+  .incentive-mechanics-top span:nth-child(2),
+  .incentive-mechanics-top span:last-child{text-align:left}
+  .context-copy .section-title,
+  .context-copy .section-body,
+  .context-copy-side,
+  .context-bridge{
+    max-width:none;
+  }
+  .context-copy-side::before{
+    width:100%;
+  }
+  .incentive-list{
+    grid-template-columns:1fr 1fr;
+    grid-template-areas:
+      "stage stage"
+      "one two"
+      "three four";
+    gap:1rem 1.25rem;
+  }
+  .incentive-item{
+    padding:.9rem 0 1rem;
+  }
+  .context-ticker{
+    margin-left:0;
+    margin-right:0;
+    margin-top:.7rem;
+    margin-bottom:1rem;
+  }
+  .context-columns{
+    margin-left:0;
+    margin-right:0;
+  }
+  .context-folio{
+    padding-top:1.25rem;
+  }
+  .context-folio-tag{
+    left:1rem;
+  }
+  .context-folio-panel{
+    clip-path:none;
+  }
+  .context-folio-top{
+    grid-template-columns:1fr;
+    padding:1rem 1rem .8rem;
+  }
+  .context-folio-top span:last-child{text-align:left}
+  .context-folio-main{
+    grid-template-columns:1fr;
+  }
+  .context-folio-story,
+  .context-folio-side{
+    padding:1rem;
+  }
+  .context-folio-side{
+    border-left:none;
+    border-top:1px solid rgba(237,231,221,.12);
+  }
+  .context-folio-story h3{
+    font-size:clamp(2.55rem, 13vw, 4.4rem);
+  }
+  .context-folio-side h4{
+    font-size:clamp(1.9rem, 9vw, 2.8rem);
+  }
+  .context-applications{
+    gap:.85rem;
+    padding:1rem;
+  }
+  .context-applications-top{
+    grid-template-columns:1fr;
+    gap:.65rem;
+  }
+  .context-applications-current,
+  .context-applications-count{
+    text-align:left;
+  }
+  .context-applications-grid{
+    grid-template-columns:1fr;
+  }
+  .application-card{
+    min-height:auto;
+    padding:1rem;
+    border-right:none;
+    border-bottom:1px solid rgba(237,231,221,.08);
+  }
+  .application-card:last-child{
+    border-bottom:none;
+  }
+  .application-card h4{
+    font-size:clamp(1.75rem, 9vw, 2.45rem);
+    max-width:10ch;
+  }
+  .application-card p{
+    max-width:none;
+  }
+  .social-proof-head{grid-template-columns:1fr}
+  .origin-grid{grid-template-columns:1fr}
+  .origin-copy{padding-top:0}
+  .theory-grid{grid-template-columns:1fr}
+  .theory-copy{padding-top:0}
+  .theory-panel{min-height:30rem}
+  .rules-screen-copy{grid-template-columns:1fr;max-width:42rem}
+  .rules-screen-copy .rule-tags{justify-content:flex-start}
+  .rules-progress{
+    top:auto;
+    bottom:1.2rem;
+    right:var(--page-x);
+    transform:none;
+    grid-auto-flow:column;
+  }
+  .footer-grid{grid-template-columns:1fr 1fr}
+  .footer-brand{grid-column:1 / -1}
+}
+
+@media(max-width:700px){
+  :root{
+    --folder-notch-line:3rem;
+    --folder-notch-start:4.2rem;
+    --folder-notch-end:6.8rem;
+    --folder-corner-cut:.85rem;
+    --folder-top-safe-left:calc(var(--folder-notch-end) + .45rem);
+    --folder-tag-left:.85rem;
+  }
+  .hero{
+    min-height:auto;
+    padding:5.5rem var(--folio-x) 2.5rem;
+  }
+  .hero-shell-tag{
+    padding-top:.42rem;
+    gap:.26rem;
+  }
+  .hero-shell-tag-dark{
+    gap:.5rem;
+    font-size:.56rem;
+    max-width:calc(var(--folder-notch-start) - var(--folder-tag-left) - .15rem);
+  }
+  .hero-shell-tag-dark::after{
+    width:1.9rem;
+  }
+  .hero-shell-tag-accent{
+    font-size:.52rem;
+  }
+  .hero-panel{
+    min-height:0;
+  }
+  .hero-panel-top{
+    gap:.8rem;
+    min-height:0;
+    padding:.85rem 1rem .75rem var(--folder-top-safe-left);
+  }
+  .hero-panel-title{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:.15rem;
+    padding:1rem;
+  }
+  .hero-title-fill,
+  .hero-title-outline{
+    font-size:clamp(3.3rem, 18vw, 5.6rem);
+  }
+  .hero-panel-grid{
+    grid-template-columns:1fr;
+  }
+  .hero-panel-copy,
+  .hero-panel-meta{
+    border-left:none;
+    border-top:1px solid rgba(16,12,9,.24);
+  }
+  .hero-panel-left,
+  .hero-panel-copy,
+  .hero-panel-meta{
+    padding:1rem;
+  }
+  .hero-stack{
+    margin-bottom:1.1rem;
+  }
+  .hero-stack span{
+    font-size:clamp(2.65rem, 15vw, 4rem);
+  }
+  .hero-panel-copy p{
+    max-width:100%;
+    font-size:.96rem;
+  }
+  .hero-panel-copy-notes{gap:.5rem}
+  .hero-panel-foot{
+    grid-template-columns:1fr 1fr;
+  }
+  .hero-panel-foot span{
+    min-height:2.8rem;
+    padding:.85rem 1rem;
+  }
+  .hero-scroll{display:none}
+  .origin-stage{
+    padding:1rem;
+  }
+  .origin-stage-head{margin-bottom:1rem}
+  .origin-year-line{font-size:clamp(5.5rem,24vw,8rem)}
+  .origin-copy-top{flex-direction:column;align-items:flex-start}
+  .theory-copy-top{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+  .theory-meta{text-align:left}
+  .theory-panel{
+    min-height:27rem;
+    padding:1rem;
+  }
+  .theory-panel::after{
+    left:1rem;
+    right:1rem;
+  }
+  .theory-panel-top{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+  .theory-panel-meta{text-align:left}
+  .theory-panel-notes{
+    max-width:none;
+    margin-top:4rem;
+  }
+  .theory-quote-card{
+    width:100%;
+    margin-top:1.35rem;
+  }
+  .theory-panel-word-fill,
+  .theory-panel-word-outline{
+    font-size:clamp(3.5rem,16vw,5.4rem);
+  }
+  .theory-foot{grid-template-columns:1fr}
+  .how-protocol{min-height:360vh;min-height:360svh}
+  .how-protocol-board{
+    left:var(--folio-x);
+    right:var(--folio-x);
+    top:50%;
+    min-height:min(71vh, 35.5rem);
+  }
+  .how-board-top{
+    grid-template-columns:1fr;
+    min-height:0;
+    padding:.85rem 1rem .75rem var(--folder-top-safe-left);
+    gap:.4rem;
+  }
+  .how-board-copy > div{
+    min-height:auto;
+    padding:1rem;
+  }
+  .how-board-notes{
+    bottom:9.4rem;
+    grid-template-columns:1fr;
+  }
+  .how-board-notes span{
+    min-height:2.8rem;
+    padding:.8rem 1rem;
+    border-left:none;
+    border-top:1px solid rgba(16,12,9,.24);
+  }
+  .how-board-notes span:first-child{border-top:none}
+  .how-board-lede{font-size:clamp(1.25rem, 5vw, 1.8rem);max-width:100%}
+  .how-board-meta{font-size:.66rem}
+  .how-board-track{
+    bottom:5.9rem;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .how-board-track span{min-height:3rem;font-size:.5rem}
+  .how-board-word{
+    left:.85rem;
+    right:.85rem;
+    bottom:.55rem;
+    gap:.2rem;
+    flex-wrap:wrap;
+  }
+  .how-board-word-fill,
+  .how-board-word-outline{font-size:clamp(2.7rem, 14vw, 5rem)}
+  .how-phase-screen{padding:5.35rem var(--frame-x) 1.2rem}
+  .how-phase-stage::before{
+    left:50%;
+    top:42%;
+    transform:translate(-50%, -50%);
+    font-size:clamp(8rem, 38vw, 13rem);
+  }
+  .how-phase-copy{
+    grid-template-columns:1fr;
+    gap:.9rem;
+    padding-top:.85rem;
+  }
+  .how-phase-tags{justify-content:flex-start}
+  .how-phase-word{font-size:clamp(3.2rem, 15vw, 5.25rem)}
+  .how-phase-subword{font-size:.54rem;max-width:22ch}
+  .context-shell{gap:2.5rem}
+  .context-prelude{padding:0;min-height:auto}
+  .incentive-mechanics{padding:.2rem 0 0;min-height:auto}
+  .incentive-list{
+    grid-template-columns:1fr;
+    grid-template-areas:
+      "stage"
+      "one"
+      "two"
+      "three"
+      "four";
+    gap:.75rem;
+  }
+  .incentive-item{
+    text-align:left;
+    justify-items:start;
+    padding:.9rem 0 1rem;
+  }
+  .incentive-item::after{margin-top:.1rem}
+  .incentive-stage{
+    padding:.6rem 0 1rem;
+  }
+  .incentive-stage-orbit{
+    width:min(72vw, 16rem);
+  }
+  .social-proof-grid{grid-template-columns:1fr}
+  .social-proof-note{white-space:normal}
+  .origin-foot{grid-template-columns:1fr}
+  .phases{grid-template-columns:1fr}
+  .phases::before{display:none}
+  .phase{min-height:auto;padding-top:2.25rem;margin-top:0 !important}
+  .phase::after{top:0}
+  .example{
+    padding:4.5rem var(--page-x);
+  }
+  .final-cta-top{
+    min-height:0;
+    padding:.85rem 1rem .8rem var(--folder-top-safe-left);
+  }
+  .example-panel-top{
+    grid-template-columns:1fr;
+    gap:.4rem;
+    padding:.95rem 1rem .8rem;
+  }
+  .example-panel-top span:last-child{text-align:left}
+  .example-panel-main{
+    grid-template-columns:1fr;
+  }
+  .example-copy,
+  .example-panel-side{
+    padding:1rem;
+  }
+  .example-panel-side{
+    border-left:none;
+    border-top:1px solid rgba(237,231,221,.1);
+  }
+  .example-panel-meta{
+    grid-template-columns:1fr;
+  }
+  .example-grid-meta{
+    grid-template-columns:1fr;
+    gap:.35rem;
+    padding:.9rem 1rem;
+  }
+  .example-grid-meta span:nth-child(2),
+  .example-grid-meta span:last-child{
+    text-align:left;
+  }
+  .example-insight{
+    padding:1rem;
+    flex-direction:column;
+    gap:1rem;
+  }
+  .example-grid{grid-template-columns:repeat(3,1fr)}
+  .final-cta-main{grid-template-columns:1fr;align-items:start}
+  .final-cta-top{grid-template-columns:1fr;gap:.4rem}
+  .final-cta-top span:nth-child(2),
+  .final-cta-top span:last-child{text-align:left}
+  .final-cta-right{align-items:flex-start;padding-left:0}
+  nav{padding:1rem var(--page-x)}
+  nav .nav-links{display:none}
+  .nav-hamburger{display:flex}
+  .nav-mobile{display:flex}
+  section{padding:4.5rem var(--page-x)}
+  .rules-shell{margin-top:clamp(1.5rem, 4vw, 2.3rem)}
+  .rules-intro{padding:.15rem 0 1.5rem}
+  .rules-scrolly{min-height:360vh;min-height:360svh}
+  .rules-screen{padding:5.35rem var(--frame-x) 1.2rem}
+  .rules-stage-art .rule-motion{min-height:min(54vh, 22rem)}
+  .rules-screen-copy h3{font-size:clamp(2rem,11vw,3.15rem)}
+  .rules-screen-copy p{font-size:.92rem;line-height:1.75}
+  .rule-motion{min-height:10rem}
+  .rule-motion-brand{top:.95rem;font-size:.54rem}
+  .rule-motion-note{font-size:.5rem;letter-spacing:.11em}
+  .rules-progress{
+    left:var(--page-x);
+    right:auto;
+    bottom:.85rem;
+    gap:.55rem;
+  }
+  .footer-grid{grid-template-columns:1fr}
+  .footer-bottom{flex-direction:column;align-items:flex-start}
+  .sec-coord{display:none}
+}
+
+/* ── SCROLL ANIMATIONS ───────────────────── */
+@keyframes contextTicker{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes heroIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+.hero-anim{animation:heroIn .6s ease forwards;opacity:0}
+.ha-1{animation-delay:.1s}
+.ha-2{animation-delay:.2s}
+.ha-3{animation-delay:.32s}
+.ha-4{animation-delay:.42s}
+.ha-5{animation-delay:.5s}
+
+@keyframes revealUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.reveal{animation:revealUp .5s ease both}
+.reveal-delay-1{animation-delay:.08s}
+.reveal-delay-2{animation-delay:.16s}
+.reveal-delay-3{animation-delay:.24s}
+.reveal-delay-4{animation-delay:.32s}
+</style>
 </head>
 <body>
-<a href="#main-content" class="skip-link">Skip to main content</a>
 
-<nav aria-label="Primary navigation">
-  <div class="logo">Schelling <span>Games</span></div>
-  <a href="/app" class="play-link">Play</a>
+<nav id="mainNav">
+  <div class="logo">
+    <svg class="brand-mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="24" cy="24" r="17" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="24" cy="24" r="9.5" stroke="currentColor" stroke-width="1.6" opacity=".72"/>
+      <circle class="brand-mark-dot" cx="30.5" cy="18.5" r="3.8"/>
+      <path d="M24 7V13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+      <path d="M41 24H35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+      <path d="M24 41V35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+      <path d="M7 24H13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+    </svg>
+  </div>
+  <div class="nav-links">
+    <a href="#origin">Origin</a>
+    <a href="#how-it-works">How It Works</a>
+    <a href="#try-it">Try It</a>
+    <a href="#theory">Theory</a>
+  </div>
+  <div class="nav-right">
+    <button class="nav-hamburger" id="navHamburger" aria-label="Menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <button class="theme-toggle" aria-label="Toggle theme" id="themeToggle">
+      <!-- moon (shown in dark mode) -->
+      <svg class="icon-moon" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M11 8.5A5.5 5.5 0 0 1 4.5 2a5.5 5.5 0 1 0 6.5 6.5Z" fill="currentColor" opacity=".85"/>
+      </svg>
+      <!-- sun (shown in light mode) -->
+      <svg class="icon-sun" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="6.5" cy="6.5" r="2.2" stroke="currentColor" stroke-width="1.1"/>
+        <line x1="6.5" y1=".5" x2="6.5" y2="2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="6.5" y1="11" x2="6.5" y2="12.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1=".5" y1="6.5" x2="2" y2="6.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="11" y1="6.5" x2="12.5" y2="6.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="2.4" y1="2.4" x2="3.5" y2="3.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="9.5" y1="9.5" x2="10.6" y2="10.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="10.6" y1="2.4" x2="9.5" y2="3.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="3.5" y1="9.5" x2="2.4" y2="10.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <a href="/app.html" class="play-link">Play</a>
+  </div>
+  <!-- Mobile menu panel -->
+  <div class="nav-mobile" id="navMobile">
+    <a href="#origin"><span class="nm-n">01</span>Origin</a>
+    <a href="#how-it-works"><span class="nm-n">02</span>How It Works</a>
+    <a href="#try-it"><span class="nm-n">03</span>Try It</a>
+    <a href="#theory"><span class="nm-n">04</span>Theory</a>
+    <a href="/app.html" class="nm-cta">Play Now</a>
+  </div>
 </nav>
 
-<main id="main-content">
-
-<!-- ══ HERO ══════════════════════════════ -->
+<!-- ══ 1. HERO ════════════════════════════ -->
 <section class="hero">
-  <canvas class="hero-canvas" id="convergence" aria-hidden="true"></canvas>
-  <div class="hero-overtitle hero-anim">A coordination game</div>
-  <h1 class="hero-anim ha-1">Think Like<br/><em>Everyone</em> Else</h1>
-  <p class="hero-sub hero-anim ha-2">
-    No safe collusion. No shortcuts. Just you and a prompt.
-    Pick the answer you think most others will pick.
-  </p>
-  <a href="/app" class="hero-cta hero-anim ha-3">Play Now</a>
-  <div class="hero-wallet-note hero-anim ha-3">Ethereum wallet required &middot; any EIP-1193 wallet works</div>
-  <div class="hero-scroll">
-    <div class="hero-scroll-chevron"></div>
-  </div>
-</section>
-
-<!-- ══ ORIGIN ═══════════════════════════ -->
-<section class="origin">
-  <div class="container origin-container">
-    <div class="origin-year" aria-hidden="true">1960</div>
-    <div class="section-label reveal">The Origin</div>
-    <h2 class="section-title reveal">Thomas Schelling</h2>
-    <p class="origin-body reveal">
-      In 1960, economist Thomas Schelling posed a deceptively simple question:
-      if two strangers had to meet in New York City with no way to communicate,
-      where would they go? Most people said Grand Central Station at noon.
-      He called these natural meeting points <em>focal points</em> and showed that
-      coordination without communication is not only possible, it is predictable.
-      Schelling won the 2005 Nobel Prize in Economics for his work on
-      conflict and cooperation through game-theory analysis.
-      This game is a playable adaptation of that idea, built around a fixed seed set of canonical coordination prompts.
-    </p>
-    <div class="origin-accent reveal"></div>
-  </div>
-</section>
-
-<!-- ══ THEORY (moved before demo) ═══════ -->
-<section class="theory">
-  <div class="container">
-    <div class="section-label reveal">The Concept</div>
-    <h2 class="section-title reveal">Focal Points</h2>
-    <p class="section-body reveal">
-      In 1960, economist Thomas Schelling discovered that people can coordinate
-      without communicating by gravitating toward answers that feel naturally
-      prominent: focal points.
-    </p>
-    <blockquote class="theory-quote reveal">
-      People can often concert their intentions or expectations with
-      others if each knows that the other is trying to do the same.
-    </blockquote>
-    <p class="theory-attrib reveal">Thomas C. Schelling, The Strategy of Conflict (1960)</p>
-  </div>
-</section>
-
-<!-- ══ RULES ═════════════════════════════ -->
-<section class="concept">
-  <div class="container">
-    <div class="section-label reveal">The Rules</div>
-    <h2 class="section-title reveal">What if winning meant<br/>agreeing with strangers?</h2>
-    <p class="section-body reveal">
-      Schelling Games puts you in a room with other players. Everyone sees the same
-      Schelling prompt. Everyone picks an answer alone. Those who converge on the most
-      popular answer bucket split the pot. The rest lose their ante.
-    </p>
-    <div class="concept-grid">
-      <div class="concept-card reveal reveal-delay-1">
-        <div class="num">01</div>
-        <h3>No Safe Collusion</h3>
-        <p>You can talk, but you cannot prove what you will pick. Anyone who tries to coordinate by pre-revealing their choice opens themselves up to betrayal. The mechanism is designed to make focal-point reasoning the most reliable approach.</p>
+  <span class="sec-coord" style="top:auto;bottom:6rem;right:var(--page-x);opacity:.15">SYS.000 — INIT</span>
+  <div class="hero-shell">
+    <div class="hero-shell-tag hero-anim ha-1" aria-hidden="true">
+      <span class="hero-shell-tag-dark">Shared Salience</span>
+      <span class="hero-shell-tag-accent">No Prior Contact</span>
+    </div>
+    <div class="hero-panel hero-anim ha-1">
+      <div class="hero-panel-top">
+        <span class="hero-panel-brand">Schelling Game</span>
+        <span class="hero-panel-loc">Live Multiplayer Protocol</span>
       </div>
-      <div class="concept-card reveal reveal-delay-2">
-        <div class="num">02</div>
-        <h3>Commit-Reveal</h3>
-        <p>Answers are cryptographically locked before anyone reveals. You cannot simply wait to see what others chose, then copy them.</p>
+      <div class="hero-panel-title">
+        <span class="hero-title-fill hero-anim ha-1">Schelling</span>
+        <span class="hero-title-outline hero-anim ha-2">Game</span>
       </div>
-      <div class="concept-card reveal reveal-delay-3">
-        <div class="num">03</div>
-        <h3>Plurality Wins</h3>
-        <p>The most popular answer wins the game. If two answers tie for first, both groups win. Everyone else loses their ante.</p>
+      <div class="hero-panel-grid">
+        <div class="hero-panel-left">
+          <div class="hero-stack hero-anim ha-2">
+            <span>Committed.</span>
+            <span>Revealed.</span>
+            <span>Settled.</span>
+          </div>
+          <div class="hero-cta-group hero-anim ha-3">
+            <a href="/app.html" class="hero-cta">Play Now</a>
+            <span class="hero-disclaimer">Ethereum wallet required</span>
+          </div>
+        </div>
+        <div class="hero-panel-copy hero-anim ha-3">
+          <p>Pick what you think everyone else will independently converge on. The answer gets sealed, revealed together, then rewarded by plurality.</p>
+          <div class="hero-panel-copy-notes">
+            <span>No private coordination channel</span>
+            <span>Odd player counts reduce deadlock</span>
+            <span>Salience outperforms originality</span>
+          </div>
+        </div>
+        <div class="hero-panel-meta hero-anim ha-4">
+          <div class="hero-panel-meta-block">
+            <span>Players</span>
+            <strong>3 to 21</strong>
+          </div>
+          <div class="hero-panel-meta-block">
+            <span>Games</span>
+            <strong>10</strong>
+          </div>
+          <div class="hero-panel-meta-block">
+            <span>Payout</span>
+            <strong>Plurality</strong>
+          </div>
+        </div>
       </div>
-      <div class="concept-card reveal reveal-delay-4">
-        <div class="num">04</div>
-        <h3>10 Games</h3>
-        <p>Each match is 10 games of different prompts. Over many games, consistent coordination is rewarded more than any single lucky guess.</p>
+      <div class="hero-panel-foot hero-anim ha-4">
+        <span>Read the table</span>
+        <span>Hide the pick</span>
+        <span>Reveal together</span>
+        <span>Converge</span>
       </div>
     </div>
   </div>
+  <span class="hero-scroll hero-anim ha-4">Scroll to tune in</span>
 </section>
 
-<!-- ══ MECHANICS ═════════════════════════ -->
-<section class="mechanics">
+<!-- ══ 2. THE ORIGIN ══════════════════════ -->
+<section class="origin" id="origin">
+  <span class="sec-coord">40.7128°N / 74.0060°W</span>
   <div class="container">
-    <div class="section-label reveal">How It Works</div>
-    <h2 class="section-title reveal">Commit, reveal, normalize, settle</h2>
-    <div class="mech-steps">
-      <div class="mech-step reveal reveal-delay-1">
-        <span class="icon">I</span>
-        <h3>Commit</h3>
-        <p>Read the prompt, pick your answer, lock it in with a cryptographic hash. <span id="commit-seconds">60</span> seconds. No take-backs.</p>
+    <div class="sec-head reveal">
+      <span class="sec-label"><span class="sl">/</span> The Origin</span>
       </div>
-      <div class="mech-step reveal reveal-delay-2">
-        <span class="icon">II</span>
-        <h3>Reveal</h3>
-        <p>When commit closes, the reveal window opens. You submit the exact answer and salt behind your commitment so the hash can be verified.</p>
+    <div class="origin-grid">
+      <div class="origin-stage reveal">
+        <div class="origin-stage-head">
+          <span class="origin-kicker">New York / 1960</span>
+        </div>
+        <div class="origin-year-stack" aria-hidden="true">
+          <span class="origin-year-line">19</span>
+          <span class="origin-year-line accent">60</span>
+        </div>
+        <div class="origin-caption">
+          <strong class="origin-caption-title">The first focal<br/>point enters the room.</strong>
+          <span class="origin-caption-text">Schelling frames coordination as a search for the answer that feels obvious enough to strangers.</span>
+        </div>
+        <div class="origin-stage-notes">
+          <span>1960 / The strategy of conflict</span>
+          <span>Question / What do strangers independently find obvious?</span>
+          <span>Mechanic / Shared intuition becomes coordination</span>
+        </div>
       </div>
-      <div class="mech-step reveal reveal-delay-3">
-        <span class="icon">III</span>
-        <h3>Normalize</h3>
-        <p>Open-text answers pass through an AI normalization step so equivalent signals such as <em>NYC</em> and <em>New York</em> can land in the same bucket.</p>
-      </div>
-      <div class="mech-step reveal reveal-delay-4">
-        <span class="icon">IV</span>
-        <h3>Settle</h3>
-        <p>The plurality wins. An ante is collected from all players, then redistributed to those who converged. Any indivisible remainder is burned.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ TRY IT (moved after theory + mechanics) -->
-<section class="example">
-  <div class="container">
-    <div class="example-layout reveal">
-      <div class="example-left">
-        <div class="section-label">Try It</div>
-        <h2 class="section-title">What will the<br/>crowd choose?</h2>
-        <p class="example-insight">
-          100 is the only non-prime, the only round number, and the only three-digit number in the set.
-          When you reason about what others will pick, that salience makes it the natural coordination target: the focal point.
+      <div class="origin-copy reveal reveal-delay-1">
+        <div class="origin-copy-top">
+          <div class="origin-badge">Nobel Prize in Economics · 2005</div>
+          <div class="origin-book">Book / The Strategy of Conflict</div>
+        </div>
+        <h2 class="section-title">Meet Thomas<br/><em>Schelling</em></h2>
+        <p class="origin-text">
+          In 1960, economist <strong>Thomas Schelling</strong> published
+          <em>The Strategy of Conflict</em> — a landmark study in how people coordinate
+          without communicating. He found that in the absence of explicit agreement,
+          people naturally gravitate toward answers that feel salient or prominent.
+          He called these <strong>focal points</strong>.
+          <br/><br/>
+          This game is a live experiment of that theory.
         </p>
-      </div>
-      <div class="example-demo">
-        <div class="example-question">Pick the number you think most others will pick.</div>
-        <div class="example-vote-status" aria-live="polite"></div>
-        <div class="example-turnstile" id="example-turnstile" hidden></div>
-        <div class="example-options">
-          <button class="example-opt">13</button>
-          <button class="example-opt">7</button>
-          <button class="example-opt">61</button>
-          <button class="example-opt">29</button>
-          <button class="example-opt">41</button>
-          <button class="example-opt">3</button>
-          <button class="example-opt">67</button>
-          <button class="example-opt">19</button>
-          <button class="example-opt popular">100</button>
-          <button class="example-opt">53</button>
-          <button class="example-opt">2</button>
-          <button class="example-opt">37</button>
-          <button class="example-opt">11</button>
-          <button class="example-opt">71</button>
-          <button class="example-opt">43</button>
-          <button class="example-opt">59</button>
-          <button class="example-opt">23</button>
-          <button class="example-opt">47</button>
+        <div class="origin-foot">
+          <span>Core Idea / Coordination without communication</span>
+          <span>Why It Matters / Salience outperforms explicit planning</span>
+          <span>In This Game / Shared intuition becomes a live mechanic</span>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ══ LEARN ════════════════════════════ -->
-<section class="learn">
+<!-- ══ 3. HOW IT WORKS ═══════════════════ -->
+<section class="how-it-works" id="how-it-works">
+  <span class="sec-coord">SYS.003 — PROTOCOL</span>
   <div class="container">
-
-    <!-- What is a Schelling Point? -->
-    <div class="learn-subsection">
-      <div class="section-label reveal">The Theory</div>
-      <h2 class="section-title reveal">What is a Schelling Point?</h2>
-      <p class="section-body reveal">
-        A Schelling point (or focal point) is a solution people naturally converge on
-        without communicating. It works because some answers feel more obvious, more
-        prominent, or more "default" than others.
-      </p>
-      <div class="learn-callout reveal">
-        If two strangers are told to meet somewhere in New York City with no further
-        instructions, most choose Grand Central Station at noon. Nobody told them to.
-        It is simply the most obvious choice.
-        <div class="learn-callout-attrib">
-          Adapted from Thomas Schelling, <em>The Strategy of Conflict</em> (1960)
+    <div class="how-protocol" id="howProtocol">
+      <div class="how-protocol-sticky">
+        <div class="how-protocol-board">
+          <div class="how-board-top">
+            <span>How It Works / 03</span>
+            <span>Commit → Reveal → Settle</span>
+          </div>
+          <div class="how-board-copy">
+            <div>
+              <p class="how-board-lede">Each game follows one sealed loop. Picks are committed before the table can read them, then open together, then settle by plurality.</p>
+            </div>
+            <div class="how-board-meta">
+              <span>Hash first</span>
+              <span>Reveal together</span>
+              <span>Pot settles on convergence</span>
+            </div>
+            <div class="how-board-stat">
+              <span>3 phases</span>
+              <strong>Live protocol</strong>
+            </div>
+          </div>
+          <div class="how-board-track" aria-hidden="true">
+            <span>Read</span>
+            <span>Pick</span>
+            <span>Hash</span>
+            <span>Wait</span>
+            <span>Reveal</span>
+            <span>Verify</span>
+            <span>Plurality</span>
+            <span>Settle</span>
+          </div>
+          <div class="how-board-notes">
+            <span>Inputs stay unreadable until the reveal window opens.</span>
+            <span>Every player crosses the same verification boundary.</span>
+            <span>The game only resolves after the largest cluster becomes legible.</span>
+          </div>
+          <div class="how-board-word" aria-hidden="true">
+            <span class="how-board-word-fill">Protocol</span>
+            <span class="how-board-word-outline">Loop</span>
+          </div>
         </div>
+
+        <article class="how-phase-screen" data-how-screen="1">
+          <div class="how-phase-top">
+            <span class="how-phase-kicker">Phase 01/03 / Commit Window</span>
+          </div>
+          <div class="how-phase-stage">
+            <span class="how-phase-frame" aria-hidden="true"></span>
+            <div class="how-phase-word">Commit</div>
+            <span class="how-phase-subword">Seal before the table sees</span>
+          </div>
+          <div class="how-phase-copy">
+            <div class="how-phase-title">
+              <span class="how-phase-domain">Protocol Phase</span>
+              <h3>Commit</h3>
+            </div>
+            <p>Read the prompt, pick your answer, hash it with a salt, and submit. The table can speculate, but nobody can read your actual choice yet.</p>
+            <div class="how-phase-tags">
+              <span class="how-phase-tag">30 seconds</span>
+              <span class="how-phase-tag">blind commitment</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="how-phase-screen how-phase-screen--reveal" data-how-screen="2">
+          <div class="how-phase-top">
+            <span class="how-phase-kicker">Phase 02/03 / Reveal Window</span>
+          </div>
+          <div class="how-phase-stage">
+            <span class="how-phase-frame" aria-hidden="true"></span>
+            <div class="how-phase-word">Reveal</div>
+            <span class="how-phase-subword">Every sealed pick opens at once</span>
+          </div>
+          <div class="how-phase-copy">
+            <div class="how-phase-title">
+              <span class="how-phase-domain">Protocol Phase</span>
+              <h3>Reveal</h3>
+            </div>
+            <p>Everyone opens their answer in the same window. The server recomputes each hash and checks that every reveal matches the earlier commitment.</p>
+            <div class="how-phase-tags">
+              <span class="how-phase-tag">15 seconds</span>
+              <span class="how-phase-tag">hash check</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="how-phase-screen how-phase-screen--settle" data-how-screen="3">
+          <div class="how-phase-top">
+            <span class="how-phase-kicker">Phase 03/03 / Plurality Settlement</span>
+          </div>
+          <div class="how-phase-stage">
+            <span class="how-phase-frame" aria-hidden="true"></span>
+            <div class="how-phase-word">Settle</div>
+            <span class="how-phase-subword">The largest cluster takes the pot</span>
+          </div>
+          <div class="how-phase-copy">
+            <div class="how-phase-title">
+              <span class="how-phase-domain">Protocol Phase</span>
+              <h3>Settle</h3>
+            </div>
+            <p>The plurality wins the game. If first place ties, the leading groups split the pot. Everyone else loses the ante, so salience gets rewarded over noise.</p>
+            <div class="how-phase-tags">
+              <span class="how-phase-tag">instant</span>
+              <span class="how-phase-tag">plurality payout</span>
+            </div>
+          </div>
+        </article>
       </div>
-      <p class="section-body reveal">
-        Schelling showed experimentally that people succeed at these coordination tasks
-        far more often than chance would predict. The key insight: shared context and
-        cultural salience create natural convergence points.
-      </p>
     </div>
 
-    <!-- Why Does This Game Work? -->
-    <div class="learn-subsection">
-      <div class="section-label reveal">The Incentives</div>
-      <h2 class="section-title reveal">Why does this mechanism work?</h2>
-      <p class="section-body reveal">
-        Schelling Games turns focal-point theory into a playable incentive structure.
-        Four properties make it robust:
-      </p>
-      <div class="learn-steps">
-        <div class="learn-step reveal reveal-delay-1">
-          <div class="num">01</div>
-          <h3>Plurality Wins</h3>
-          <p>The answer picked by the largest group wins. Ties split the pot. The Nash equilibrium is to pick the most obvious choice, not to be clever or contrarian.</p>
+    <div class="rules-shell">
+      <div class="rules-intro reveal">
+        <div class="rules-intro-grid">
+          <div class="rules-intro-main">
+            <div class="rules-divider"><span>/ The Rules</span></div>
+            <span class="rules-intro-kicker">Constraint Layer / 04</span>
+            <h3 class="rules-title">A match stays <em>credible</em><br/>only when picks remain unreadable<br/>until reveal.</h3>
+          </div>
+          <div class="rules-intro-side">
+            <p class="rules-lede">These constraints turn a social guessing game into an actual protocol. Without them, the focal point collapses into signaling, copying, or noise.</p>
+            <div class="rules-intro-detail">
+              <div class="rules-meta">
+                <span>Cryptographic commitment</span>
+                <span>No provable side deals</span>
+                <span>Plurality-based settlement</span>
+                <span>10-game consistency</span>
+              </div>
+              <p class="rules-intro-note">Below, the rule field opens one constraint at a time so the protocol reads like a live system, not a checklist.</p>
+            </div>
+          </div>
         </div>
-        <div class="learn-step reveal reveal-delay-2">
-          <div class="num">02</div>
-          <h3>Blind Commitment</h3>
-          <p>Commit-reveal cryptography means you lock your answer before seeing anyone else's. No copying, no last-second switches.</p>
-        </div>
-        <div class="learn-step reveal reveal-delay-3">
-          <div class="num">03</div>
-          <h3>Truth as Equilibrium</h3>
-          <p>When the most obvious answer is always the best strategy, "pick what's salient" becomes the dominant play.</p>
-        </div>
-        <div class="learn-step reveal reveal-delay-4">
-          <div class="num">04</div>
-          <h3>Beyond the Game</h3>
-          <p>This is exactly why the mechanism is useful in the real world: it produces consensus without requiring trust or a central authority.</p>
+      </div>
+
+      <div class="rules-scrolly" id="rulesScrolly" data-active-rule="1">
+        <div class="rules-sticky">
+          <div class="rules-progress" aria-hidden="true">
+            <div class="rules-progress-item is-active" data-progress="1">
+              <span class="rules-progress-dot"></span>
+              <span class="rules-progress-label">01</span>
+            </div>
+            <div class="rules-progress-item" data-progress="2">
+              <span class="rules-progress-dot"></span>
+              <span class="rules-progress-label">02</span>
+            </div>
+            <div class="rules-progress-item" data-progress="3">
+              <span class="rules-progress-dot"></span>
+              <span class="rules-progress-label">03</span>
+            </div>
+            <div class="rules-progress-item" data-progress="4">
+              <span class="rules-progress-dot"></span>
+              <span class="rules-progress-label">04</span>
+            </div>
+          </div>
+
+          <article class="rules-screen is-active" data-rule-screen="1">
+            <div class="rules-screen-top">
+              <span class="rules-screen-kicker">Game Integrity</span>
+              <span class="rules-screen-count">01 / 04</span>
+            </div>
+            <div class="rules-stage-art">
+              <div class="rule-viz">
+                <div class="rule-motion" style="--orb-x:52%;--orb-y:54%;--orb-size:min(25vmin,15rem);--orb-scale-min:.42;--orb-scale-max:1.02;--word-size:clamp(5rem,15vw,9rem);" aria-hidden="true">
+                  <span class="rule-motion-brand">Table Protocol</span>
+                  <div class="rule-motion-layer rule-motion-base">
+                    <div class="rule-motion-word">
+                      <span>No</span>
+                      <span>Deal</span>
+                    </div>
+                  </div>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--top">Signal</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--top">Talk</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--top">Promise</span>
+                  <span class="rule-motion-note rule-motion-note--x4 rule-motion-note--top">Proof</span>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--bottom">Bluff</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--bottom">Betrayal</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--bottom">Read</span>
+                </div>
+              </div>
+            </div>
+            <div class="rules-screen-copy">
+              <div class="rules-screen-title">
+                <span class="rules-screen-domain">Protocol Rule</span>
+                <h3>No Safe Collusion</h3>
+              </div>
+              <p>You can talk, but you cannot prove what you will pick. Anyone who tries to coordinate still exposes themselves to betrayal. The only stable strategy is reading the focal point better than the table.</p>
+              <div class="rule-tags">
+                <span>sealed picks</span>
+                <span>unverifiable promises</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="rules-screen rules-screen--inverse" data-rule-screen="2">
+            <div class="rules-screen-top">
+              <span class="rules-screen-kicker">Verification</span>
+              <span class="rules-screen-count">02 / 04</span>
+            </div>
+            <div class="rules-stage-art">
+              <div class="rule-viz">
+                <div class="rule-motion rule-motion--medium rule-motion--delay-2" style="--orb-x:54%;--orb-y:52%;--orb-size:min(45vmin,29rem);--orb-scale-min:.56;--orb-scale-max:1.22;--word-size:clamp(5.5rem,16vw,10rem);" aria-hidden="true">
+                  <span class="rule-motion-brand">Hash Commit</span>
+                  <div class="rule-motion-layer rule-motion-base">
+                    <div class="rule-motion-word">
+                      <span>Hash</span>
+                    </div>
+                  </div>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--top">Commit</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--top">Salt</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--top">Reveal</span>
+                  <span class="rule-motion-note rule-motion-note--x4 rule-motion-note--top">Check</span>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--bottom">Verify</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--bottom">Match</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--bottom">Commit</span>
+                </div>
+              </div>
+            </div>
+            <div class="rules-screen-copy">
+              <div class="rules-screen-title">
+                <span class="rules-screen-domain">Protocol Rule</span>
+                <h3>Commit-Reveal</h3>
+              </div>
+              <p>Answers are cryptographically committed before anyone reveals. You cannot wait to see what others chose and then copy them without failing the hash check.</p>
+              <div class="rule-tags">
+                <span>commitment sealed</span>
+                <span>no late copying</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="rules-screen" data-rule-screen="3">
+            <div class="rules-screen-top">
+              <span class="rules-screen-kicker">Settlement</span>
+              <span class="rules-screen-count">03 / 04</span>
+            </div>
+            <div class="rules-stage-art">
+              <div class="rule-viz">
+                <div class="rule-motion rule-motion--full rule-motion--delay-3" style="--orb-x:50%;--orb-y:52%;--orb-size:min(56vmin,36rem);--orb-scale-min:1.18;--orb-scale-max:2.74;--word-size:clamp(5rem,15vw,9.4rem);" aria-hidden="true">
+                  <span class="rule-motion-brand">Settlement Field</span>
+                  <div class="rule-motion-layer rule-motion-base">
+                    <div class="rule-motion-word">
+                      <span>Crowd</span>
+                    </div>
+                  </div>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--top">Plurality</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--top">Cluster</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--top">Pot</span>
+                  <span class="rule-motion-note rule-motion-note--x4 rule-motion-note--top">Winners</span>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--bottom">Tie</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--bottom">Split</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--bottom">Converge</span>
+                </div>
+              </div>
+            </div>
+            <div class="rules-screen-copy">
+              <div class="rules-screen-title">
+                <span class="rules-screen-domain">Protocol Rule</span>
+                <h3>Plurality Wins</h3>
+              </div>
+              <p>The most popular answer wins the game. If two answers tie for first, both groups win. Everyone else loses the ante and the converged cluster takes the pot.</p>
+              <div class="rule-tags">
+                <span>plurality</span>
+                <span>ties share the pot</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="rules-screen rules-screen--inverse" data-rule-screen="4">
+            <div class="rules-screen-top">
+              <span class="rules-screen-kicker">Match Format</span>
+              <span class="rules-screen-count">04 / 04</span>
+            </div>
+            <div class="rules-stage-art">
+              <div class="rule-viz">
+                <div class="rule-motion rule-motion--delay-4" style="--orb-x:50%;--orb-y:52%;--orb-size:min(64vmin,42rem);--orb-scale-min:1.28;--orb-scale-max:2.48;--word-size:clamp(6rem,18vw,12rem);" aria-hidden="true">
+                  <span class="rule-motion-brand">Match Rhythm</span>
+                  <div class="rule-motion-layer rule-motion-base">
+                    <div class="rule-motion-word">
+                      <span>10</span>
+                    </div>
+                  </div>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--top">Game 01</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--top">Tempo</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--top">Game 05</span>
+                  <span class="rule-motion-note rule-motion-note--x4 rule-motion-note--top">Session</span>
+                  <span class="rule-motion-note rule-motion-note--x1 rule-motion-note--bottom">Game 10</span>
+                  <span class="rule-motion-note rule-motion-note--x2 rule-motion-note--bottom">Read</span>
+                  <span class="rule-motion-note rule-motion-note--x3 rule-motion-note--bottom">Consistency</span>
+                </div>
+              </div>
+            </div>
+            <div class="rules-screen-copy">
+              <div class="rules-screen-title">
+                <span class="rules-screen-domain">Protocol Rule</span>
+                <h3>10 Games</h3>
+              </div>
+              <p>Each match runs across 10 different prompts. Consistency matters more than one lucky guess, so real focal-point readers separate themselves over the full session.</p>
+              <div class="rule-tags">
+                <span>consistency</span>
+                <span>10 prompts</span>
+              </div>
+            </div>
+          </article>
         </div>
       </div>
     </div>
+  </div>
+</section>
 
-    <!-- Real-World Uses -->
-    <div class="learn-subsection">
-      <div class="section-label reveal">Applications</div>
-      <h2 class="section-title reveal">Where Schelling games are used</h2>
-      <div class="learn-apps">
-        <div class="learn-app reveal reveal-delay-1">
-          <div class="learn-app-label">Oracles</div>
-          <h3>Decentralized Price Feeds</h3>
-          <p>Example: a derivatives protocol needs the ETH/USD price at exactly 4:00 PM UTC to settle expiring contracts. Independent reporters submit the price they observed, and the coordinated result becomes the onchain settlement value, as in <a href="https://docs.uma.xyz/protocol-overview/how-does-umas-oracle-work" target="_blank" rel="noopener noreferrer">UMA's oracle and DVM</a>.</p>
+<!-- ══ 4. CONTEXT ═════════════════════════ -->
+<section class="protocol-context" id="mechanism-context">
+  <span class="sec-coord">SYS.003A — CONTEXT</span>
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="sec-label"><span class="sl">/</span> The Incentive</span>
+    </div>
+    <div class="context-shell">
+      <div class="context-prelude reveal">
+        <div class="context-prelude-top">
+          <span>Incentive Layer / 05</span>
+          <span>From focal-point logic to live incentive design</span>
+          <span>Why Ethereum can use it</span>
         </div>
-        <div class="learn-app reveal reveal-delay-2">
-          <div class="learn-app-label">Prediction Markets</div>
-          <h3>Outcome Resolution</h3>
-          <p>Example: a market asks whether a merger closed before the deadline. Reporters review the filings, submit yes or no independently, and the majority answer resolves the market without a central judge. This is the same reporting and dispute pattern used by <a href="https://augur.net/learn/fork/disputes-and-bonds/" target="_blank" rel="noopener noreferrer">Augur</a>.</p>
+        <div class="context-intro">
+          <div class="context-copy">
+            <h2 class="section-title">Why the incentive<br/><em>holds</em></h2>
+            <p class="section-body">The Schelling Game turns focal-point theory into a playable incentive structure. The match works because incentives, timing, and settlement all push players toward the same obvious answer instead of toward manipulation.</p>
+          </div>
+          <div class="context-copy-side">
+            <p class="context-bridge">These are the same conditions that later make Schelling-style coordination usable on chain. Without them, the mechanic stays a toy instead of becoming infrastructure.</p>
+          </div>
         </div>
-        <div class="learn-app reveal reveal-delay-3">
-          <div class="learn-app-label">Justice</div>
-          <h3>Decentralized Courts</h3>
-          <p>Example: a freelancer and client dispute whether a milestone was actually delivered. Jurors review the contract, messages, and submitted work in isolation, then vote; jurors who align with the majority are rewarded. <a href="https://docs.kleros.io/products/escrow" target="_blank" rel="noopener noreferrer">Kleros Escrow</a> applies this model to real dispute resolution.</p>
+      </div>
+
+      <div class="incentive-mechanics reveal">
+        <div class="incentive-mechanics-top">
+          <span>Incentive Map</span>
+          <span>Shared salience becomes strategy</span>
+          <span>04 protocol conditions</span>
+        </div>
+        <div class="incentive-list">
+          <div class="incentive-item incentive-item--one">
+            <span class="incentive-num">01</span>
+            <h3>Plurality Wins</h3>
+            <p>The answer picked by the largest group wins. Ties split the pot. The equilibrium is to identify the most obvious answer, not to be clever or contrarian.</p>
+          </div>
+          <div class="incentive-item incentive-item--two">
+            <span class="incentive-num">02</span>
+            <h3>Blind Commitment</h3>
+            <p>Commit-reveal cryptography forces every answer to be committed before anyone sees the table. No copying, no late switches, no reactive mimicry.</p>
+          </div>
+          <div class="incentive-stage" aria-hidden="true">
+            <div class="incentive-stage-orbit">
+              <div class="incentive-stage-dot-wrap">
+                <span class="incentive-stage-dot"></span>
+              </div>
+              <svg class="incentive-mark" viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="110" cy="110" r="74" stroke="currentColor" stroke-width="2.4"/>
+                <circle cx="110" cy="110" r="39" stroke="currentColor" stroke-width="2.4" opacity=".58"/>
+                <path d="M110 22V50" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".32"/>
+                <path d="M198 110H170" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".32"/>
+                <path d="M110 198V170" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".32"/>
+                <path d="M22 110H50" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".32"/>
+                <circle cx="110" cy="110" r="8" fill="currentColor"/>
+              </svg>
+            </div>
+            <span class="incentive-stage-label">Shared salience becomes strategy</span>
+          </div>
+          <div class="incentive-item incentive-item--three">
+            <span class="incentive-num">03</span>
+            <h3>Truth as Equilibrium</h3>
+            <p>When the salient answer is also the best strategy, reading what is collectively obvious becomes the dominant play. Shared intuition turns into consistent coordination.</p>
+          </div>
+          <div class="incentive-item incentive-item--four">
+            <span class="incentive-num">04</span>
+            <h3>Beyond the Game</h3>
+            <p>That same structure makes the mechanism useful in live systems. It can produce consensus without requiring a trusted operator or prior agreement between participants.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="context-ticker" aria-hidden="true">
+        <div class="context-ticker-track">
+          <div class="context-ticker-group">
+            <span>From theory to on-chain mechanism</span>
+            <span class="context-ticker-sep">/</span>
+            <span>Where the mechanic gets used</span>
+            <span class="context-ticker-sep">/</span>
+            <span>From theory to on-chain mechanism</span>
+            <span class="context-ticker-sep">/</span>
+            <span>Where the mechanic gets used</span>
+          </div>
+          <div class="context-ticker-group">
+            <span>From theory to on-chain mechanism</span>
+            <span class="context-ticker-sep">/</span>
+            <span>Where the mechanic gets used</span>
+            <span class="context-ticker-sep">/</span>
+            <span>From theory to on-chain mechanism</span>
+            <span class="context-ticker-sep">/</span>
+            <span>Where the mechanic gets used</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="context-columns">
+        <div class="context-folio reveal">
+          <span class="context-folio-tag">Ethereum Context</span>
+          <div class="context-folio-panel">
+            <div class="context-folio-top">
+              <span>2014 / SchellingCoin</span>
+              <span>From theory to on-chain mechanism</span>
+              <span>Application Layer</span>
+            </div>
+
+            <div class="context-folio-main">
+              <div class="context-folio-story">
+                <h3>Ethereum<br/>Context</h3>
+                <div class="context-folio-copy">
+                  <p>In 2014, <strong>Vitalik Buterin proposed <a href="https://blog.ethereum.org/2014/03/28/schellingcoin-a-minimal-trust-universal-data-feed" target="_blank" rel="noopener noreferrer">SchellingCoin</a></strong>: an early design for using Schelling-point incentives on a blockchain. Reward the report that matches the majority, and honest reporting becomes the best strategy available.</p>
+                  <p>That logic now sits underneath oracle designs, curation markets, and governance systems across Ethereum whenever decentralized truth is needed without a trusted authority.</p>
+                </div>
+              </div>
+
+              <div class="context-folio-side">
+                <span>Applications</span>
+                <h4>Where the mechanic gets used</h4>
+                <p>Once truthful convergence becomes the rational move, the same mechanic can settle prices, outcomes, disputes, and governance choices without a trusted operator sitting above the system.</p>
+              </div>
+            </div>
+
+            <div class="context-applications">
+              <div class="context-applications-top">
+                <span>Use Cases</span>
+                <span class="context-applications-current">Where the mechanic gets used</span>
+                <span class="context-applications-count">04 Use Cases</span>
+              </div>
+
+              <div class="context-applications-grid">
+                <article class="application-card">
+                  <div class="application-card-head">
+                    <span class="application-card-index">01</span>
+                    <span class="application-tag">Oracles</span>
+                    <h4>Decentralized Price Feeds</h4>
+                  </div>
+                  <p>Report what you think most others will report. When honest reporting is the equilibrium, truth can emerge without a centralized data provider.</p>
+                  <div class="application-card-foot">
+                    <span>Consensus feed</span>
+                    <span>Majority-priced truth</span>
+                  </div>
+                </article>
+
+                <article class="application-card">
+                  <div class="application-card-head">
+                    <span class="application-card-index">02</span>
+                    <span class="application-tag">Prediction Markets</span>
+                    <h4>Outcome Resolution</h4>
+                  </div>
+                  <p>Disputed outcomes can be resolved by independent reporters converging on the same result instead of by appealing to a single judge.</p>
+                  <div class="application-card-foot">
+                    <span>Disputed markets</span>
+                    <span>Shared resolution</span>
+                  </div>
+                </article>
+
+                <article class="application-card">
+                  <div class="application-card-head">
+                    <span class="application-card-index">03</span>
+                    <span class="application-tag">Justice</span>
+                    <h4>Decentralized Courts</h4>
+                  </div>
+                  <p>Jurors evaluate cases independently and are rewarded for converging with the majority verdict. The same incentive shape powers decentralized dispute resolution.</p>
+                  <div class="application-card-foot">
+                    <span>Independent jurors</span>
+                    <span>Convergent verdicts</span>
+                  </div>
+                </article>
+
+                <article class="application-card">
+                  <div class="application-card-head">
+                    <span class="application-card-index">04</span>
+                    <span class="application-tag">Governance</span>
+                    <h4>DAO Parameter Coordination</h4>
+                  </div>
+                  <p>Protocol communities can coordinate on parameter values through shared expectations of what is fair, stable, or socially legible to everyone else.</p>
+                  <div class="application-card-foot">
+                    <span>Parameter choice</span>
+                    <span>Socially legible coordination</span>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══ 5. TRY IT ══════════════════════════ -->
+<section class="example" id="try-it">
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="sec-label"><span class="sl">/</span> Try It</span>
+    </div>
+    <div class="example-shell">
+      <div class="example-panel reveal">
+        <div class="example-panel-top">
+          <span>Selection Field</span>
+          <span>Single-prompt coordination puzzle</span>
+          <span>18 choices &middot; one prompt</span>
+        </div>
+
+        <div class="example-panel-main">
+          <div class="example-copy">
+            <span class="example-copy-label">Single-prompt puzzle</span>
+            <div class="example-question">Pick the number you think <em>most others</em> will pick.</div>
+          </div>
+
+          <div class="example-panel-side">
+            <p class="example-note">One prompt. One obvious-answer puzzle. Can you think like everyone else?</p>
+            <div class="example-panel-meta">
+              <span>Plurality reward</span>
+              <span>No direct signaling</span>
+              <span>Shared salience wins</span>
+              <span>One clean focal point</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="example-grid-frame">
+          <div class="example-grid-meta">
+            <span>Selection field</span>
+            <span>Choose once, then inspect where shared intuition converges.</span>
+            <span>Blind pick</span>
+          </div>
+
+          <div class="example-grid reveal" id="exampleGrid">
+            <button class="example-opt"><span class="opt-n">13</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">7</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">61</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">29</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">41</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">3</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">67</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">19</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt popular"><span class="opt-n">100</span><span class="opt-meta">Non-Prime · Round · 3-Digit</span></button>
+            <button class="example-opt"><span class="opt-n">53</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">2</span><span class="opt-meta">Prime · Even</span></button>
+            <button class="example-opt"><span class="opt-n">37</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">11</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">71</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">43</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">59</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">23</span><span class="opt-meta">Prime · Odd</span></button>
+            <button class="example-opt"><span class="opt-n">47</span><span class="opt-meta">Prime · Odd</span></button>
+          </div>
+
+          <div class="example-insight">
+            <span>100 is the only non-prime, the only round number, and the only three-digit number in the set. That salience makes it the natural coordination target: the focal point.</span>
+            <button class="example-reset" id="exReset">Try Again ↺</button>
+          </div>
         </div>
       </div>
     </div>
+  </div>
+</section>
 
-    <!-- Why It Matters for Ethereum -->
-    <div class="learn-subsection">
-      <div class="section-label reveal">Ethereum Context</div>
-      <h2 class="section-title reveal">From theory to cryptographic mechanism</h2>
-      <div class="learn-ethereum reveal">
-        <p>
-          In 2014, <strong>Vitalik Buterin proposed SchellingCoin</strong>: the first design
-          for using Schelling-point incentives on a blockchain. The idea was simple: if you
-          reward participants for reporting values that match the majority, honest reporting
-          becomes the dominant strategy. This concept underpins oracle designs, curation
-          markets, and governance systems across Ethereum where decentralized truth is needed
-          without a trusted authority.
+<!-- ══ 6. FOCAL POINTS ═══════════════════ -->
+<section class="concept" id="theory">
+  <span class="sec-coord">SYS.002 — THEORY</span>
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="sec-label"><span class="sl">/</span> The Theory</span>
+
+    </div>
+    <div class="theory-grid">
+      <div class="theory-copy reveal reveal-delay-1">
+        <div class="theory-copy-top">
+          <div class="theory-badge">Coordination without communication</div>
+          <div class="theory-meta">Common answer / Shared intuition</div>
+        </div>
+        <h2 class="theory-copy-title">Why some answers feel <em>inevitable</em></h2>
+        <p class="theory-text">
+          Why does everyone pick <strong>100</strong>? Why would two strangers drift toward
+          <strong>Grand Central</strong> if they got separated in New York? Some answers feel naturally
+          prominent even before anyone has spoken. Schelling called these
+          <strong>focal points</strong>: answers that become coordination anchors because each person
+          expects the others to notice the same thing.
         </p>
+        <div class="theory-foot">
+          <span>Salience / The prominent answer attracts guesses</span>
+          <span>Coordination / Mutual expectation replaces direct planning</span>
+          <span>In this game / The crowd converges around what feels obvious</span>
+        </div>
+      </div>
+      <aside class="theory-panel reveal" aria-hidden="true">
+        <div class="theory-panel-top">
+          <span class="theory-panel-kicker">Focal Point / 02</span>
+          <span class="theory-panel-meta">Grand Central / Noon</span>
+        </div>
+        <div class="theory-panel-notes">
+          <span>Shared context</span>
+          <span>No prior contact</span>
+          <span>Mutual expectation</span>
+        </div>
+        <div class="theory-quote-card reveal reveal-delay-2">
+          <span class="theory-quote-label">Observed by Schelling</span>
+          <blockquote class="theory-quote">
+            People can often concert their intentions or expectations with others if each knows that the other is trying to do the same.
+          </blockquote>
+          <p class="theory-attrib">Thomas C. Schelling · The Strategy of Conflict · 1960</p>
+        </div>
+        <div class="theory-panel-word">
+          <span class="theory-panel-word-fill">Obvious</span>
+          <span class="theory-panel-word-outline">Answer</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 7. SOCIAL PROOF ═══════════════════ -->
+<section class="social-proof" id="social-proof">
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="sec-label"><span class="sl">/</span> Recent Activity</span>
+    </div>
+    <div class="social-proof-shell">
+      <div class="social-proof-head">
+        <div class="social-proof-copy reveal">
+          <h2 class="section-title">The game is <em>active</em></h2>
+          <p class="section-body">Any crowd from 3 to 21 players can form a match. No need to fill a large lobby before the coordination problem becomes live.</p>
+        </div>
+        <p class="social-proof-note reveal">Aggregated from public match data.</p>
+      </div>
+      <div class="social-proof-grid">
+        <article class="social-card reveal reveal-delay-1">
+          <div class="social-value" id="stat-players-24h"></div>
+          <div class="social-label">Players in the Last 24h</div>
+          <p class="social-copy">Distinct players who joined a public match recently.</p>
+        </article>
+        <article class="social-card reveal reveal-delay-2">
+          <div class="social-value" id="stat-completed-matches"></div>
+          <div class="social-label">Completed Matches</div>
+          <p class="social-copy">Full public matches that finished settlement and closed the loop.</p>
+        </article>
+        <article class="social-card reveal reveal-delay-3">
+          <div class="social-value" id="stat-longest-streak"></div>
+          <div class="social-label">Best Coordination Streak</div>
+          <p class="social-copy">The strongest run of consecutive coordinated games recorded so far.</p>
+        </article>
       </div>
     </div>
-
-    <!-- Further Reading -->
-    <details class="learn-reading reveal">
-      <summary>Further Reading</summary>
-      <ul class="learn-reading-list">
-        <li>
-          Thomas Schelling &mdash;
-          <a href="https://en.wikipedia.org/wiki/The_Strategy_of_Conflict" target="_blank" rel="noopener noreferrer"><em>The Strategy of Conflict</em></a>
-          <span class="reading-year">1960</span>
-        </li>
-        <li>
-          Mehta, Starmer &amp; Sugden &mdash;
-          <a href="https://www.jstor.org/stable/2118026" target="_blank" rel="noopener noreferrer">"The Nature of Salience: An Experimental Investigation"</a>
-          <span class="reading-year">1994</span>
-        </li>
-        <li>
-          Roger Myerson &mdash;
-          <a href="https://home.uchicago.edu/~rmyerson/stratofc2010.pdf" target="_blank" rel="noopener noreferrer">"Learning from Schelling's Strategy of Conflict"</a>
-          <span class="reading-year">2009</span>
-        </li>
-        <li>
-          Vitalik Buterin &mdash;
-          <a href="https://blog.ethereum.org/2014/03/28/schellingcoin-a-minimal-trust-universal-data-feed" target="_blank" rel="noopener noreferrer">SchellingCoin</a>
-          <span class="reading-year">2014</span>
-        </li>
-        <li>
-          Paul Sztorc &mdash;
-          <a href="https://www.truthcoin.info/papers/truthcoin-whitepaper.pdf" target="_blank" rel="noopener noreferrer">"Truthcoin" whitepaper</a>
-          <span class="reading-year">2014</span>
-        </li>
-        <li>
-          <a href="https://augur.net" target="_blank" rel="noopener noreferrer">Augur</a>
-          &mdash; Schelling games for prediction markets
-          <span class="reading-year">2015</span>
-        </li>
-        <li>
-          <a href="https://blog.ethereum.org/2015/01/28/p-epsilon-attack" target="_blank" rel="noopener noreferrer">P+&epsilon; Attack</a>
-          &mdash; a known bribery vulnerability in Schelling-point mechanisms
-          <span class="reading-year">2015</span>
-        </li>
-        <li>
-          <a href="https://kleros.io/whitepaper.pdf" target="_blank" rel="noopener noreferrer">Kleros Whitepaper</a>
-          &mdash; commit-reveal voting for decentralized dispute resolution
-          <span class="reading-year">2019</span>
-        </li>
-        <li>
-          <a href="https://docs.uma.xyz" target="_blank" rel="noopener noreferrer">UMA Optimistic Oracle</a>
-          &mdash; Schelling-point dispute resolution in production DeFi
-          <span class="reading-year">2020</span>
-        </li>
-        <li>
-          AI Alignment Forum &mdash;
-          <a href="https://www.alignmentforum.org/posts/n2c62YS8RJtD4Aqhh/schelling-game-evaluations-for-ai-control" target="_blank" rel="noopener noreferrer">"Schelling game evaluations for AI control"</a>
-          <span class="reading-year">2024</span>
-        </li>
-        <li>
-          Aharon et al. &mdash;
-          <a href="https://arxiv.org/abs/2601.22184" target="_blank" rel="noopener noreferrer">"Tacit Coordination of Large Language Models"</a>
-          <span class="reading-year">2026</span>
-        </li>
-      </ul>
-    </details>
-
   </div>
 </section>
 
-<!-- ══ SOCIAL PROOF ═══════════════════════ -->
-<section class="social-proof">
-  <div class="container">
-    <div class="section-label reveal">Recent Activity</div>
-    <h2 class="section-title reveal">The game is active</h2>
-    <p class="section-body reveal">
-      As few as 3 players can form a match. No need to fill a large lobby.
-    </p>
-    <div class="social-proof-grid">
-      <article class="social-card reveal reveal-delay-1">
-        <div class="social-value" id="stat-players-24h" role="status" aria-live="polite" aria-atomic="true">--</div>
-        <div class="social-label">Players in the last 24h</div>
-        <p class="social-copy">Distinct players who joined a match recently.</p>
-      </article>
-      <article class="social-card reveal reveal-delay-2">
-        <div class="social-value" id="stat-completed-matches" role="status" aria-live="polite" aria-atomic="true">--</div>
-        <div class="social-label">Completed Matches</div>
-        <p class="social-copy">Full matches played and settled so far.</p>
-      </article>
-      <article class="social-card reveal reveal-delay-3">
-        <div class="social-value" id="stat-longest-streak" role="status" aria-live="polite" aria-atomic="true">--</div>
-        <div class="social-label">Best Coordination Streak</div>
-        <p class="social-copy">Consecutive games where the group found the focal point.</p>
-      </article>
-    </div>
-    <p class="social-proof-note reveal">Aggregated from public match data.</p>
-  </div>
-</section>
-
-<!-- ══ FINAL CTA ═════════════════════════ -->
+<!-- ══ 8. FINAL CTA ══════════════════════ -->
 <section class="final-cta">
-  <h2 class="section-title reveal">Ready to find the focal point?</h2>
-  <p class="reveal">Any crowd from 3 to 21 players. 10 games. One prompt: can you think like everyone else?</p>
-  <a href="/app" class="hero-cta reveal">Play Now</a>
-</section>
-
-</main>
-
-<footer>
-  <div class="footer-inner">
-    <div>
-      <div class="footer-brand">The Schelling <span>Game</span></div>
-      <div class="footer-desc">A coordination game based on focal point theory</div>
+  <span class="sec-coord">SYS.004 — ENGAGE</span>
+  <div class="final-cta-panel">
+    <div class="final-cta-top">
+      <span>Final Call / 08</span>
+      <span>Ready to enter the live coordination field</span>
+      <span>Any crowd from 3 to 21 players</span>
     </div>
-    <div class="footer-links">
-      <a href="https://github.com/0xferit/schelling-games/issues/new?template=feedback.md&labels=feedback&title=%5BFeedback%5D%3A%20" target="_blank" rel="noopener noreferrer">Feedback</a>
-      <a href="https://github.com/0xferit/schelling-games" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/0xferit/schelling-games/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+    <div class="final-cta-main">
+      <div class="final-cta-title reveal">
+        Ready to find<br/>the <em>focal</em><br/>point?
+      </div>
+      <div class="final-cta-right reveal">
+        <p class="final-cta-sub">10 games<br/>One prompt: can you think like everyone else?</p>
+        <a href="/app.html" class="hero-cta">Play Now ↗</a>
+      </div>
     </div>
-    <div class="footer-meta">
-      <span class="build-stamp" data-build-hash="__BUILD_HASH__" data-build-date="__BUILD_DATE__">__BUILD_HASH__ &middot; __BUILD_DATE__</span>
+    <div class="final-cta-footer">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-mark">
+            <svg class="brand-mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="24" cy="24" r="17" stroke="currentColor" stroke-width="1.6"/>
+              <circle cx="24" cy="24" r="9.5" stroke="currentColor" stroke-width="1.6" opacity=".72"/>
+              <circle class="brand-mark-dot" cx="30.5" cy="18.5" r="3.8"/>
+              <path d="M24 7V13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+              <path d="M41 24H35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+              <path d="M24 41V35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+              <path d="M7 24H13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+            </svg>
+          </div>
+          <p class="footer-copy">A live coordination game about focal points, salience, and reading what a table of strangers will independently converge on.</p>
+        </div>
+        <div class="footer-col">
+          <span class="footer-heading">Explore</span>
+          <div class="footer-list">
+            <a href="#origin">Origin</a>
+            <a href="#how-it-works">How It Works</a>
+            <a href="#try-it">Try It</a>
+            <a href="#theory">Theory</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <span class="footer-heading">Elsewhere</span>
+          <div class="footer-list">
+            <a href="/app.html">Play Now</a>
+            <a href="https://github.com/0xferit/schelling-game" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://discord.gg/schelling" target="_blank" rel="noopener">Discord</a>
+            <a href="https://twitter.com/schellinggame" target="_blank" rel="noopener">Twitter</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span class="footer-meta">__BUILD_HASH__ · __BUILD_DATE__</span>
+        <span id="deploy-status"></span>
+      </div>
     </div>
   </div>
-</footer>
+</section>
 
-<script src="/scripts/landing.js"></script>
+<script>
+
+/* ── Hero scroll indicator ───────────────── */
+(function() {
+  var el = document.querySelector('.hero-scroll');
+  if (!el) return;
+  function update() {
+    el.classList.toggle('hidden', window.scrollY > 40);
+  }
+  window.addEventListener('scroll', update, { passive: true });
+})();
+
+/* ── How scrollytelling ─────────────────── */
+(function() {
+  var scrolly = document.getElementById('howProtocol');
+  if (!scrolly) return;
+
+  var screens = Array.prototype.slice.call(scrolly.querySelectorAll('.how-phase-screen'));
+  var count = screens.length;
+  var ticking = false;
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function smoothstep(value) {
+    return value * value * (3 - 2 * value);
+  }
+
+  function applyScreen(screen, opacity, translateY, scale) {
+    screen.style.opacity = opacity;
+    screen.style.transform = 'translateY(' + translateY + 'px) scale(' + scale + ')';
+  }
+
+  function render(progress) {
+    var boardExit = smoothstep(clamp((progress - 0.04) / 0.16, 0, 1));
+    var boardOpacity = 1 - smoothstep(clamp((progress - 0.08) / 0.09, 0, 1));
+    var stageStrength = smoothstep(clamp((progress - 0.12) / 0.14, 0, 1));
+    var introStrength = smoothstep(clamp((progress - 0.16) / 0.08, 0, 1));
+    var raw = clamp((progress - 0.24) / 0.76, 0, 1) * (count - 1);
+    var current = Math.floor(raw);
+    var next = Math.min(count - 1, current + 1);
+    var local = raw - current;
+
+    scrolly.style.setProperty('--how-board-shift', (boardExit * 220).toFixed(2) + 'px');
+    scrolly.style.setProperty('--how-board-opacity', String(boardOpacity));
+    scrolly.style.setProperty('--how-stage-strength', String(stageStrength));
+
+    screens.forEach(function(screen) {
+      applyScreen(screen, '0', 32, 0.96);
+      screen.classList.remove('is-active');
+    });
+
+    if (progress <= 0.24) {
+      applyScreen(screens[0], String(introStrength), Math.round((1 - introStrength) * 34), (0.96 + introStrength * 0.04).toFixed(3));
+      screens[0].classList.toggle('is-active', introStrength > 0.12);
+      return;
+    }
+
+    var currentOpacity = next === current ? 1 : 1 - smoothstep(clamp((local - 0.72) / 0.12, 0, 1));
+    var nextOpacity = next === current ? 0 : smoothstep(clamp((local - 0.84) / 0.09, 0, 1));
+
+    applyScreen(
+      screens[current],
+      String(currentOpacity),
+      Math.round((1 - currentOpacity) * 18),
+      (0.97 + currentOpacity * 0.03).toFixed(3)
+    );
+    screens[current].classList.add('is-active');
+
+    if (next !== current) {
+      applyScreen(
+        screens[next],
+        String(nextOpacity),
+        Math.round((1 - nextOpacity) * 30),
+        (0.96 + nextOpacity * 0.04).toFixed(3)
+      );
+      if (nextOpacity >= 0.72) {
+        screens[current].classList.remove('is-active');
+        screens[next].classList.add('is-active');
+      }
+    }
+  }
+
+  function update() {
+    ticking = false;
+    var rect = scrolly.getBoundingClientRect();
+    var span = Math.max(1, rect.height - window.innerHeight);
+    var progress = Math.min(1, Math.max(0, -rect.top / span));
+    render(progress);
+  }
+
+  function requestUpdate() {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(update);
+  }
+
+  window.addEventListener('scroll', requestUpdate, { passive: true });
+  window.addEventListener('resize', requestUpdate);
+  update();
+})();
+
+/* ── Rules intro bridge ─────────────────── */
+(function() {
+  var shell = document.querySelector('.rules-shell');
+  var intro = shell && shell.querySelector('.rules-intro');
+  var scrolly = document.getElementById('rulesScrolly');
+  var prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (!shell || !intro || !scrolly) return;
+
+  if (prefersReduced || !('IntersectionObserver' in window)) {
+    shell.classList.add('is-intro-visible');
+    scrolly.classList.add('is-entered');
+    return;
+  }
+
+  shell.classList.add('is-primed');
+  scrolly.classList.add('is-primed');
+
+  var introObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (!entry.isIntersecting) return;
+      shell.classList.add('is-intro-visible');
+      introObserver.disconnect();
+    });
+  }, { threshold: 0.24, rootMargin: '0px 0px -10% 0px' });
+
+  var scrollyObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (!entry.isIntersecting) return;
+      scrolly.classList.add('is-entered');
+      scrollyObserver.disconnect();
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -12% 0px' });
+
+  introObserver.observe(intro);
+  scrollyObserver.observe(scrolly);
+})();
+
+/* ── Rules scrollytelling ────────────────── */
+(function() {
+  var scrolly = document.getElementById('rulesScrolly');
+  if (!scrolly) return;
+
+  var sticky = scrolly.querySelector('.rules-sticky');
+  var screens = Array.prototype.slice.call(scrolly.querySelectorAll('.rules-screen'));
+  var progressItems = Array.prototype.slice.call(scrolly.querySelectorAll('.rules-progress-item'));
+  var count = screens.length;
+  var ticking = false;
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function smoothstep(value) {
+    return value * value * (3 - 2 * value);
+  }
+
+  function render(rawIndex) {
+    var current = Math.floor(rawIndex);
+    var next = Math.min(count - 1, current + 1);
+    var local = rawIndex - current;
+    var revealNext = smoothstep(clamp((local - 0.24) / 0.64, 0, 1));
+    var active = next === current ? current : (revealNext >= 0.6 ? next : current);
+    var nextRadius = (Math.max(0, revealNext) * 168).toFixed(2) + 'vmax';
+    var currentChrome = next === current ? 1 : 1 - smoothstep(clamp((local - 0.66) / 0.16, 0, 1));
+    var currentArt = next === current ? 1 : 1 - smoothstep(clamp((local - 0.42) / 0.22, 0, 1));
+    var nextChrome = next === current ? 1 : smoothstep(clamp((local - 0.6) / 0.18, 0, 1));
+    var nextArt = next === current ? 1 : smoothstep(clamp((local - 0.34) / 0.24, 0, 1));
+    var full = 'circle(160vmax at 50% 52%)';
+    var hidden = 'circle(0px at 50% 52%)';
+
+    scrolly.setAttribute('data-active-rule', String(active + 1));
+
+    function applyScreen(screen, opacity, clipPath, zIndex, isActive) {
+      screen.style.opacity = opacity;
+      screen.style.clipPath = clipPath;
+      screen.style.webkitClipPath = clipPath;
+      screen.style.zIndex = zIndex;
+      screen.classList.toggle('is-active', !!isActive);
+    }
+
+    function applyContent(screen, chromeOpacity, artOpacity) {
+      screen.style.setProperty('--screen-chrome-opacity', String(chromeOpacity));
+      screen.style.setProperty('--screen-art-opacity', String(artOpacity));
+    }
+
+    screens.forEach(function(screen, idx) {
+      applyScreen(screen, '0', hidden, String(idx + 1), false);
+      applyContent(screen, 0, 0);
+    });
+
+    if (next === current) {
+      applyScreen(screens[current], '1', full, '4', true);
+      applyContent(screens[current], 1, 1);
+    } else {
+      applyScreen(screens[current], '1', full, '2', active === current);
+      applyContent(screens[current], currentChrome, currentArt);
+      applyScreen(screens[next], '1', 'circle(' + nextRadius + ' at 50% 52%)', '3', active === next);
+      applyContent(screens[next], nextChrome, nextArt);
+    }
+
+    progressItems.forEach(function(item, idx) {
+      item.classList.toggle('is-active', idx === active);
+    });
+  }
+
+  function update() {
+    ticking = false;
+    var rect = scrolly.getBoundingClientRect();
+    var span = Math.max(1, rect.height - window.innerHeight);
+    var progress = Math.min(1, Math.max(0, -rect.top / span));
+    render(progress * (count - 1));
+  }
+
+  function requestUpdate() {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(update);
+  }
+
+  window.addEventListener('scroll', requestUpdate, { passive: true });
+  window.addEventListener('resize', requestUpdate);
+  update();
+})();
+
+/* ── Incentive orbit pointer ────────────── */
+(function() {
+  var orbits = document.querySelectorAll('.incentive-stage-orbit');
+  if (!orbits.length) return;
+
+  function normalizeAngle(angle) {
+    return ((angle % 360) + 360) % 360;
+  }
+
+  function shortestDelta(from, to) {
+    return ((to - from + 540) % 360) - 180;
+  }
+
+  function setAngle(orbit, angle) {
+    orbit.style.setProperty('--incentive-angle', normalizeAngle(angle).toFixed(2) + 'deg');
+  }
+
+  orbits.forEach(function(orbit) {
+    var frame = null;
+    var currentAngle = 0;
+    var targetAngle = 0;
+
+    function animate() {
+      var delta = shortestDelta(currentAngle, targetAngle);
+      currentAngle += delta * 0.14;
+      setAngle(orbit, currentAngle);
+
+      if (Math.abs(delta) < 0.12) {
+        currentAngle = targetAngle;
+        setAngle(orbit, currentAngle);
+        frame = null;
+        return;
+      }
+
+      frame = window.requestAnimationFrame(animate);
+    }
+
+    function queue(angle) {
+      targetAngle = normalizeAngle(angle);
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(animate);
+    }
+
+    orbit.addEventListener('pointermove', function(event) {
+      var rect = orbit.getBoundingClientRect();
+      var cx = rect.left + rect.width / 2;
+      var cy = rect.top + rect.height / 2;
+      var dx = event.clientX - cx;
+      var dy = event.clientY - cy;
+      var angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+      queue(angle);
+    });
+
+    orbit.addEventListener('pointerleave', function() {
+      queue(0);
+    });
+  });
+})();
+
+/* ── Example interaction ─────────────────── */
+(function() {
+  var demo = document.getElementById('exampleGrid');
+  var opts = document.querySelectorAll('.example-opt');
+  var insight = document.querySelector('.example-insight');
+
+  /* reset */
+  var resetBtn = document.getElementById('exReset');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function() {
+      localStorage.removeItem('example-voted');
+      demo.classList.remove('revealed','has-tally');
+      opts.forEach(function(opt) {
+        opt.classList.remove('my-pick');
+        opt.style.cursor = '';
+        var bar = opt.querySelector('.vote-bar');
+        var pct = opt.querySelector('.vote-pct');
+        if (bar) bar.style.width = '0';
+        if (pct) pct.textContent = '';
+      });
+      /* Original click handlers still attached and functional after revealed removed */
+    });
+  }
+
+
+  opts.forEach(function(opt) {
+    var bar = document.createElement('div'); bar.className = 'vote-bar';
+    var pct = document.createElement('div'); pct.className = 'vote-pct';
+    opt.appendChild(bar); opt.appendChild(pct);
+  });
+
+  function renderTally(data) {
+    if (!data || !data.total) return;
+    var counts = {}, maxCount = 0;
+    data.votes.forEach(function(v) {
+      counts[v.optionIndex] = v.count;
+      if (v.count > maxCount) maxCount = v.count;
+    });
+    opts.forEach(function(opt, idx) {
+      var count = counts[idx] || 0;
+      var p = data.total > 0 ? Math.round((count / data.total) * 100) : 0;
+      opt.querySelector('.vote-pct').textContent = p > 0 ? p + '%' : '';
+      var bw = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+      setTimeout(function() { opt.querySelector('.vote-bar').style.width = bw + '%'; }, 50);
+    });
+    demo.classList.add('has-tally');
+    var top = data.votes.reduce(function(a, b) { return b.count > a.count ? b : a; }, { count: 0 });
+    var topPct = Math.round((top.count / data.total) * 100);
+    var topLabel = opts[top.optionIndex] ? opts[top.optionIndex].querySelector('.opt-n').textContent.trim() : '?';
+    insight.textContent = topPct + '% of ' + data.total + ' visitors picked ' + topLabel + '. '
+      + 'It is the only non-prime, the only round number, and the only three-digit number in the set. '
+      + 'That salience makes it the natural coordination target: the focal point.';
+  }
+
+  function revealWithTally() {
+    demo.classList.add('revealed');
+    opts.forEach(function(o) { o.style.cursor = 'default'; });
+    fetch('/api/example-tally').then(function(r) { return r.json(); }).then(renderTally).catch(function() {});
+  }
+
+  var votedIdx = localStorage.getItem('example-voted');
+  if (votedIdx !== null) {
+    var idx = parseInt(votedIdx, 10);
+    if (!isNaN(idx) && opts[idx]) opts[idx].classList.add('my-pick');
+    revealWithTally();
+  } else {
+    opts.forEach(function(opt, idx) {
+      opt.addEventListener('click', function() {
+        if (demo.classList.contains('revealed')) return;
+        opt.classList.add('my-pick');
+        fetch('/api/example-vote', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ optionIndex: idx })
+        }).catch(function() {});
+        localStorage.setItem('example-voted', String(idx));
+        revealWithTally();
+      });
+    });
+  }
+})();
+
+/* ── Social proof ────────────────────────── */
+(function() {
+  fetch('/api/landing-stats')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data) return;
+      if (data.playersLast24h != null) {
+        document.getElementById('stat-players-24h').textContent = Number(data.playersLast24h).toLocaleString();
+      }
+      if (data.completedMatches != null) {
+        document.getElementById('stat-completed-matches').textContent = Number(data.completedMatches).toLocaleString();
+      }
+      if (data.longestStreak != null) {
+        document.getElementById('stat-longest-streak').textContent = Number(data.longestStreak).toLocaleString();
+      }
+      var socialProof = document.getElementById('social-proof');
+      if (socialProof) socialProof.classList.add('loaded');
+    })
+    .catch(function() {});
+})();
+
+/* ── Deploy status ───────────────────────── */
+(function() {
+  var el = document.getElementById('deploy-status');
+  var labels = { success: 'deployed', in_progress: 'deploying', failure: 'deploy failed' };
+  var pending = false, timer = null;
+
+  function schedule() {
+    clearInterval(timer);
+    timer = setInterval(check, pending ? 15000 : 90000);
+  }
+
+  function check() {
+    fetch('https://api.github.com/repos/0xferit/schelling-game/actions/runs?per_page=1&branch=main')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.workflow_runs || !data.workflow_runs.length) return;
+        var run = data.workflow_runs[0];
+        var status = run.status === 'completed' ? run.conclusion : 'in_progress';
+        el.innerHTML = '<span class="dot ' + status + '"></span>' + (labels[status] || status);
+        if ((status === 'in_progress') !== pending) { pending = status === 'in_progress'; schedule(); }
+      }).catch(function() {});
+  }
+
+  check(); schedule();
+})();
+
+/* ── Hamburger nav ───────────────────────── */
+(function() {
+  var nav = document.getElementById('mainNav');
+  var btn = document.getElementById('navHamburger');
+  btn.addEventListener('click', function() {
+    var open = nav.classList.toggle('menu-open');
+    btn.setAttribute('aria-expanded', open);
+  });
+  document.querySelectorAll('.nav-mobile a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      nav.classList.remove('menu-open');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+  });
+})();
+
+/* ── Sec-head animated underline ─────────── */
+(function() {
+  var heads = document.querySelectorAll('.sec-head');
+  if (!heads.length || !('IntersectionObserver' in window)) return;
+  var io = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) {
+        e.target.classList.add('reveal-visible');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.5 });
+  heads.forEach(function(h) { io.observe(h); });
+})();
+
+/* ── Theme toggle ────────────────────────── */
+(function() {
+  var html = document.documentElement;
+  var btn = document.getElementById('themeToggle');
+  var moon = btn.querySelector('.icon-moon');
+  var sun  = btn.querySelector('.icon-sun');
+  var stored = localStorage.getItem('sg-theme');
+  var theme = stored || 'dark';
+
+  function apply(t) {
+    theme = t;
+    html.setAttribute('data-theme', t);
+    moon.style.display = t === 'dark'  ? 'block' : 'none';
+    sun.style.display  = t === 'light' ? 'block' : 'none';
+    localStorage.setItem('sg-theme', t);
+  }
+
+  apply(theme);
+  btn.addEventListener('click', function() {
+    apply(theme === 'dark' ? 'light' : 'dark');
+  });
+})();
+</script>
 </body>
 </html>
