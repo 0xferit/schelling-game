@@ -107,6 +107,10 @@ async function waitForReady() {
         typeof payload.revealDuration === 'number',
         'game-config missing revealDuration',
       );
+      assert(
+        typeof payload.build === 'string' && payload.build.length > 0,
+        'game-config missing build hash',
+      );
       return;
     } catch (error) {
       lastError = error;
