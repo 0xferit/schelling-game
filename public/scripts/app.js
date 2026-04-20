@@ -829,6 +829,34 @@ function isSocketReplacementClose(evt) {
   return evt && evt.code === 1000 && evt.reason === 'Replaced by new connection';
 }
 
+function isBuildMismatchClose(evt) {
+  return evt && evt.code === 4001;
+}
+
+function readStampedClientBuild() {
+  try {
+    const stamp = document.querySelector('.build-stamp');
+    const hash = stamp ? stamp.getAttribute('data-build-hash') : null;
+    if (!hash || hash === '__BUILD_HASH__') return null;
+    return /^[a-f0-9]{7,40}$/.test(hash) ? hash : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function showTerminalClose(message) {
+  try {
+    const host = document.getElementById('notif');
+    if (!host) return;
+    const existing = host.querySelector('.notif-item.terminal');
+    if (existing) return;
+    const el = document.createElement('div');
+    el.className = 'notif-item error terminal';
+    el.textContent = message;
+    host.appendChild(el);
+  } catch (_) {}
+}
+
 function stopWebSocketHeartbeat(targetSocket = null) {
   if (targetSocket && wsHeartbeatSocket !== targetSocket) return;
   if (wsHeartbeatTimer !== null) {
@@ -944,7 +972,11 @@ function connectWebSocket() {
   S.wsConnected = false;
   stopWebSocketHeartbeat();
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  S.ws = new WebSocket(`${proto}//${location.host}/ws`);
+  const clientBuild = readStampedClientBuild();
+  const wsUrl = clientBuild
+    ? `${proto}//${location.host}/ws?clientBuild=${encodeURIComponent(clientBuild)}`
+    : `${proto}//${location.host}/ws`;
+  S.ws = new WebSocket(wsUrl);
   const thisWs = S.ws;
   renderQueue();
   S.ws.onopen = () => {
@@ -975,7 +1007,20 @@ function connectWebSocket() {
     if (intentionalClose || thisWs !== S.ws) return;
     if (isSocketReplacementClose(evt)) {
       wsQueueRecoveryPending = false;
-      notify('This session became active in another tab or window.', 'warn');
+      showTerminalClose(
+        'This session became active in another tab or window.',
+      );
+      return;
+    }
+    if (isBuildMismatchClose(evt)) {
+      intentionalClose = true;
+      wsQueueRecoveryPending = false;
+      S.pendingQueueAction = null;
+      clearWebSocketRetryTimer();
+      showTerminalClose(
+        'A new version is available. Refresh this page to continue.',
+      );
+      renderQueue();
       return;
     }
     wsQueueRecoveryPending =

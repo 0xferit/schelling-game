@@ -66,7 +66,12 @@ interface ConnectionState {
   previousOpponents: Set<string>;
   lastActivityAt: number;
   livenessTimer: ReturnType<typeof setInterval> | null;
+  clientBuild: string | null;
 }
+
+// UX hint against accidentally stale client bundles — NOT an auth boundary.
+// A tampered client can still forge this value; the ws protocol itself is open.
+const CLIENT_BUILD_HASH_RE = /^[a-f0-9]{7,40}$/;
 
 interface WorkerPlayerState extends PersistedPlayerState {
   ws: WebSocket | null;
@@ -269,6 +274,7 @@ export class GameRoom {
         url.searchParams.get('tokenBalance') || '0',
         10,
       );
+      const clientBuild = url.searchParams.get('clientBuild');
 
       if (!accountId || !displayName) {
         return new Response('Missing auth params', { status: 400 });
@@ -276,7 +282,13 @@ export class GameRoom {
 
       const pair = new WebSocketPair();
       const [client, server] = [pair[0], pair[1]];
-      this._handleWebSocket(server, accountId, displayName, tokenBalance);
+      this._handleWebSocket(
+        server,
+        accountId,
+        displayName,
+        tokenBalance,
+        clientBuild,
+      );
       return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -292,6 +304,7 @@ export class GameRoom {
     accountId: string,
     displayName: string,
     _tokenBalance: number,
+    clientBuild: string | null,
   ): void {
     ws.accept();
 
@@ -361,6 +374,7 @@ export class GameRoom {
             previousOpponents: new Set(),
             lastActivityAt: Date.now(),
             livenessTimer: null,
+            clientBuild: null,
           });
           if (playerState.graceTimer) {
             clearTimeout(playerState.graceTimer);
@@ -397,6 +411,23 @@ export class GameRoom {
       }
     }
 
+    // Build-mismatch guard at the queue/forming boundary. Active-match
+    // reconnects above are grandfathered (all players in a live match share a
+    // build). Fresh queue joins and queue/forming reconnects must match the
+    // deployed build so they cannot mix message shapes with newer clients.
+    const clientBuildValid =
+      typeof clientBuild === 'string' && CLIENT_BUILD_HASH_RE.test(clientBuild);
+    if (
+      this.env.BUILD_HASH &&
+      (!clientBuildValid || clientBuild !== this.env.BUILD_HASH)
+    ) {
+      try {
+        ws.close(4001, 'client build mismatch');
+      } catch {}
+      return;
+    }
+    const acceptedClientBuild = clientBuildValid ? clientBuild : null;
+
     const inFormingMatch =
       this.formingMatch?.players.includes(accountId) ?? false;
     const queuedConnection =
@@ -409,6 +440,7 @@ export class GameRoom {
       this._clearConnectionLivenessMonitor(accountId);
       existingConn.ws = ws;
       existingConn.displayName = displayName;
+      existingConn.clientBuild = acceptedClientBuild;
       if (!inFormingMatch) {
         existingConn.startNow = false;
       }
@@ -442,6 +474,7 @@ export class GameRoom {
         : new Set(),
       lastActivityAt: Date.now(),
       livenessTimer: null,
+      clientBuild: acceptedClientBuild,
     });
 
     this._setupWsListeners(ws, accountId);

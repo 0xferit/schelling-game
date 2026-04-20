@@ -107,6 +107,10 @@ async function waitForReady() {
         typeof payload.revealDuration === 'number',
         'game-config missing revealDuration',
       );
+      assert(
+        typeof payload.build === 'string' && payload.build.length > 0,
+        'game-config missing build hash',
+      );
       return;
     } catch (error) {
       lastError = error;
@@ -185,6 +189,10 @@ await expectHtmlEventually('/app', 'Schelling Games');
 await expectJson('/api/game-config', undefined, (payload) => {
   assert(payload.commitDuration === 60, 'unexpected commitDuration');
   assert(payload.revealDuration === 15, 'unexpected revealDuration');
+  assert(
+    typeof payload.build === 'string' && payload.build.length > 0,
+    'game-config missing build hash',
+  );
 });
 
 await expectJson('/api/landing-stats', undefined, (payload) => {
